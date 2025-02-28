@@ -1,3 +1,4 @@
+#include <iostream>
 #include "llama-sampling.h"
 
 #include "llama-impl.h"
@@ -339,6 +340,7 @@ void llama_sampler_accept(struct llama_sampler * smpl, llama_token token) {
 
 void llama_sampler_apply(struct llama_sampler * smpl, struct llama_token_data_array * cur_p) {
     GGML_ASSERT(smpl->iface->apply);
+    std::cout << "_";
     smpl->iface->apply(smpl, cur_p);
 }
 
@@ -428,9 +430,9 @@ static void llama_sampler_chain_accept(struct llama_sampler * smpl, llama_token 
 
 static void llama_sampler_chain_apply(struct llama_sampler * smpl, llama_token_data_array * cur_p) {
     auto * chain = (llama_sampler_chain *) smpl->ctx;
-
+    std::cout << "X";
     time_meas tm(chain->t_sample_us, chain->params.no_perf);
-
+    std::cout << "!";
     for (auto * smpl : chain->samplers) {
         llama_sampler_apply(smpl, cur_p);
     }
