@@ -2984,7 +2984,7 @@ static void ggml_compute_forward_dup_same_cont(
     }
 }
 
-static void ggml_compute_forward_dup_f16(
+static void ggml_compute_forward_dup_f16( // TB
         const struct ggml_compute_params * params,
         struct ggml_tensor * dst) {
 
@@ -5293,12 +5293,14 @@ static void ggml_compute_forward_mul_f32(
     }
 }
 
-static void ggml_compute_forward_mul(
+static void ggml_compute_forward_mul( // TB, vector not matmul?
         const struct ggml_compute_params * params,
         struct ggml_tensor * dst) {
 
     const struct ggml_tensor * src0 = dst->src[0];
     const struct ggml_tensor * src1 = dst->src[1];
+
+	//printf("TB: ggml_compute_forward_mul: \n");
 
     GGML_ASSERT(src1->type == GGML_TYPE_F32 && "only f32 src1 supported for now");
 
@@ -7433,7 +7435,7 @@ static void ggml_compute_forward_group_norm(
 
 // ggml_compute_forward_mul_mat
 
-static void ggml_compute_forward_mul_mat_one_chunk(
+static void ggml_compute_forward_mul_mat_one_chunk( // TB
     const struct ggml_compute_params * params,
     struct ggml_tensor * dst,
     const enum ggml_type type,
@@ -7456,6 +7458,8 @@ static void ggml_compute_forward_mul_mat_one_chunk(
     // broadcast factors
     const int64_t r2 = ne12 / ne02;
     const int64_t r3 = ne13 / ne03;
+
+	//printf("TB: ggml_compute_forward_mul_mat_one_chunk: \n");
 
     //printf("ir0_start = %6lld, ir0_end = %6lld, ir1_start = %6lld, ir1_end = %6lld\n", ir0_start, ir0_end, ir1_start, ir1_end);
 
@@ -7523,7 +7527,7 @@ static void ggml_compute_forward_mul_mat_one_chunk(
     }
 }
 
-static void ggml_compute_forward_mul_mat(
+static void ggml_compute_forward_mul_mat( // TB!!
         const struct ggml_compute_params * params,
               struct ggml_tensor * dst) {
 
@@ -7538,6 +7542,8 @@ static void ggml_compute_forward_mul_mat(
     enum ggml_type           const vec_dot_type         = type_traits_cpu[src0->type].vec_dot_type;
     ggml_from_float_t        const from_float           = type_traits_cpu[vec_dot_type].from_float;
     int64_t                  const vec_dot_num_rows     = type_traits_cpu[src0->type].nrows;
+
+	printf("ggml_compute_forward_mul_mat: %d , %d\n", vec_dot_type, GGML_TYPE_Q4_0);
 
     GGML_ASSERT(ne0 == ne01);
     GGML_ASSERT(ne1 == ne11);
@@ -12902,8 +12908,10 @@ static void ggml_compute_forward_opt_step_adamw(
 }
 /////////////////////////////////
 
-static void ggml_compute_forward(struct ggml_compute_params * params, struct ggml_tensor * tensor) {
+static void ggml_compute_forward(struct ggml_compute_params * params, struct ggml_tensor * tensor) { // TB
     GGML_ASSERT(params);
+
+	//printf("TB: ggml_compute_forward: \n");
 
     if (tensor->op == GGML_OP_NONE || ggml_is_empty(tensor)) {
         return;
