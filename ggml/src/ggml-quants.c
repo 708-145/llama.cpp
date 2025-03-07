@@ -715,8 +715,7 @@ void dequantize_row_q2_K(const block_q2_K * restrict x, float * restrict y, int6
     assert(k % QK_K == 0);
     const int nb = k / QK_K;
 
-	printf("=Q2K= ");
-	printf("Processing %ld bytes for dequantization.\n", k * sizeof(block_q2_K));
+	printf("[Q2K] Processing %ld bytes for dequantization.\n", k * sizeof(block_q2_K));
 
     for (int i = 0; i < nb; i++) {
 
