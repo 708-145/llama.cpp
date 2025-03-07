@@ -1909,9 +1909,11 @@ static inline __m128i get_scale_shuffle(int i) {
 }
 #endif
 
-void ggml_vec_dot_q4_0_q8_0(int n, float * restrict s, size_t bs, const void * restrict vx, size_t bx, const void * restrict vy, size_t by, int nrc) {
+void ggml_vec_dot_q4_0_q8_0(int n, float * restrict s, size_t bs, const void * restrict vx, size_t bx, const void * restrict vy, size_t by, int nrc) { // TB
     const int qk = QK8_0;
     const int nb = n / qk;
+
+	printf("MUL Q4_0 %d elements.\n", n);
 
     assert(n % qk == 0);
 #if defined(__ARM_FEATURE_MATMUL_INT8)
@@ -2605,13 +2607,15 @@ void ggml_vec_dot_q4_0_q8_0(int n, float * restrict s, size_t bs, const void * r
         int sumi = sumi0 + sumi1;
         sumf += sumi*GGML_FP16_TO_FP32(x[ib].d)*GGML_FP16_TO_FP32(y[ib].d);
     }
-
+	printf("Q4_0 MUL %d elements.\n", nb * qk/2 * 2);
     *s = sumf;
 }
 
 void ggml_vec_dot_q4_1_q8_1(int n, float * restrict s, size_t bs, const void * restrict vx, size_t bx, const void * restrict vy, size_t by, int nrc) {
     const int qk = QK8_1;
     const int nb = n / qk;
+
+	//printf("TB: MUL Q4_1 %d elements.\n", n);
 
     assert(n % qk == 0);
 #if defined(__ARM_FEATURE_MATMUL_INT8)
@@ -2934,6 +2938,8 @@ void ggml_vec_dot_q4_1_q8_1(int n, float * restrict s, size_t bs, const void * r
 void ggml_vec_dot_q5_0_q8_0(int n, float * restrict s, size_t bs, const void * restrict vx, size_t bx, const void * restrict vy, size_t by, int nrc) {
     const int qk = QK8_0;
     const int nb = n / qk;
+
+	//printf("TB: MUL Q5_0 %d elements.\n", n);
 
     int ib = 0;
     float sumf = 0;
@@ -3289,6 +3295,8 @@ void ggml_vec_dot_q5_0_q8_0(int n, float * restrict s, size_t bs, const void * r
 void ggml_vec_dot_q5_1_q8_1(int n, float * restrict s, size_t bs, const void * restrict vx, size_t bx, const void * restrict vy, size_t by, int nrc) {
     const int qk = QK8_1;
     const int nb = n / qk;
+
+	printf("MUL Q5_1 %d elements.\n", n);
 
     int ib = 0;
     float sumf = 0;
@@ -3663,6 +3671,8 @@ void ggml_vec_dot_q5_1_q8_1(int n, float * restrict s, size_t bs, const void * r
 void ggml_vec_dot_q8_0_q8_0(int n, float * restrict s, size_t bs, const void * restrict vx, size_t bx, const void * restrict vy, size_t by, int nrc) {
     const int qk = QK8_0;
     const int nb = n / qk;
+
+	//printf("TB: MUL Q8_0 %d elements.\n", n);
 
     assert(n % qk == 0);
 #if defined(__ARM_FEATURE_MATMUL_INT8)
@@ -4092,6 +4102,8 @@ void ggml_vec_dot_tq1_0_q8_K(int n, float * restrict s, size_t bs, const void * 
 
     const int nb = n / QK_K;
 
+	printf("TQ1 MUL %d elements.\n", n);
+
 #if defined(__ARM_NEON)
     float sumf = 0.0f;
 
@@ -4415,6 +4427,8 @@ void ggml_vec_dot_tq2_0_q8_K(int n, float * restrict s, size_t bs, const void * 
 
     const int nb = n / QK_K;
 
+	printf("TQ2 MUL %d elements.\n", n);
+
 #if defined(__ARM_NEON)
     float sumf = 0.0f;
 
@@ -4575,7 +4589,7 @@ void ggml_vec_dot_tq2_0_q8_K(int n, float * restrict s, size_t bs, const void * 
 #endif
 }
 
-void ggml_vec_dot_q2_K_q8_K(int n, float * restrict s, size_t bs, const void * restrict vx, size_t bx, const void * restrict vy, size_t by, int nrc) {
+void ggml_vec_dot_q2_K_q8_K(int n, float * restrict s, size_t bs, const void * restrict vx, size_t bx, const void * restrict vy, size_t by, int nrc) { // TB
     assert(nrc == 1);
     UNUSED(nrc);
     UNUSED(bx);
@@ -4587,6 +4601,8 @@ void ggml_vec_dot_q2_K_q8_K(int n, float * restrict s, size_t bs, const void * r
 
     const int nb = n / QK_K;
 
+	//printf("TB: MUL Q2_K %d elemens\n", n);
+	
 #ifdef __ARM_FEATURE_SVE
     const int vector_length = svcntb()*8;
     const svuint8_t m3s = svdup_n_u8(0x3);
@@ -5452,7 +5468,7 @@ void ggml_vec_dot_q2_K_q8_K(int n, float * restrict s, size_t bs, const void * r
 #else
 
     float sumf = 0;
-
+	// TB
     for (int i = 0; i < nb; ++i) {
 
         const uint8_t * q2 = x[i].qs;
@@ -5490,6 +5506,9 @@ void ggml_vec_dot_q2_K_q8_K(int n, float * restrict s, size_t bs, const void * r
     }
     *s = sumf;
 #endif
+
+	// printf("Q2_K MUL %d elements.\n", nb * QK_K/128 * 4 * 32);
+
 }
 
 void ggml_vec_dot_q3_K_q8_K(int n, float * restrict s, size_t bs, const void * restrict vx, size_t bx, const void * restrict vy, size_t by, int nrc) {
@@ -5507,6 +5526,9 @@ void ggml_vec_dot_q3_K_q8_K(int n, float * restrict s, size_t bs, const void * r
     const block_q8_K * restrict y = vy;
 
     const int nb = n / QK_K;
+
+	//printf("TB: MUL Q3_K %d elemens\n", n);
+
 
 #if defined(__ARM_FEATURE_SVE)
 
@@ -6527,6 +6549,8 @@ void ggml_vec_dot_q4_K_q8_K(int n, float * restrict s, size_t bs, const void * r
 
     uint32_t utmp[4];
 
+	//printf("TB: MUL Q4_K %d elemens\n", n);
+
 #ifdef __ARM_FEATURE_SVE
     float sumf = 0;
     for (int i = 0; i < nb; ++i) {
@@ -7341,6 +7365,8 @@ void ggml_vec_dot_q5_K_q8_K(int n, float * restrict s, size_t bs, const void * r
     static const uint32_t kmask3 = 0x03030303;
 
     uint32_t utmp[4];
+
+	//printf("TB: MUL Q5_K %d elements.\n", n);
 
 #ifdef __ARM_NEON
     const uint8x16_t m4b = vdupq_n_u8(0xf);
@@ -8157,6 +8183,8 @@ void ggml_vec_dot_q6_K_q8_K(int n, float * restrict s, size_t bs, const void * r
     const block_q8_K * restrict y = vy;
 
     const int nb = n / QK_K;
+
+	//printf("TB: MUL Q6_K %d elements.\n", n);
 
 #ifdef __ARM_NEON
     float sum = 0;

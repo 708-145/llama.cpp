@@ -1744,7 +1744,7 @@ class GGUFValueType(IntEnum):
 
 # Items here are (block size, type size)
 QK_K = 256
-GGML_QUANT_SIZES: dict[GGMLQuantizationType, tuple[int, int]] = {
+GGML_QUANT_SIZES: dict[GGMLQuantizationType, tuple[int, int]] = { ## TB
     GGMLQuantizationType.F32:     (1, 4),
     GGMLQuantizationType.F16:     (1, 2),
     GGMLQuantizationType.Q4_0:    (32, 2 + 16),

@@ -650,6 +650,8 @@ void quantize_row_q2_K_ref(const float * restrict x, block_q2_K * restrict y, in
     float scales[QK_K/16];
 
     const float q4scale = 15.f;
+	
+	printf("[REF] Processing %ld bytes for dequantization.\n", k * sizeof(block_q2_K));
 
     for (int i = 0; i < nb; i++) {
         float max_scale = 0; // as we are deducting the min, scales are always positive
@@ -709,9 +711,12 @@ void quantize_row_q2_K_ref(const float * restrict x, block_q2_K * restrict y, in
     }
 }
 
-void dequantize_row_q2_K(const block_q2_K * restrict x, float * restrict y, int64_t k) {
+void dequantize_row_q2_K(const block_q2_K * restrict x, float * restrict y, int64_t k) { // TB
     assert(k % QK_K == 0);
     const int nb = k / QK_K;
+
+	printf("=Q2K= ");
+	printf("Processing %ld bytes for dequantization.\n", k * sizeof(block_q2_K));
 
     for (int i = 0; i < nb; i++) {
 
