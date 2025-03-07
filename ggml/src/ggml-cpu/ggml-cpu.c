@@ -7543,7 +7543,7 @@ static void ggml_compute_forward_mul_mat( // TB!!
     ggml_from_float_t        const from_float           = type_traits_cpu[vec_dot_type].from_float;
     int64_t                  const vec_dot_num_rows     = type_traits_cpu[src0->type].nrows;
 
-	//printf("ggml_compute_forward_mul_mat: %d , %d\n", vec_dot_type, GGML_TYPE_Q4_0);
+	printf("ggml_compute_forward_mul_mat: %d, %d;, (%ld, %ld, %ld)\n", nth, ith, src0->ne[0], src0->ne[1], src0->ne[2]);
 
     GGML_ASSERT(ne0 == ne01);
     GGML_ASSERT(ne1 == ne11);
