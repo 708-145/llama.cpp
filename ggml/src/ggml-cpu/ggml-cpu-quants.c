@@ -1913,7 +1913,7 @@ void ggml_vec_dot_q4_0_q8_0(int n, float * restrict s, size_t bs, const void * r
     const int qk = QK8_0;
     const int nb = n / qk;
 
-	printf("MUL Q4_0 %d elements.\n", n);
+    printf("MUL Q4_0 %d elements.\n", n);
 
     assert(n % qk == 0);
 #if defined(__ARM_FEATURE_MATMUL_INT8)
