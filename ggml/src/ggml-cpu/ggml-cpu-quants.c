@@ -11949,6 +11949,8 @@ void ggml_vec_dot_iq4_nl_q8_0(int n, float * restrict s, size_t bs, const void *
     assert(n % QK4_NL == 0);
     static_assert(QK4_NL == QK8_0, "QK4_NL and QK8_0 must be the same");
 
+    //printf("TB: IQ4_NL MUL found: %d\n", n);
+
     const block_iq4_nl * restrict x = vx;
     const block_q8_0   * restrict y = vy;
 
