@@ -1,0 +1,1 @@
+build/bin/llama-cli -p "How is beer made?" -m /home/tobiulla/funstreams/qwen2-1_5b-instruct-q4_0.gguf
