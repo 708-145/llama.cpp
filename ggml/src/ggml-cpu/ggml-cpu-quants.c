@@ -12139,6 +12139,7 @@ void ggml_vec_dot_iq4_xs_q8_K(int n, float * restrict s, size_t bs, const void *
 
     const int nb = n / QK_K;
 
+    printf("TB: IQ4_NL MUL found: %d\n", n);
 #if defined __ARM_NEON
     const int8x16_t values = vld1q_s8(kvalues_iq4nl);
     const uint8x16_t m4b = vdupq_n_u8(0x0f);
