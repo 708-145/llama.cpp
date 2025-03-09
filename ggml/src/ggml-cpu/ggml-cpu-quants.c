@@ -11929,6 +11929,8 @@ void ggml_vec_dot_iq4_nl_q8_0(int n, float * restrict s, size_t bs, const void *
     int ib = 0;
     float sumf = 0;
 
+    printf("TB: IQ4_NL MUL found: %d\n", n);
+
 #if defined __ARM_NEON
     const int8x16_t values = vld1q_s8(kvalues_iq4nl);
     const uint8x16_t m4b = vdupq_n_u8(0x0f);
@@ -12139,7 +12141,8 @@ void ggml_vec_dot_iq4_xs_q8_K(int n, float * restrict s, size_t bs, const void *
 
     const int nb = n / QK_K;
 
-    printf("TB: IQ4_NL MUL found: %d\n", n);
+    printf("IQ4_XS MUL found: %d\n", n);
+
 #if defined __ARM_NEON
     const int8x16_t values = vld1q_s8(kvalues_iq4nl);
     const uint8x16_t m4b = vdupq_n_u8(0x0f);
