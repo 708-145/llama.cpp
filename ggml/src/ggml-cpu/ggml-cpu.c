@@ -5302,6 +5302,8 @@ static void ggml_compute_forward_mul(
 
     GGML_ASSERT(src1->type == GGML_TYPE_F32 && "only f32 src1 supported for now");
 
+    //printf("ggml_compute_forward_mul\n");
+
     switch (src0->type) {
         case GGML_TYPE_F32:
             {
@@ -7538,6 +7540,8 @@ static void ggml_compute_forward_mul_mat(
     enum ggml_type           const vec_dot_type         = type_traits_cpu[src0->type].vec_dot_type;
     ggml_from_float_t        const from_float           = type_traits_cpu[vec_dot_type].from_float;
     int64_t                  const vec_dot_num_rows     = type_traits_cpu[src0->type].nrows;
+
+    //if (ith == 0) printf("ggml_compute_forward_mul_mat type %s, %s\n", ggml_type_name(src0->type), ggml_type_name(src1->type));
 
     GGML_ASSERT(ne0 == ne01);
     GGML_ASSERT(ne1 == ne11);
