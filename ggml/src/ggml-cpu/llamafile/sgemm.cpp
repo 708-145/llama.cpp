@@ -2370,11 +2370,11 @@ bool llamafile_sgemm(const struct ggml_compute_params * params, int64_t m, int64
     assert(params->nth > 0);
     assert(params->ith < params->nth);
 
-    if (params->ith == 0) {
+    /* if (params->ith == 0) {
     	FILE *file = fopen("stats.txt", "a"); // Open the file in write mode and append
     	fprintf(file, "sgemm m,n,k: %ld, %ld, %ld;\n", m, n, k);
     	fclose(file);
-    }
+    } */
 
     // only enable sgemm for prompt processing
     if (n < 2)

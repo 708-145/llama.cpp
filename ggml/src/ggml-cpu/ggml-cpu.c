@@ -5293,14 +5293,19 @@ static void ggml_compute_forward_mul_f32(
     }
 }
 
-static void ggml_compute_forward_mul( // TB, vector not matmul?
+static void ggml_compute_forward_mul( // TB, FP32 only
         const struct ggml_compute_params * params,
         struct ggml_tensor * dst) {
 
     const struct ggml_tensor * src0 = dst->src[0];
     const struct ggml_tensor * src1 = dst->src[1];
 
-	//printf("TB: ggml_compute_forward_mul: \n");
+	/* printf("TB: ggml_compute_forward_mul: %s, %s;\n", ggml_type_name(src0->type), ggml_type_name(src1->type));
+    if ((params->ith == 0) && (2 >0)) {
+        FILE *file = fopen("stats.txt", "a"); // Open the file in write mode and append
+        fprintf(file, "ggml_compute_forward_mul: %s, %s;\n", ggml_type_name(src0->type), ggml_type_name(src1->type));
+        fclose(file);
+    } */
 
     GGML_ASSERT(src1->type == GGML_TYPE_F32 && "only f32 src1 supported for now");
 
@@ -7543,7 +7548,13 @@ static void ggml_compute_forward_mul_mat( // TB!!
     ggml_from_float_t        const from_float           = type_traits_cpu[vec_dot_type].from_float;
     int64_t                  const vec_dot_num_rows     = type_traits_cpu[src0->type].nrows;
 
-    if ((ith == 0) && (vec_dot_type == 20)) printf("ggml_compute_forward_mul_mat: %d (%ld, %ld, %ld)\n", vec_dot_type, src0->ne[0], src0->ne[1], src0->ne[2]);
+    //if ((ith == 0) && (vec_dot_type == 20)) printf("ggml_compute_forward_mul_mat: %d (%ld, %ld, %ld)\n", vec_dot_type, src0->ne[0], src0->ne[1], src0->ne[2]);
+	//printf("TB: ggml_compute_forward_mul_mat: %s, %s; %d\n", ggml_type_name(src0->type), ggml_type_name(src1->type), src0->type);
+    if ((params->ith == 0) && (src0->type == 10)) { // IQ4_NL is type 20 
+        FILE *file = fopen("stats.txt", "a"); // Open the file in write mode and append
+        fprintf(file, "ggml_compute_forward_mul_mat: %s, %s;\n", ggml_type_name(src0->type), ggml_type_name(src1->type));
+        fclose(file);
+    }
 
     GGML_ASSERT(ne0 == ne01);
     GGML_ASSERT(ne1 == ne11);
