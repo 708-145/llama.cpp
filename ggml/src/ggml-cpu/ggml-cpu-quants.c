@@ -11929,7 +11929,7 @@ void ggml_vec_dot_iq4_nl_q8_0(int n, float * restrict s, size_t bs, const void *
     int ib = 0;
     float sumf = 0;
 
-    // printf("TB: IQ4_NL MUL found: %d\n", n);
+    // printf("IQ4_NL MUL found: %d\n", n);
     for (; ib < nb; ++ib) {
         const float d = GGML_FP16_TO_FP32(y[ib].d)*GGML_FP16_TO_FP32(x[ib].d);
         int sumi1 = 0, sumi2 = 0;
