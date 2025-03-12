@@ -7525,7 +7525,7 @@ static void ggml_compute_forward_mul_mat_one_chunk(
     }
 }
 
-static void ggml_compute_forward_mul_mat(
+static void ggml_compute_forward_mul_mat_orig(
         const struct ggml_compute_params * params,
               struct ggml_tensor * dst) {
 
@@ -7541,8 +7541,7 @@ static void ggml_compute_forward_mul_mat(
     ggml_from_float_t        const from_float           = type_traits_cpu[vec_dot_type].from_float;
     int64_t                  const vec_dot_num_rows     = type_traits_cpu[src0->type].nrows;
 
-	// TB: restructure for LUT
-    if (ith == 0) printf("ggml_compute_forward_mul_mat type %s, %s\n", ggml_type_name(src0->type), ggml_type_name(src1->type));
+    //if (ith == 0) printf("ggml_compute_forward_mul_mat_orig type %s, %s\n", ggml_type_name(src0->type), ggml_type_name(src1->type));
 
     GGML_ASSERT(ne0 == ne01);
     GGML_ASSERT(ne1 == ne11);
@@ -7720,6 +7719,50 @@ UseGgmlGemm2:;
 
         current_chunk = atomic_fetch_add_explicit(&params->threadpool->current_chunk, 1, memory_order_relaxed);
     }
+}
+
+static void ggml_compute_forward_mul_mat_iq4_nl( // TB: IQ4_NL variant
+        const struct ggml_compute_params * params,
+              struct ggml_tensor * dst) {
+
+    const struct ggml_tensor * src0 = dst->src[0];
+    const struct ggml_tensor * src1 = dst->src[1];
+    const int ith = params->ith;
+	
+	// TB: restructure for LUT
+    if (ith == 0) printf("ggml_compute_forward_mul_mat_iq4_nl type %s, %s\n", ggml_type_name(src0->type), ggml_type_name(src1->type));
+
+}
+
+static void ggml_compute_forward_mul_mat( // switch here between quantization types
+        const struct ggml_compute_params * params,
+              struct ggml_tensor * dst) {
+
+    const struct ggml_tensor * src0 = dst->src[0];
+    const struct ggml_tensor * src1 = dst->src[1];
+    GGML_TENSOR_BINARY_OP_LOCALS
+    const int ith = params->ith;
+
+	// TB: restructure for LUT
+    //if (ith == 0) printf("ggml_compute_forward_mul_mat type %s, %s\n", ggml_type_name(src0->type), ggml_type_name(src1->type));
+
+    GGML_ASSERT(ne0 == ne01);
+    GGML_ASSERT(ne1 == ne11);
+    GGML_ASSERT(ne2 == ne12);
+    GGML_ASSERT(ne3 == ne13);
+
+    // we don't support permuted src0 or src1
+    GGML_ASSERT(nb00 == ggml_type_size(src0->type));
+    GGML_ASSERT(nb10 == ggml_type_size(src1->type));
+
+    // dst cannot be transposed or permuted
+    GGML_ASSERT(nb0 == sizeof(float));
+    GGML_ASSERT(nb0 <= nb1);
+    GGML_ASSERT(nb1 <= nb2);
+    GGML_ASSERT(nb2 <= nb3);
+
+	ggml_compute_forward_mul_mat_orig(params, dst);
+
 }
 
 // ggml_compute_forward_mul_mat_id
