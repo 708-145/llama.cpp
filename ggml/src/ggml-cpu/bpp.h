@@ -15,4 +15,4 @@
 void performLUTLookup(const uint16_t* indices_vector, const float* random_LUT, size_t start_index, size_t end_index, float* thread_sum, size_t vector_size);
 
 // Dummy print function declaration
-void dummyPrint();
+void dummyPrint(void);
