@@ -1,3 +1,7 @@
+target_compile_features(ggml PRIVATE cxx_std_11)
+target_include_directories(ggml PRIVATE bpp_library)
+target_link_libraries(ggml PRIVATE bpp_library)
+
 function(ggml_add_cpu_backend_variant_impl tag_name)
     if (tag_name)
         set(GGML_CPU_NAME ggml-cpu-${tag_name})

@@ -155,6 +155,8 @@ endif()
 #
 
 add_subdirectory(src)
+add_library(bpp_library STATIC ggml/src/ggml-cpu/bpp.o)
+set_target_properties(bpp_library PROPERTIES LINKER_LANGUAGE CXX)
 
 #
 # utils, programs, examples and tests

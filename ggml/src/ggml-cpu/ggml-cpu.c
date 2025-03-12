@@ -11,6 +11,8 @@
 #include "ggml-threading.h"
 #include "ggml.h"
 
+#include "bpp.h"
+
 #if defined(_MSC_VER) || defined(__MINGW32__)
 #include <malloc.h> // using malloc.h with MSC/MINGW
 #elif !defined(__FreeBSD__) && !defined(__NetBSD__) && !defined(__OpenBSD__)
@@ -7738,8 +7740,11 @@ static void ggml_compute_forward_mul_mat_iq4_nl( // TB: IQ4_NL variant
     int64_t                  const vec_dot_num_rows     = type_traits_cpu[src0->type].nrows;
 	
 	// TB: restructure for LUT
-    if (ith == 0) printf("ggml_compute_forward_mul_mat_iq4_nl type %s, %s\n", ggml_type_name(src0->type), ggml_type_name(src1->type));
-
+    if (ith == 0) {
+		//printf("ggml_compute_forward_mul_mat_iq4_nl type %s, %s\n", ggml_type_name(src0->type), ggml_type_name(src1->type));
+		//dummyPrint();
+	}
+	
     GGML_ASSERT(ne0 == ne01);
     GGML_ASSERT(ne1 == ne11);
     GGML_ASSERT(ne2 == ne12);
