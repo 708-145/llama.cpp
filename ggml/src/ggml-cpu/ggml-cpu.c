@@ -7811,6 +7811,21 @@ static void ggml_compute_forward_mul_mat_iq4_nl( // TB: IQ4_NL variant
     const int ith = params->ith;
     const int nth = params->nth;
 
+	// print dimension variables:
+	printf("dimension: rows %ld, cols %ld, Byte per row %ld\n", ne0, nb01*16/9, nb01);
+	// ne0  = IQ4NL rows == result vector length
+	// nb01*8/4.5 = IQ4NL columns
+	// nb01 = Bytes per IQ4NL row (4.5bpw, 864 for 1536, 2304 for 4096)
+	
+	// assign chunks to thread, split by output vector only despite being more LUT effort
+	const int64_t num_rows_per_chunk = ne0 / nth;
+	const int64_t from_row = ith * num_rows_per_chunk;
+	const int64_t to_row   = MIN(from_row+num_rows_per_chunk,ne0)-1;
+	printf("thread %d computes row %ld to %ld; %ld of %ld\n", ith, from_row, to_row, to_row-from_row+1, num_rows_per_chunk);
+	//bpp_IQ4NL_F32_vecmul(params, dst, from_row, to_row);
+
+
+	// old code starts here:
     enum ggml_type           const vec_dot_type         = type_traits_cpu[src0->type].vec_dot_type;
     ggml_from_float_t        const from_float           = type_traits_cpu[vec_dot_type].from_float;
     //int64_t                  const vec_dot_num_rows     = type_traits_cpu[src0->type].nrows;
@@ -7899,20 +7914,9 @@ static void ggml_compute_forward_mul_mat_iq4_nl( // TB: IQ4_NL variant
     // The number of elements in each chunk
     const int64_t dr0 = (nr0 + nchunk0 - 1) / nchunk0;
     const int64_t dr1 = (nr1 + nchunk1 - 1) / nchunk1;
-    
 	
-    // The first chunk comes from our thread_id, the rest will get auto-assigned.
+    // chunk comes from our thread_id
     int current_chunk = ith;
-
-	// print dimension variables:
-	printf("dimension: rows %ld, cols %ld, Byte per row %ld\n", ne0, nb01*16/9, nb01);
-	//printf("dimension: %ld, %ld, %ld, %ld; %ld, %ld\n", nb00, nb01, nb10, nb11, nb0, nb1);
-	//printf("   chunks: dr0 %ld, dr1 %ld, nr0 %ld, nr1 %ld\n", dr0, dr1, nr0, nr1);
-	// ne0  = IQ4NL rows
-	// nb01/8 * 4.5 = IQ4NL columns
-	// nb01 = Bytes per IQ4NL row (4.5bpw, 864 for 1536, 2304 for 4096)
-	
-
     while (current_chunk < nchunk0 * nchunk1) {
         const int64_t ith0 = current_chunk % nchunk0;
         const int64_t ith1 = current_chunk / nchunk0;
