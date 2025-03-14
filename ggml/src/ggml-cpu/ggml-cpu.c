@@ -7905,9 +7905,13 @@ static void ggml_compute_forward_mul_mat_iq4_nl( // TB: IQ4_NL variant
     int current_chunk = ith;
 
 	// print dimension variables:
-	printf("dimension: ne0 %ld, ne1 %ld, ne2 %ld, ne3 %ld; nchunk0 %ld, nchunk1 %ld\n", ne0, ne1, ne2, ne3, nchunk0, nchunk1);
-	printf("dimension: %ld, %ld, %ld, %ld; %ld, %ld\n", nb00, nb01, nb10, nb11, nb0, nb1);
-	printf("   chunks: dr0 %ld, dr1 %ld, nr0 %ld, nr1 %ld\n", dr0, dr1, nr0, nr1);
+	printf("dimension: rows %ld, cols %ld, Byte per row %ld\n", ne0, nb01*16/9, nb01);
+	//printf("dimension: %ld, %ld, %ld, %ld; %ld, %ld\n", nb00, nb01, nb10, nb11, nb0, nb1);
+	//printf("   chunks: dr0 %ld, dr1 %ld, nr0 %ld, nr1 %ld\n", dr0, dr1, nr0, nr1);
+	// ne0  = IQ4NL rows
+	// nb01/8 * 4.5 = IQ4NL columns
+	// nb01 = Bytes per IQ4NL row (4.5bpw, 864 for 1536, 2304 for 4096)
+	
 
     while (current_chunk < nchunk0 * nchunk1) {
         const int64_t ith0 = current_chunk % nchunk0;
