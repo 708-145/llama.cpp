@@ -7597,7 +7597,7 @@ static void ggml_compute_forward_mul_mat_one_chunk_IQ4_NL_F32( // TB:
 		}
 	}
 
-}
+} // ggml_compute_forward_mul_mat_one_chunk_IQ4_NL_F32
 
 static void ggml_compute_forward_mul_mat_orig(
         const struct ggml_compute_params * params,
@@ -7899,9 +7899,14 @@ static void ggml_compute_forward_mul_mat_iq4_nl( // TB: IQ4_NL variant
     // The number of elements in each chunk
     const int64_t dr0 = (nr0 + nchunk0 - 1) / nchunk0;
     const int64_t dr1 = (nr1 + nchunk1 - 1) / nchunk1;
-
+    
+	
     // The first chunk comes from our thread_id, the rest will get auto-assigned.
     int current_chunk = ith;
+
+	// print dimension variables:
+	printf("dimension: ne0 %ld, ne1 %ld, ne2 %ld, ne3 %ld; nchunk0 %ld, nchunk1 %ld\n", ne0, ne1, ne2, ne3, nchunk0, nchunk1);
+	printf("   chunks: dr0 %ld, dr1 %ld, nr0 %ld, nr1 %ld\n", dr0, dr1, nr0, nr1);
 
     while (current_chunk < nchunk0 * nchunk1) {
         const int64_t ith0 = current_chunk % nchunk0;
@@ -7922,7 +7927,7 @@ static void ggml_compute_forward_mul_mat_iq4_nl( // TB: IQ4_NL variant
         current_chunk = atomic_fetch_add_explicit(&params->threadpool->current_chunk, 1, memory_order_relaxed);
     }
 
-}
+} // ggml_compute_forward_mul_mat_iq4_nl
 
 static void ggml_compute_forward_mul_mat( // switch here between quantization types
         const struct ggml_compute_params * params,
