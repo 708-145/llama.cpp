@@ -7527,6 +7527,88 @@ static void ggml_compute_forward_mul_mat_one_chunk(
     }
 }
 
+static void ggml_compute_forward_mul_mat_one_chunk_IQ4_NL_F32( // TB:
+    const struct ggml_compute_params * params,
+    struct ggml_tensor * dst,
+    const enum ggml_type type,
+    const int64_t num_rows_per_vec_dot,
+    const int64_t ir0_start,
+    const int64_t ir0_end,
+    const int64_t ir1_start,
+    const int64_t ir1_end) {
+
+    const struct ggml_tensor * src0 = dst->src[0];
+    const struct ggml_tensor * src1 = dst->src[1];
+
+    GGML_TENSOR_BINARY_OP_LOCALS
+
+    assert(ggml_is_contiguous(src1) == 1); // if this ever hits, add condition into type switch fo IQ4_NL bpp handling
+
+    ggml_vec_dot_t const vec_dot      = type_traits_cpu[type].vec_dot;
+    enum ggml_type const vec_dot_type = type_traits_cpu[type].vec_dot_type;
+
+    // broadcast factors
+    const int64_t r2 = ne12 / ne02;
+    const int64_t r3 = ne13 / ne03;
+
+    //printf("ir0_start = %6lld, ir0_end = %6lld, ir1_start = %6lld, ir1_end = %6lld\n", ir0_start, ir0_end, ir1_start, ir1_end);
+	// ir0_start =   1984, ir0_end =   2048, ir1_start =      0, ir1_end =      1
+
+    // threads with no work simply yield (not sure if it helps)
+    if (ir0_start >= ir0_end || ir1_start >= ir1_end) {
+        return;
+    }
+
+    const void * wdata = (src1->type == vec_dot_type) ? src1->data : params->wdata; // TB: modify for F32 handling
+    const size_t row_size = ggml_row_size(vec_dot_type, ne10);
+
+    assert(ne12 % ne02 == 0);
+    assert(ne13 % ne03 == 0);
+
+    // block-tiling attempt
+    const int64_t blck_0 = 16;
+    const int64_t blck_1 = 16;
+
+    const size_t src1_col_stride = row_size; // given that src1_cont is true
+    //printf("src1_col_stride = %6lld\n", src1_col_stride);
+
+    // attempt to reduce false-sharing (does not seem to make a difference)
+    // 16 * 2, accounting for mmla kernels
+    float tmp[32];
+
+    for (int64_t iir1 = ir1_start; iir1 < ir1_end; iir1 += blck_1) {
+        for (int64_t iir0 = ir0_start; iir0 < ir0_end; iir0 += blck_0) {
+            for (int64_t ir1 = iir1; ir1 < iir1 + blck_1 && ir1 < ir1_end; ir1 += num_rows_per_vec_dot) {
+                const int64_t i13 = (ir1 / (ne12 * ne1));
+                const int64_t i12 = (ir1 - i13 * ne12 * ne1) / ne1;
+                const int64_t i11 = (ir1 - i13 * ne12 * ne1 - i12 * ne1);
+
+                // broadcast src0 into src1
+                const int64_t i03 = i13 / r3;
+                const int64_t i02 = i12 / r2;
+
+                const int64_t i1 = i11;
+                const int64_t i2 = i12;
+                const int64_t i3 = i13;
+
+                const char * src0_row = (const char*)src0->data + (0 + i02 * nb02 + i03 * nb03);
+
+                // we know that src1_cont is true
+				const char * src1_col = (const char*)wdata + (i11 + i12 * ne11 + i13 * ne12 * ne11) * row_size;
+				float * dst_col = (float*)((char*)dst->data + (i1 * nb1 + i2 * nb2 + i3 * nb3));
+
+                for (int64_t ir0 = iir0; ir0 < iir0 + blck_0 && ir0 < ir0_end; ir0 += num_rows_per_vec_dot) {
+                    vec_dot(ne00, &tmp[ir0 - iir0], (num_rows_per_vec_dot > 1 ? 16 : 0), src0_row + ir0 * nb01, (num_rows_per_vec_dot > 1 ? nb01 : 0), src1_col, (num_rows_per_vec_dot > 1 ? src1_col_stride : 0), num_rows_per_vec_dot);
+                }
+
+                for (int cn = 0; cn < num_rows_per_vec_dot; ++cn) {
+                    memcpy(&dst_col[iir0 + cn * nb1 / nb0], tmp + (cn * 16), (MIN(iir0 + blck_0, ir0_end) - iir0) * sizeof(float));
+                }
+            }
+        }
+    }
+}
+
 static void ggml_compute_forward_mul_mat_orig(
         const struct ggml_compute_params * params,
               struct ggml_tensor * dst) {
@@ -7571,6 +7653,8 @@ static void ggml_compute_forward_mul_mat_orig(
 
     const bool src1_cont = ggml_is_contiguous(src1);
 
+	//if (ith == 0) printf("ggml_compute_forward_mul_mat_orig GGML_USE_LLAMAFILE src1_cont\n");
+	
     if (src1_cont) {
         for (int64_t i13 = 0; i13 < ne13; i13++)
             for (int64_t i12 = 0; i12 < ne12; i12++)
@@ -7639,6 +7723,8 @@ UseGgmlGemm1:;
     if (src1->type != vec_dot_type) {
         const void* wdata = (src1->type == vec_dot_type) ? src1->data : params->wdata;
         const size_t row_size = ggml_row_size(vec_dot_type, ne10);
+
+		//if (ith == 0) printf("ggml_compute_forward_mul_mat_orig GGML_USE_LLAMAFILE src1->type != vec_dot_type\n");
 
         for (int64_t i13 = 0; i13 < ne13; i13++)
             for (int64_t i12 = 0; i12 < ne12; i12++)
@@ -7739,13 +7825,13 @@ static void ggml_compute_forward_mul_mat_iq4_nl( // TB: IQ4_NL variant
     ggml_from_float_t        const from_float           = type_traits_cpu[vec_dot_type].from_float;
     int64_t                  const vec_dot_num_rows     = type_traits_cpu[src0->type].nrows;
 	
-	// TB: restructure for LUT
     if (ith == 0) {
 		//printf("ggml_compute_forward_mul_mat_iq4_nl type %s, %s\n", ggml_type_name(src0->type), ggml_type_name(src1->type));
 		//dummyPrint();
 	}
-	
-    if (src1->type != vec_dot_type) {
+
+	// TB: cope with src1-> type F32 below, skip here 
+    if (src1->type != vec_dot_type) { 
         char * wdata = params->wdata;
 
         const size_t nbw0 = ggml_type_size(vec_dot_type);
@@ -7753,6 +7839,8 @@ static void ggml_compute_forward_mul_mat_iq4_nl( // TB: IQ4_NL variant
         const size_t nbw2 = nbw1*ne11;
         const size_t nbw3 = nbw2*ne12;
 
+		//printf("ggml_compute_forward_mul_mat_iq4_nl type %s, %s\n", ggml_type_name(src1->type), ggml_type_name(vec_dot_type));
+		
         assert(params->wsize >= ne13*nbw3);
         GGML_ASSERT(src1->type == GGML_TYPE_F32);
 
@@ -7781,7 +7869,7 @@ static void ggml_compute_forward_mul_mat_iq4_nl( // TB: IQ4_NL variant
         }
     #endif
     }
-
+	
     if (ith == 0) {
         // Every thread starts at ith, so the first unprocessed chunk is nth.  This save a bit of coordination right at the start.
         atomic_store_explicit(&params->threadpool->current_chunk, nth, memory_order_relaxed);
@@ -7831,19 +7919,11 @@ static void ggml_compute_forward_mul_mat_iq4_nl( // TB: IQ4_NL variant
 
         const int64_t ir0_start = dr0 * ith0;
         const int64_t ir0_end = MIN(ir0_start + dr0, nr0);
-
         const int64_t ir1_start = dr1 * ith1;
         const int64_t ir1_end = MIN(ir1_start + dr1, nr1);
 
-        // dot kernels can handle 1 row and col at a time, but mmla kernels can process 2 rows and cols
-        int64_t num_rows_per_vec_dot = vec_dot_num_rows;
-
-        // these checks are needed to avoid crossing dim1 boundaries
-        // can be optimized, but the logic would become more complicated, so keeping it like this for simplicity
-        if ((nr0 % 2 != 0) || (ne11 % 2 != 0) || ((ir0_end - ir0_start) % 2 != 0) || ((ir1_end - ir1_start) % 2 != 0)) {
-            num_rows_per_vec_dot = 1;
-        }
-        ggml_compute_forward_mul_mat_one_chunk(params, dst, src0->type, num_rows_per_vec_dot, ir0_start, ir0_end, ir1_start, ir1_end);
+        int64_t num_rows_per_vec_dot = 1; // TB: TODO
+        ggml_compute_forward_mul_mat_one_chunk_IQ4_NL_F32(params, dst, src0->type, num_rows_per_vec_dot, ir0_start, ir0_end, ir1_start, ir1_end);
 
         if (nth >= nchunk0 * nchunk1) {
             break;
