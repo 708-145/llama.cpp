@@ -7559,18 +7559,14 @@ static void ggml_compute_forward_mul_mat_one_chunk_IQ4_NL_F32( // TB:
         return;
     }
 
-    const void * wdata = (src1->type == vec_dot_type) ? src1->data : params->wdata; // TB: modify for F32 handling
-    const size_t row_size = ggml_row_size(vec_dot_type, ne10);
+	const void * wdata = (src1->type == vec_dot_type) ? src1->data : params->wdata; // TB: modify for F32 handling
+	const size_t row_size = ggml_row_size(vec_dot_type, ne10);
 
-    assert(ne12 % ne02 == 0);
-    assert(ne13 % ne03 == 0);
+	assert(ne12 % ne02 == 0);
+	assert(ne13 % ne03 == 0);
 
-    const size_t src1_col_stride = row_size; // given that src1_cont is true
-    //printf("src1_col_stride = %6lld\n", src1_col_stride);
-
-    // attempt to reduce false-sharing (does not seem to make a difference)
-    // 16 * 2, accounting for mmla kernels
-    float tmp[32];
+	const size_t src1_col_stride = row_size; // given that src1_cont is true
+	//printf("src1_col_stride = %6lld\n", src1_col_stride);
 
 	for (int64_t ir1 = ir1_start; ir1 < ir1_end; ir1 += num_rows_per_vec_dot) {
 		const int64_t i13 = (ir1 / (ne12 * ne1));
@@ -7592,13 +7588,14 @@ static void ggml_compute_forward_mul_mat_one_chunk_IQ4_NL_F32( // TB:
 		float * dst_col = (float*)((char*)dst->data + (i1 * nb1 + i2 * nb2 + i3 * nb3));
 
 		for (int64_t ir0 = ir0_start; ir0 < ir0_end; ir0 += num_rows_per_vec_dot) {
-		    vec_dot(ne00, &tmp[0], 0, src0_row + ir0 * nb01, (num_rows_per_vec_dot > 1 ? nb01 : 0), src1_col, (num_rows_per_vec_dot > 1 ? src1_col_stride : 0), num_rows_per_vec_dot);
-		
+		  float tmp;
+		  vec_dot(ne00, &tmp, 0, src0_row + ir0 * nb01, (num_rows_per_vec_dot > 1 ? nb01 : 0), src1_col, (num_rows_per_vec_dot > 1 ? src1_col_stride : 0), num_rows_per_vec_dot);
+
 			for (int cn = 0; cn < num_rows_per_vec_dot; ++cn) {
-				memcpy(&dst_col[ir0 + cn * nb1 / nb0], tmp + 0,  sizeof(float));
+				memcpy(&dst_col[ir0 + cn * nb1 / nb0], &tmp, sizeof(float));
 			}
 		}
-    }
+	}
 
 }
 
