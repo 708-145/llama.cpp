@@ -7565,10 +7565,6 @@ static void ggml_compute_forward_mul_mat_one_chunk_IQ4_NL_F32( // TB:
     assert(ne12 % ne02 == 0);
     assert(ne13 % ne03 == 0);
 
-    // block-tiling attempt
-    const int64_t blck_0 = 16;
-    const int64_t blck_1 = 16;
-
     const size_t src1_col_stride = row_size; // given that src1_cont is true
     //printf("src1_col_stride = %6lld\n", src1_col_stride);
 
@@ -7576,37 +7572,34 @@ static void ggml_compute_forward_mul_mat_one_chunk_IQ4_NL_F32( // TB:
     // 16 * 2, accounting for mmla kernels
     float tmp[32];
 
-    for (int64_t iir1 = ir1_start; iir1 < ir1_end; iir1 += blck_1) {
-        for (int64_t iir0 = ir0_start; iir0 < ir0_end; iir0 += blck_0) {
-            for (int64_t ir1 = iir1; ir1 < iir1 + blck_1 && ir1 < ir1_end; ir1 += num_rows_per_vec_dot) {
-                const int64_t i13 = (ir1 / (ne12 * ne1));
-                const int64_t i12 = (ir1 - i13 * ne12 * ne1) / ne1;
-                const int64_t i11 = (ir1 - i13 * ne12 * ne1 - i12 * ne1);
+	for (int64_t ir1 = ir1_start; ir1 < ir1_end; ir1 += num_rows_per_vec_dot) {
+		const int64_t i13 = (ir1 / (ne12 * ne1));
+		const int64_t i12 = (ir1 - i13 * ne12 * ne1) / ne1;
+		const int64_t i11 = (ir1 - i13 * ne12 * ne1 - i12 * ne1);
 
-                // broadcast src0 into src1
-                const int64_t i03 = i13 / r3;
-                const int64_t i02 = i12 / r2;
+		// broadcast src0 into src1
+		const int64_t i03 = i13 / r3;
+		const int64_t i02 = i12 / r2;
 
-                const int64_t i1 = i11;
-                const int64_t i2 = i12;
-                const int64_t i3 = i13;
+		const int64_t i1 = i11;
+		const int64_t i2 = i12;
+		const int64_t i3 = i13;
 
-                const char * src0_row = (const char*)src0->data + (0 + i02 * nb02 + i03 * nb03);
+		const char * src0_row = (const char*)src0->data + (0 + i02 * nb02 + i03 * nb03);
 
-                // we know that src1_cont is true
-				const char * src1_col = (const char*)wdata + (i11 + i12 * ne11 + i13 * ne12 * ne11) * row_size;
-				float * dst_col = (float*)((char*)dst->data + (i1 * nb1 + i2 * nb2 + i3 * nb3));
+		// we know that src1_cont is true
+		const char * src1_col = (const char*)wdata + (i11 + i12 * ne11 + i13 * ne12 * ne11) * row_size;
+		float * dst_col = (float*)((char*)dst->data + (i1 * nb1 + i2 * nb2 + i3 * nb3));
 
-                for (int64_t ir0 = iir0; ir0 < iir0 + blck_0 && ir0 < ir0_end; ir0 += num_rows_per_vec_dot) {
-                    vec_dot(ne00, &tmp[ir0 - iir0], (num_rows_per_vec_dot > 1 ? 16 : 0), src0_row + ir0 * nb01, (num_rows_per_vec_dot > 1 ? nb01 : 0), src1_col, (num_rows_per_vec_dot > 1 ? src1_col_stride : 0), num_rows_per_vec_dot);
-                }
-
-                for (int cn = 0; cn < num_rows_per_vec_dot; ++cn) {
-                    memcpy(&dst_col[iir0 + cn * nb1 / nb0], tmp + (cn * 16), (MIN(iir0 + blck_0, ir0_end) - iir0) * sizeof(float));
-                }
-            }
-        }
+		for (int64_t ir0 = ir0_start; ir0 < ir0_end; ir0 += num_rows_per_vec_dot) {
+		    vec_dot(ne00, &tmp[0], 0, src0_row + ir0 * nb01, (num_rows_per_vec_dot > 1 ? nb01 : 0), src1_col, (num_rows_per_vec_dot > 1 ? src1_col_stride : 0), num_rows_per_vec_dot);
+		
+			for (int cn = 0; cn < num_rows_per_vec_dot; ++cn) {
+				memcpy(&dst_col[ir0 + cn * nb1 / nb0], tmp + 0,  sizeof(float));
+			}
+		}
     }
+
 }
 
 static void ggml_compute_forward_mul_mat_orig(
