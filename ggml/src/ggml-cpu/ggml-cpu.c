@@ -7588,8 +7588,8 @@ static void ggml_compute_forward_mul_mat_one_chunk_IQ4_NL_F32( // TB:
 		float * dst_col = (float*)((char*)dst->data + (i1 * nb1 + i2 * nb2 + i3 * nb3));
 
 		for (int64_t ir0 = ir0_start; ir0 < ir0_end; ir0 += num_rows_per_vec_dot) {
-		  float tmp;
-		  vec_dot(ne00, &tmp, 0, src0_row + ir0 * nb01, (num_rows_per_vec_dot > 1 ? nb01 : 0), src1_col, (num_rows_per_vec_dot > 1 ? src1_col_stride : 0), num_rows_per_vec_dot);
+		    float tmp;
+		    vec_dot(ne00, &tmp, 0, src0_row + ir0 * nb01, (num_rows_per_vec_dot > 1 ? nb01 : 0), src1_col, (num_rows_per_vec_dot > 1 ? src1_col_stride : 0), num_rows_per_vec_dot);
 
 			for (int cn = 0; cn < num_rows_per_vec_dot; ++cn) {
 				memcpy(&dst_col[ir0 + cn * nb1 / nb0], &tmp, sizeof(float));
@@ -7813,7 +7813,7 @@ static void ggml_compute_forward_mul_mat_iq4_nl( // TB: IQ4_NL variant
 
     enum ggml_type           const vec_dot_type         = type_traits_cpu[src0->type].vec_dot_type;
     ggml_from_float_t        const from_float           = type_traits_cpu[vec_dot_type].from_float;
-    int64_t                  const vec_dot_num_rows     = type_traits_cpu[src0->type].nrows;
+    //int64_t                  const vec_dot_num_rows     = type_traits_cpu[src0->type].nrows;
 	
     if (ith == 0) {
 		//printf("ggml_compute_forward_mul_mat_iq4_nl type %s, %s\n", ggml_type_name(src0->type), ggml_type_name(src1->type));
