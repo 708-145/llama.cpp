@@ -7906,6 +7906,7 @@ static void ggml_compute_forward_mul_mat_iq4_nl( // TB: IQ4_NL variant
 
 	// print dimension variables:
 	printf("dimension: ne0 %ld, ne1 %ld, ne2 %ld, ne3 %ld; nchunk0 %ld, nchunk1 %ld\n", ne0, ne1, ne2, ne3, nchunk0, nchunk1);
+	printf("dimension: %ld, %ld, %ld, %ld; %ld, %ld\n", nb00, nb01, nb10, nb11, nb0, nb1);
 	printf("   chunks: dr0 %ld, dr1 %ld, nr0 %ld, nr1 %ld\n", dr0, dr1, nr0, nr1);
 
     while (current_chunk < nchunk0 * nchunk1) {
