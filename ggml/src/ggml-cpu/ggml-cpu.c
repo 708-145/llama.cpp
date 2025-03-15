@@ -12,6 +12,7 @@
 #include "ggml.h"
 
 #include "bpp.h"
+#include "bpp.c"
 
 #if defined(_MSC_VER) || defined(__MINGW32__)
 #include <malloc.h> // using malloc.h with MSC/MINGW
@@ -7823,6 +7824,7 @@ static void ggml_compute_forward_mul_mat_iq4_nl( // TB: IQ4_NL variant
 	const int64_t to_row   = MIN(from_row+num_rows_per_chunk,ne0)-1;
 	printf("thread %d computes row %ld to %ld; %ld of %ld\n", ith, from_row, to_row, to_row-from_row+1, num_rows_per_chunk);
 	//bpp_IQ4NL_F32_vecmul(params, dst, from_row, to_row);
+	dummyPrint();
 
 
 	// old code starts here:

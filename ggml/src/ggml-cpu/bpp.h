@@ -12,7 +12,7 @@
  * @param end_index The ending index for the range of indices to process.
  * @param thread_sum The vector where the accumulated sum of LUT values will be stored.
  */
-void performLUTLookup(const uint16_t* indices_vector, const float* random_LUT, size_t start_index, size_t end_index, float* thread_sum, size_t vector_size);
+void performLUTLookup(const uint16_t* indices_vector, const float* random_LUT, size_t start_index, size_t end_index, float* thread_sum);
 
 // Dummy print function declaration
 void dummyPrint(void);
