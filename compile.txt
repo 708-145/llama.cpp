@@ -1,3 +1,4 @@
+cp /home/tobiulla/funstreams/AI/bpp/bpp.h ggml/src/ggml-cpu/
 cmake --build build --config Release -j8 --target llama-cli
 #./llama-cli -p "How to brew beer?" -m ggml-model-IQ4_NL.gguf
  
