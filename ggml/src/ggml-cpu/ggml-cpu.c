@@ -7528,7 +7528,7 @@ static void ggml_compute_forward_mul_mat_one_chunk(
     }
 }
 
-static void ggml_compute_forward_mul_mat_orig(
+static void ggml_compute_forward_mul_mat(
         const struct ggml_compute_params * params,
               struct ggml_tensor * dst) {
 
@@ -7539,6 +7539,34 @@ static void ggml_compute_forward_mul_mat_orig(
 
     const int ith = params->ith;
     const int nth = params->nth;
+
+	// ###################
+	// # New BPP attempts:
+	// ###################
+	// 
+	// print dimension variables:
+	// printf("dimension: rows %ld, cols %ld, Byte per row %ld\n", ne0, nb01*16/9, nb01);
+	// ne0  = IQ4NL rows == result vector length
+	// nb01*8/4.5 = IQ4NL columns
+	// nb01 = Bytes per IQ4NL row (4.5bpw, 864 for 1536, 2304 for 4096)
+	
+	// assign chunks to thread, split by output vector only despite being more LUT effort
+	const int64_t vecsize = ne0;
+	const int64_t num_rows_per_chunk = ne0 / nth;
+	const int64_t from_row = ith * num_rows_per_chunk;
+	const int64_t to_row   = MIN(from_row+num_rows_per_chunk,ne0)-1;
+	const int64_t batchsize = ne11;
+	//if (batchsize != 1 ) printf("bpp_IQ4NL_F32_vecmul batchsize error !!!!!!!!!!!\n");
+	//printf("thread %d computes row %ld to %ld; %ld of %ld\n", ith, from_row, to_row, to_row-from_row+1, num_rows_per_chunk);
+	//printf("bpp_IQ4NL_F32_vecmul: src1 type %d\n", src1-> type);
+	if ( (src0->type == 20) && (src1->type == 0) && (batchsize == 1) ) {
+		printf("vecsize %ld computed with nb1 %ld, nb2 %ld, nb3 %ld; %ld\n", vecsize, nb1, nb2, nb3, (ne12 * ne1));
+		bpp_IQ4NL_F32_vecmul_simple(src0->data, src1->data, dst->data, vecsize, from_row, to_row);
+		return;
+	}
+	//dummyPrint();
+
+
 
     enum ggml_type           const vec_dot_type         = type_traits_cpu[src0->type].vec_dot_type;
     ggml_from_float_t        const from_float           = type_traits_cpu[vec_dot_type].from_float;
@@ -7576,7 +7604,8 @@ static void ggml_compute_forward_mul_mat_orig(
 	
     if (src1_cont) {
         for (int64_t i13 = 0; i13 < ne13; i13++)
-            for (int64_t i12 = 0; i12 < ne12; i12++)
+            for (int64_t i12 = 0; i12 < ne12; i12++) {
+				//printf("ggml_compute_forward_mul_mat_orig llamafile_sgemm m %ld, n %ld, k %ld\n", ne01, ne11, ne00/ggml_blck_size(src0->type));
                 if (!llamafile_sgemm(params,
                                      ne01, ne11, ne00/ggml_blck_size(src0->type),
                                      (const char *)src0->data + i12/r2*nb02 + i13/r3*nb03,
@@ -7589,6 +7618,7 @@ static void ggml_compute_forward_mul_mat_orig(
                                      src1->type,
                                      dst->type))
                     goto UseGgmlGemm1;
+			}
         return;
     }
 UseGgmlGemm1:;
@@ -7726,69 +7756,6 @@ UseGgmlGemm2:;
 
         current_chunk = atomic_fetch_add_explicit(&params->threadpool->current_chunk, 1, memory_order_relaxed);
     }
-}
-
-static void ggml_compute_forward_mul_mat_iq4_nl( // TB: IQ4_NL variant
-        const struct ggml_compute_params * params,
-              struct ggml_tensor * dst) {
-
-    const struct ggml_tensor * src0 = dst->src[0];
-    const struct ggml_tensor * src1 = dst->src[1];
-
-    GGML_TENSOR_BINARY_OP_LOCALS
-
-    const int ith = params->ith;
-    const int nth = params->nth;
-
-	// print dimension variables:
-	//printf("dimension: rows %ld, cols %ld, Byte per row %ld\n", ne0, nb01*16/9, nb01);
-	// ne0  = IQ4NL rows == result vector length
-	// nb01*8/4.5 = IQ4NL columns
-	// nb01 = Bytes per IQ4NL row (4.5bpw, 864 for 1536, 2304 for 4096)
-	
-	// assign chunks to thread, split by output vector only despite being more LUT effort
-	const int64_t vecsize = ne0;
-	const int64_t num_rows_per_chunk = ne0 / nth;
-	const int64_t from_row = ith * num_rows_per_chunk;
-	const int64_t to_row   = MIN(from_row+num_rows_per_chunk,ne0)-1;
-	//printf("thread %d computes row %ld to %ld; %ld of %ld\n", ith, from_row, to_row, to_row-from_row+1, num_rows_per_chunk);
-	bpp_IQ4NL_F32_vecmul(src0->data, src1->data, dst->data, vecsize, from_row, to_row);
-	//dummyPrint();
-
-} // ggml_compute_forward_mul_mat_iq4_nl
-
-static void ggml_compute_forward_mul_mat( // switch here between quantization types
-        const struct ggml_compute_params * params,
-              struct ggml_tensor * dst) {
-
-    const struct ggml_tensor * src0 = dst->src[0];
-    const struct ggml_tensor * src1 = dst->src[1];
-    GGML_TENSOR_BINARY_OP_LOCALS
-
-    //const int ith = params->ith;
-    //if (ith == 0) printf("ggml_compute_forward_mul_mat type %s, %s\n", ggml_type_name(src0->type), ggml_type_name(src1->type));
-
-    GGML_ASSERT(ne0 == ne01);
-    GGML_ASSERT(ne1 == ne11);
-    GGML_ASSERT(ne2 == ne12);
-    GGML_ASSERT(ne3 == ne13);
-
-    // we don't support permuted src0 or src1
-    GGML_ASSERT(nb00 == ggml_type_size(src0->type));
-    GGML_ASSERT(nb10 == ggml_type_size(src1->type));
-
-    // dst cannot be transposed or permuted
-    GGML_ASSERT(nb0 == sizeof(float));
-    GGML_ASSERT(nb0 <= nb1);
-    GGML_ASSERT(nb1 <= nb2);
-    GGML_ASSERT(nb2 <= nb3);
-
-	if (src0->type == 20) {
-		ggml_compute_forward_mul_mat_iq4_nl(params, dst);
-	} else {
-		ggml_compute_forward_mul_mat_orig(params, dst);
-	}
-
 }
 
 // ggml_compute_forward_mul_mat_id

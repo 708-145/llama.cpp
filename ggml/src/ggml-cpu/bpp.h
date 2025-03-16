@@ -15,6 +15,7 @@
 void performLUTLookup(const uint16_t* indices_vector, const float* random_LUT, size_t start_index, size_t end_index, float* thread_sum);
 
 void bpp_IQ4NL_F32_vecmul(const block_iq4_nl* iq4nl, float* invec, float* outvec, int vecsize, int from_row, int to_row);
+void bpp_IQ4NL_F32_vecmul_simple(const block_iq4_nl* iq4nl, float* invec, float* outvec, int vecsize, int from_row, int to_row);
 
 // Dummy print function declaration
 void dummyPrint(void);
