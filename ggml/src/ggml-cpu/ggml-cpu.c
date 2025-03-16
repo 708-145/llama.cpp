@@ -7555,13 +7555,14 @@ static void ggml_compute_forward_mul_mat(
 	const int64_t num_rows_per_chunk = ne0 / nth;
 	const int64_t from_row = ith * num_rows_per_chunk;
 	const int64_t to_row   = MIN(from_row+num_rows_per_chunk,ne0)-1;
+	const int64_t invecsize = nb01*16/9;
 	const int64_t batchsize = ne11;
 	//if (batchsize != 1 ) printf("bpp_IQ4NL_F32_vecmul batchsize error !!!!!!!!!!!\n");
 	//printf("thread %d computes row %ld to %ld; %ld of %ld\n", ith, from_row, to_row, to_row-from_row+1, num_rows_per_chunk);
 	//printf("bpp_IQ4NL_F32_vecmul: src1 type %d\n", src1-> type);
 	if ( (src0->type == 20) && (src1->type == 0) && (batchsize == 1) ) {
-		printf("vecsize %ld computed with nb1 %ld, nb2 %ld, nb3 %ld; %ld\n", vecsize, nb1, nb2, nb3, (ne12 * ne1));
-		bpp_IQ4NL_F32_vecmul_simple(src0->data, src1->data, dst->data, vecsize, from_row, to_row);
+		// printf("dimension: rows %ld, cols %ld, Byte per row %ld\n", vecsize, invecsize, nb01);
+		bpp_IQ4NL_F32_vecmul(src0->data, src1->data, dst->data, invecsize, from_row, to_row);
 		return;
 	}
 	//dummyPrint();
