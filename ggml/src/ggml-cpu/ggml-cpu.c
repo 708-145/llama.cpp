@@ -11,6 +11,8 @@
 #include "ggml-threading.h"
 #include "ggml.h"
 
+#include "bpp.c"
+
 #if defined(_MSC_VER) || defined(__MINGW32__)
 #include <malloc.h> // using malloc.h with MSC/MINGW
 #elif !defined(__FreeBSD__) && !defined(__NetBSD__) && !defined(__OpenBSD__)
@@ -8651,6 +8653,33 @@ static void ggml_compute_forward_mul_mat(
 
     const int ith = params->ith;
     const int nth = params->nth;
+
+	// ###################
+	// # New BPP attempts:
+	// ###################
+	// 
+	// print dimension variables:
+	// printf("dimension: rows %ld, cols %ld, Byte per row %ld\n", ne0, nb01*16/9, nb01);
+	// ne0  = IQ4NL rows == result vector length
+	// nb01*8/4.5 = IQ4NL columns
+	// nb01 = Bytes per IQ4NL row (4.5bpw, 864 for 1536, 2304 for 4096)
+
+	// assign chunks to thread, split by output vector only despite being more LUT effort
+	//const int64_t vecsize = ne0;
+	const int64_t num_rows_per_chunk = ne0 / nth;
+	const int64_t from_row = ith * num_rows_per_chunk;
+	const int64_t to_row   = MIN(from_row+num_rows_per_chunk,ne0)-1;
+	const int64_t invecsize = nb01*16/9;
+	const int64_t batchsize = ne11;
+	//if (batchsize != 1 ) printf("bpp_IQ4NL_F32_vecmul batchsize error !!!!!!!!!!!\n");
+	//printf("thread %d computes row %ld to %ld; %ld of %ld\n", ith, from_row, to_row, to_row-from_row+1, num_rows_per_chunk);
+	//printf("bpp_IQ4NL_F32_vecmul: src1 type %d\n", src1-> type);
+	if ( (src0->type == 20) && (src1->type == 0) && (batchsize == 1) ) {
+		// printf("dimension: rows %ld, cols %ld, Byte per row %ld\n", vecsize, invecsize, nb01);
+		bpp_IQ4NL_F32_vecmul(src0->data, src1->data, dst->data, invecsize, from_row, to_row);
+		return;
+	}
+	//dummyPrint();
 
     enum ggml_type           const vec_dot_type         = type_traits_cpu[src0->type].vec_dot_type;
     ggml_from_float_t        const from_float           = type_traits_cpu[vec_dot_type].from_float;
