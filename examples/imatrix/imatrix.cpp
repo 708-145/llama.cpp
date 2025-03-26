@@ -664,6 +664,8 @@ int main(int argc, char ** argv) {
     return 0;
 }
 
+// time ./llama-imatrix -m ~/funstreams/ibm-granite_granite-3.2-2b-instruct-IQ4_NL.gguf -f ~/funstreams/fox.txt -o imatrix.dat --chunk 1 --verbosity 1
+
 /*
 For Regular Matrix Multiplication (GGML_OP_MUL_MAT): The code iterates through each row of the second matrix. The loop calculates the e.values[j] += x[j]*x[j]; This accumulates a value for each index j which are the values in the column of the first matrix. Then, the count variable e.counts[j] is incremented, which contains the number of times the column was processed. This means for each column in the first matrix, the code saves one value.
 
