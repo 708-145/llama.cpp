@@ -663,3 +663,9 @@ int main(int argc, char ** argv) {
 
     return 0;
 }
+
+/*
+For Regular Matrix Multiplication (GGML_OP_MUL_MAT): The code iterates through each row of the second matrix. The loop calculates the e.values[j] += x[j]*x[j]; This accumulates a value for each index j which are the values in the column of the first matrix. Then, the count variable e.counts[j] is incremented, which contains the number of times the column was processed. This means for each column in the first matrix, the code saves one value.
+
+For Multi-Expert Matrix Multiplication (GGML_OP_MUL_MAT_ID): In the multi-expert case the size of the first matrix src0 is src0->ne[0] x src0->ne[1] x src0->ne[2]. The code iterates over all experts and computes the sums per column. For each expert, there are src1->ne[0] column and src1->ne[2] rows in the second matrix. Hence there is one value per column.
+*/
