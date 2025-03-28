@@ -806,7 +806,6 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
                 } else {
                     if (it->second.size() == (size_t)tensor->ne[0]*tensor->ne[2]) {
                         imatrix = it->second.data();
-						//printf("### Found imatrix data for %s of size %ld ###\n", tensor->name, it->second.size());
 						float sum = 0, minVal = *imatrix, maxVal = *imatrix, curVal;
 						for(size_t i=0; i < it->second.size(); ++i) {
 							curVal = *imatrix++;
@@ -814,18 +813,18 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
 							minVal = curVal < minVal ? curVal : minVal;
 							maxVal = curVal > maxVal ? curVal : maxVal;
 						}
-						//float avgVal = sum / it->second.size(); 
-						//printf("min=%f, max=%f, avg=%f\n", minVal, maxVal, avgVal);
+						//printf("min=%f, max=%f, avg=%f\n", minVal, maxVal, sum / it->second.size());
 						printf("## max=%.2f ##", maxVal);
 						// SmartQuant: set new_type based on weight:	GGML_TYPE_IQ1_S if max <1, GGML_TYPE_IQ4_NL if max <10, GGML_TYPE_Q6_K else
-						if      (maxVal < 1) new_type = GGML_TYPE_TQ1_0;
-						else if (maxVal < 2) new_type = GGML_TYPE_TQ2_0;
+						//if (maxVal > 1000) new_type = GGML_TYPE_Q8_0; // fall back to safe quant for high importance values
+						//if      (maxVal < 1) new_type = GGML_TYPE_Q6_K;
+						//else if (maxVal < 2) new_type = GGML_TYPE_TQ2_0;
 						//else if (maxVal < 3) new_type = GGML_TYPE_IQ2_XXS;
 						//else if (maxVal < 7) new_type = GGML_TYPE_IQ2_XS;
 						//else if (maxVal <13) new_type = GGML_TYPE_IQ3_XXS;
 						//else if (maxVal <20) new_type = GGML_TYPE_IQ3_S;
 						//else if (maxVal <50) new_type = GGML_TYPE_IQ4_NL;
-						else                 new_type = GGML_TYPE_Q6_K;
+						//else                 new_type = GGML_TYPE_Q6_K;
 						printf("selected type %s; ", ggml_type_name(new_type));
                     } else {
                         LLAMA_LOG_INFO("\n====== %s: imatrix size %d is different from tensor size %d for %s\n", __func__,
