@@ -123,10 +123,12 @@ endif()
 option(GGML_LASX             "ggml: enable lasx"             ON)
 option(GGML_LSX              "ggml: enable lsx"              ON)
 option(GGML_RVV              "ggml: enable rvv"              ON)
+option(GGML_RV_ZFH           "ggml: enable riscv zfh"        OFF)
 option(GGML_VXE              "ggml: enable vxe"              ON)
 
 option(GGML_CPU_ALL_VARIANTS "ggml: build all variants of the CPU backend (requires GGML_BACKEND_DL)" OFF)
-set(GGML_CPU_ARM_ARCH "" CACHE STRING "ggml: CPU architecture for ARM")
+set(GGML_CPU_ARM_ARCH        "" CACHE STRING "ggml: CPU architecture for ARM")
+set(GGML_CPU_POWERPC_CPUTYPE "" CACHE STRING "ggml: CPU type for PowerPC")
 
 
 if (WIN32)
@@ -186,6 +188,7 @@ option(GGML_OPENMP                          "ggml: use OpenMP"                  
 option(GGML_RPC                             "ggml: use RPC"                                   OFF)
 option(GGML_SYCL                            "ggml: use SYCL"                                  OFF)
 option(GGML_SYCL_F16                        "ggml: use 16 bit floats for sycl calculations"   OFF)
+option(GGML_SYCL_GRAPH                      "ggml: enable graphs in the SYCL backend"         ON)
 set   (GGML_SYCL_TARGET "INTEL" CACHE STRING
                                             "ggml: sycl target device")
 set   (GGML_SYCL_DEVICE_ARCH "" CACHE STRING
