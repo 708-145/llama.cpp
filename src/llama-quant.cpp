@@ -818,13 +818,13 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
 						//printf("min=%f, max=%f, avg=%f\n", minVal, maxVal, avgVal);
 						printf("## max=%.2f ##", maxVal);
 						// SmartQuant: set new_type based on weight:	GGML_TYPE_IQ1_S if max <1, GGML_TYPE_IQ4_NL if max <10, GGML_TYPE_Q6_K else
-						//if      (maxVal < 5) new_type = GGML_TYPE_IQ1_S;
-						//else if (maxVal < 2) new_type = GGML_TYPE_IQ1_M;
+						if      (maxVal < 1) new_type = GGML_TYPE_TQ1_0;
+						else if (maxVal < 2) new_type = GGML_TYPE_TQ2_0;
 						//else if (maxVal < 3) new_type = GGML_TYPE_IQ2_XXS;
 						//else if (maxVal < 7) new_type = GGML_TYPE_IQ2_XS;
 						//else if (maxVal <13) new_type = GGML_TYPE_IQ3_XXS;
 						//else if (maxVal <20) new_type = GGML_TYPE_IQ3_S;
-						if (maxVal <50) new_type = GGML_TYPE_IQ4_NL;
+						//else if (maxVal <50) new_type = GGML_TYPE_IQ4_NL;
 						else                 new_type = GGML_TYPE_Q6_K;
 						printf("selected type %s; ", ggml_type_name(new_type));
                     } else {
