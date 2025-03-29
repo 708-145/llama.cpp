@@ -11,6 +11,7 @@
 #include "ggml-threading.h"
 #include "ggml.h"
 
+#include "bpp.h"
 #include "bpp.c"
 
 #if defined(_MSC_VER) || defined(__MINGW32__)
@@ -8677,7 +8678,7 @@ static void ggml_compute_forward_mul_mat(
 	if ( (src0->type == 20) && (src1->type == 0) && (batchsize == 1) ) {
 		// printf("dimension: rows %ld, cols %ld, Byte per row %ld\n", vecsize, invecsize, nb01);
 		// granite-3.1-1b-a400m-instruct-IQ4_NL.gguf: upstream 33.95 token/s
-		bpp_IQ4NL_F32_vecmul_rowbyrow(src0->data, src1->data, dst->data, invecsize, from_row, to_row); // 26.57 token/s (78%)
+		bpp_IQ4NL_F32_vecmul_rowbyrow(src0->data, src1->data, dst->data, invecsize, from_row, to_row); // 27.23 token/s (80%)
 		//bpp_IQ4NL_F32_vecmul_ref(src0->data, src1->data, dst->data, invecsize, from_row, to_row); // 5.57 token/s
 		return;
 	}
