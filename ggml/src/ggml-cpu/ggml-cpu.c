@@ -8675,6 +8675,13 @@ static void ggml_compute_forward_mul_mat(
 		//bpp_IQ4NL_F32_vecmul_ref(src0->data, src1->data, dst->data, invecsize, from_row, to_row); // 5.57 token/s
 		return;
 	}
+	if ( (src0->type == GGML_TYPE_IQ4_XS) && (src1->type == 0) && (batchsize == 1) ) {
+		invecsize = nb01*16/9; // TODO: check for this TYPE
+		//printf("IQ4_XS dimension:  rows %ld, cols %ld, Byte per row %ld\n", ne0, invecsize, nb01);
+		//./llama-cli -p "How to brew beer?" -t 8 -m ~/funstreams/granite-3.1-1b-a400m-instruct-IQ4_XS.gguf -> upstream 31.62 token/s
+		bpp_IQ4XS_F32_vecmul(src0->data, src1->data, dst->data, invecsize, from_row, to_row); // 26.68 token/s (84%)
+		return;
+	}
 	if ( (src0->type == GGML_TYPE_IQ2_XXS) && (src1->type == 0) && (batchsize == 1) ) {
 		invecsize = nb01*16/9; // TODO: check for this TYPE
 		//printf("IQ2_XXS dimension:  rows %ld, cols %ld, Byte per row %ld\n", ne0, invecsize, nb01);
