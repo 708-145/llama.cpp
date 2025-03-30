@@ -8663,8 +8663,8 @@ static void ggml_compute_forward_mul_mat(
 	const int64_t num_rows_per_chunk = ne0 / nth;
 	const int64_t from_row = ith * num_rows_per_chunk;
 	const int64_t to_row   = MIN(from_row+num_rows_per_chunk,ne0)-1;
-	const int64_t invecsize;
 	const int64_t batchsize = ne11;
+	int64_t invecsize;
 
 	if ( (src0->type == GGML_TYPE_IQ4_NL) && (src1->type == 0) && (batchsize == 1) ) {
 		invecsize = nb01*16/9;
@@ -8678,7 +8678,8 @@ static void ggml_compute_forward_mul_mat(
 	if ( (src0->type == GGML_TYPE_IQ2_XXS) && (src1->type == 0) && (batchsize == 1) ) {
 		invecsize = nb01*16/9; // TODO: check for this TYPE
 		//printf("IQ2_XXS dimension:  rows %ld, cols %ld, Byte per row %ld\n", ne0, invecsize, nb01);
-		bpp_IQ2XXS_F32_vecmul_int32(src0->data, src1->data, dst->data, invecsize, from_row, to_row); // __ token/s ()
+		//./llama-cli -p "How are you today?" -t 8 -m ~/funstreams/granite-3.1-1b-a400m-instruct-IQ2_XXS.gguf -> upstream 42.18 token/s
+		bpp_IQ2XXS_F32_vecmul_int32(src0->data, src1->data, dst->data, invecsize, from_row, to_row); // 42.58 token/s ()
 		return;
 	}
 
