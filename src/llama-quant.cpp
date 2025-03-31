@@ -830,14 +830,9 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
 						printf("## max=%.2f ##", maxVal);
 						// SmartQuant: set new_type based on weight:	GGML_TYPE_IQ1_S if max <1, GGML_TYPE_IQ4_NL if max <10, GGML_TYPE_Q6_K else
 						//if (maxVal > 1000) new_type = GGML_TYPE_Q8_0; // fall back to safe quant for high importance values
-						if      (maxVal < 1) new_type = GGML_TYPE_IQ1_S;
-						else if (maxVal < 2) new_type = GGML_TYPE_IQ2_S;
-						else if (maxVal < 4) new_type = GGML_TYPE_IQ2_XXS;
-						else if (maxVal < 10) new_type = GGML_TYPE_IQ2_XS;
-						else if (maxVal < 50) new_type = GGML_TYPE_IQ3_XXS;
-						else if (maxVal <200) new_type = GGML_TYPE_IQ3_S;
-						else if (maxVal <500) new_type = GGML_TYPE_IQ4_NL;
-						else                 new_type = GGML_TYPE_Q6_K;
+						if      (maxVal <  5) new_type = GGML_TYPE_IQ3_XXS;
+						else if (maxVal < 50) new_type = GGML_TYPE_IQ3_S;
+						else                  new_type = GGML_TYPE_IQ4_XS;
 						printf("selected type %s; ", ggml_type_name(new_type));
                     } else {
                         LLAMA_LOG_INFO("\n====== %s: imatrix size %d is different from tensor size %d for %s\n", __func__,
