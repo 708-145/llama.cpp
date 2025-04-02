@@ -840,8 +840,8 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
 						if (new_type == default_type) {
 							//new_type = GGML_TYPE_IQ3_S;
 							//if (variance <0.1) new_type = GGML_TYPE_IQ2_XS;
-							if ((variance <  1) & (maxVal<5)) new_type = GGML_TYPE_IQ3_XXS; // var6 + var7
-							if ((variance <0.2) & (maxVal<2)) new_type = GGML_TYPE_IQ2_S; // var7     todo: variance + absmax criteria
+							if ((variance <  1) & (maxVal<10)) new_type = GGML_TYPE_IQ3_XXS; // var6 + var7
+							if ((variance <0.2) & (maxVal< 2)) new_type = GGML_TYPE_IQ2_S;   // var7     todo: variance + absmax criteria
 							//if (variance <  5) new_type = GGML_TYPE_IQ3_S;
 							//if (variance < 50) new_type = GGML_TYPE_IQ4_XS;
 							//if (variance <200) new_type = GGML_TYPE_IQ4_NL;            
