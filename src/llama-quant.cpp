@@ -816,23 +816,35 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
                     if (it->second.size() == (size_t)tensor->ne[0]*tensor->ne[2]) {
                         imatrix = it->second.data();
 						auto tempMatrixCopy = it->second.data(); // Create a copy of 'imatrix'
-						float sum = 0, minVal = *tempMatrixCopy, maxVal = *tempMatrixCopy;
+						float minVal = *tempMatrixCopy, maxVal = *tempMatrixCopy;
 						const size_t matrixSize = it->second.size();
-
-						// Iterate through the copied array
+						float mean, variance;
+						float sum = 0.f, squaresSum = 0.f, m = static_cast<float>(matrixSize);
+						float curVal;
 						for (size_t i = 0; i < matrixSize; ++i) {
-						   const float curVal = *tempMatrixCopy++;
+						   curVal = *tempMatrixCopy++;
 						   sum += curVal;
 						   minVal = curVal < minVal ? curVal : minVal;
 						   maxVal = curVal > maxVal ? curVal : maxVal;
 						}
+						mean = sum / m; // Calculate the mean
+						tempMatrixCopy = it->second.data(); // Create a copy of 'imatrix'
+						for (size_t i = 0; i < matrixSize; ++i) {
+						   curVal = *tempMatrixCopy++;
+						   squaresSum += pow(curVal - mean, 2); // Calculate squared difference from the mean
+						}
+						variance = squaresSum / (m-1); // Variance formula with denominator (n-1) instead of n
 						//printf("min=%f, max=%f, avg=%f\n", minVal, maxVal, sum / it->second.size());
-						printf("## max=%.2f ##", maxVal);
+						printf("## max=%.2f , mean=%.2f, variance=%.2f##", maxVal, mean, variance);
 						// SmartQuant: set new_type based on weight:	GGML_TYPE_IQ1_S if max <1, GGML_TYPE_IQ4_NL if max <10, GGML_TYPE_Q6_K else
 						//if (maxVal > 1000) new_type = GGML_TYPE_Q8_0; // fall back to safe quant for high importance values
-						if      (maxVal < 10) new_type = GGML_TYPE_IQ3_XXS;
-						else if (maxVal <100) new_type = GGML_TYPE_IQ3_S;
-						else                  new_type = GGML_TYPE_IQ4_XS;
+						if      (variance <0.1) new_type = GGML_TYPE_IQ2_XS;
+						else if (variance <0.2) new_type = GGML_TYPE_IQ2_S;
+						else if (variance <  1) new_type = GGML_TYPE_IQ3_XXS;
+						else if (variance <  5) new_type = GGML_TYPE_IQ3_S;
+						else if (variance < 50) new_type = GGML_TYPE_IQ4_XS;
+						else if (variance <200) new_type = GGML_TYPE_IQ4_NL;
+						else                    new_type = GGML_TYPE_Q6_K;
 						printf("selected type %s; ", ggml_type_name(new_type));
                     } else {
                         LLAMA_LOG_INFO("\n====== %s: imatrix size %d is different from tensor size %d for %s\n", __func__,
