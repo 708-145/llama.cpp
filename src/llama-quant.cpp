@@ -848,7 +848,7 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
 							//if (variance <  5) new_type = GGML_TYPE_IQ3_S;
 							//if (variance < 50) new_type = GGML_TYPE_IQ4_XS;
 							//if (variance <200) new_type = GGML_TYPE_IQ4_NL;            
-							printf("!changed to type %s; ", ggml_type_name(new_type));
+							//printf("!changed to type %s; ", ggml_type_name(new_type));
 						}
                     } else {
                         LLAMA_LOG_INFO("\n====== %s: imatrix size %d is different from tensor size %d for %s\n", __func__,
