@@ -824,8 +824,8 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
 						for (size_t i = 0; i < matrixSize; ++i) {
 						   curVal = *tempMatrixCopy++;
 						   sum += curVal;
-						   minVal = curVal < minVal ? curVal : minVal; // todo: absmin
-						   maxVal = curVal > maxVal ? curVal : maxVal; // todo: absmax
+						   minVal = curVal < minVal ? curVal : minVal;
+						   maxVal = curVal > maxVal ? curVal : maxVal;
 						}
 						mean = sum / m; // Calculate the mean
 						tempMatrixCopy = it->second.data(); // Create a copy of 'imatrix'
@@ -840,8 +840,11 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
 						if (new_type == default_type) {
 							//new_type = GGML_TYPE_IQ3_S;
 							//if (variance <0.1) new_type = GGML_TYPE_IQ2_XS;
-							if ((variance <  1) & (maxVal<10)) new_type = GGML_TYPE_IQ3_XXS; // var6 + var7
-							if ((variance <0.2) & (maxVal< 2)) new_type = GGML_TYPE_IQ2_S;   // var7     todo: variance + absmax criteria
+							if ((variance <  5) & (maxVal<100)) new_type = GGML_TYPE_IQ3_XXS;
+							if ((variance <  1) & (maxVal< 20)) new_type = GGML_TYPE_IQ2_S;
+							if ((variance <0.3) & (maxVal<  4)) new_type = GGML_TYPE_IQ2_XS;
+							if ((variance <0.2) & (maxVal<  1)) new_type = GGML_TYPE_IQ2_XXS;
+							if ((variance <0.1) & (maxVal<  1)) new_type = GGML_TYPE_IQ1_M;
 							//if (variance <  5) new_type = GGML_TYPE_IQ3_S;
 							//if (variance < 50) new_type = GGML_TYPE_IQ4_XS;
 							//if (variance <200) new_type = GGML_TYPE_IQ4_NL;            
