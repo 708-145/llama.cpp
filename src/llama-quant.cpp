@@ -835,7 +835,7 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
 						}
 						variance = squaresSum / (m-1); // Variance formula with denominator (n-1) instead of n
 						//printf("min=%f, max=%f, avg=%f\n", minVal, maxVal, sum / it->second.size());
-						printf("## max=%.2f , mean=%.2f, variance=%.2f##", maxVal, mean, variance);
+						printf("## max=%.2f, variance=%.2f##", maxVal, variance);
 						// SmartQuant:
 						if (new_type == default_type) {
 							//new_type = GGML_TYPE_IQ3_S;
