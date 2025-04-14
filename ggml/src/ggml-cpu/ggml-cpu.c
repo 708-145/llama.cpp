@@ -12,7 +12,7 @@
 #include "ggml.h"
 
 #include "bpp.h"
-#include "bpp.c"
+// #include "bpp.c"
 
 #if defined(_MSC_VER) || defined(__MINGW32__)
 #include <malloc.h> // using malloc.h with MSC/MINGW

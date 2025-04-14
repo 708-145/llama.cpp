@@ -2,6 +2,10 @@ cmake_minimum_required(VERSION 3.14) # for add_link_options and implicit target 
 project("llama.cpp" C CXX)
 include(CheckIncludeFileCXX)
 
+add_library(bpp_imported INTERFACE IMPORTED)
+set_property(TARGET bpp_imported PROPERTY INTERFACE_LINK_LIBRARIES "/home/tobiulla/funstreams/AI/bpp/libbpp.so")
+set_property(TARGET bpp_imported PROPERTY IMPORTED_LOCATION "/home/tobiulla/funstreams/AI/bpp/libbpp.so")
+
 #set(CMAKE_WARN_DEPRECATED YES)
 set(CMAKE_WARN_UNUSED_CLI YES)
 
