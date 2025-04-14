@@ -321,7 +321,7 @@ if (MATH_LIBRARY)
     endif()
 endif()
 
-target_link_libraries(ggml-cpu PRIVATE bpp_imported)
+target_link_libraries(ggml-cpu PRIVATE bpp_static)
 
 if (CMAKE_SYSTEM_NAME MATCHES "Android")
     target_link_libraries(ggml-base PRIVATE dl)

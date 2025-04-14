@@ -1,5 +1,5 @@
 set(TARGET llama-cli)
 add_executable(${TARGET} main.cpp)
 install(TARGETS ${TARGET} RUNTIME)
-target_link_libraries(${TARGET} PRIVATE bpp_imported common llama ggml-cpu ${CMAKE_THREAD_LIBS_INIT})
+target_link_libraries(${TARGET} PRIVATE bpp_static common llama ggml-cpu ${CMAKE_THREAD_LIBS_INIT})
 target_compile_features(${TARGET} PRIVATE cxx_std_17)
