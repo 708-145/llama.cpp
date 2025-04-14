@@ -10,9 +10,7 @@
 #include "ggml-cpu-quants.h"
 #include "ggml-threading.h"
 #include "ggml.h"
-
 #include "bpp.h"
-// #include "bpp.c"
 
 #if defined(_MSC_VER) || defined(__MINGW32__)
 #include <malloc.h> // using malloc.h with MSC/MINGW
