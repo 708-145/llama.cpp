@@ -8666,8 +8666,17 @@ static void ggml_compute_forward_mul_mat(
 
 	if ( (src0->type == GGML_TYPE_IQ4_NL) && (src1->type == GGML_TYPE_F32) && (batchsize == 1) ) {
 		invecsize = nb01*16/9; // (8 / 4.5)
+		const int64_t num_blocks = invecsize/32;
+		if (num_blocks % nth == 0) {
+			const int64_t num_ib_per_chunk = num_blocks / nth;
+			const int64_t from_ib = ith * num_ib_per_chunk;
+			const int64_t to_ib   = MIN(from_ib + num_ib_per_chunk, num_blocks)-1;
+			//printf("IQ4_NL dimension:  from_ib %ld, to_ib %ld, thread %d; %ld x %ld\n", from_ib, to_ib, ith, invecsize, ne0);
+			bpp_IQ4NL_F32_vecmul_stripes(src0->data, src1->data, dst->data, invecsize, from_ib, to_ib, ne0);
+			return;
+		}
 		//printf("IQ4_NL dimension:  rows %ld, cols %ld, Byte per row %ld\n", ne0, invecsize, nb01);
-		// granite-3.1-1b-a400m-instruct-IQ4_NL.gguf: upstream 33.95 token/s
+		// ./llama-cli -p "How to brew beer?" -t 8 -m ~/funstreams/granite-3.1-1b-a400m-instruct-IQ4_NL.gguf: upstream 33.95 token/s
 		//bpp_IQ4NL_F32_vecmul_rowbyrow(src0->data, src1->data, dst->data, invecsize, from_row, to_row); // 27.51 token/s (81%)
 		bpp_IQ4NL_F32_vecmul_int32(src0->data, src1->data, dst->data, invecsize, from_row, to_row); // 24 token/s (70%)
 		//bpp_IQ4NL_F32_vecmul_ref(src0->data, src1->data, dst->data, invecsize, from_row, to_row); // 5.57 token/s
@@ -8680,11 +8689,18 @@ static void ggml_compute_forward_mul_mat(
 		bpp_IQ4XS_F32_vecmul(src0->data, src1->data, dst->data, invecsize, from_row, to_row); // 26.68 token/s (84%)
 		return;
 	}
-	if ( (src0->type == GGML_TYPE_IQ2_XXS) && (src1->type == GGML_TYPE_F32) && (batchsize == 1) ) {
-		invecsize = nb01*256/66; // TODO: check for this TYPE
-		//printf("IQ2_XXS dimension:  rows %ld, cols %ld, Byte per row %ld\n", ne0, invecsize, nb01);
-		//./llama-cli -p "How are you today?" -t 8 -m ~/funstreams/granite-3.1-1b-a400m-instruct-IQ2_XXS.gguf -> upstream 42.18 token/s
-		bpp_IQ2XXS_F32_vecmul_int32(src0->data, src1->data, dst->data, invecsize, from_row, to_row); // 42.58 token/s ()
+	if ( (src0->type == GGML_TYPE_Q4_0) && (src1->type == GGML_TYPE_F32) && (batchsize == 1) ) {
+		invecsize = nb01*32/18; // (8 / 4.5)
+		printf("Q4_0 dimension:  rows %ld, cols %ld, Byte per row %ld\n", ne0, invecsize, nb01);
+		//./llama-cli -p "How to brew beer?" -t 8 -m ~/funstreams/qwen2-1_5b-instruct-q4_0.gguf -> upstream 12.13 token/s
+		bpp_Q4_0_F32_vecmul_rowbyrow(src0->data, src1->data, dst->data, invecsize, from_row, to_row); //  token/s (%)
+		return;
+	}
+	if ( (src0->type == GGML_TYPE_Q2_K) && (src1->type == GGML_TYPE_F32) && (batchsize == 1) ) {
+		invecsize = nb01*256/84; // (8 / 2.5625)
+		//printf("Q2_K dimension:  rows %ld, cols %ld, Byte per row %ld\n", ne0, invecsize, nb01);
+		//./llama-cli -p "How to brew beer?" -t 8 -m ~/funstreams/granite-3.1-1b-a400m-instruct-Q2_K.gguf -> upstream 39.40 token/s
+		bpp_Q2_K_F32_vecmul_ref(src0->data, src1->data, dst->data, invecsize, from_row, to_row); //  token/s (%)
 		return;
 	}
 
