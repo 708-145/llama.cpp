@@ -1739,7 +1739,23 @@ void quantize_row_tq2_0(const float * GGML_RESTRICT x, void * GGML_RESTRICT vy, 
     quantize_row_tq2_0_ref(x, y, k);
 }
 
-static const int8_t kvalues_iq4nl[16] = {-127, -104, -83, -65, -49, -35, -22, -10, 1, 13, 25, 38, 53, 69, 89, 113};
+/*
+$ grep -rin "kvalues_iq4nl\[16\]" *
+bpp/bpp.c:415:static const int8_t kvalues_iq4nl[16] = {-127, -104, -83, -65, -49, -35, -22, -10, 1, 13, 25, 38, 53, 69, 89, 113};
+ggml/src/ggml-cpu/ggml-cpu-aarch64.cpp:251:static const int8_t kvalues_iq4nl[16] = {-127, -104, -83, -65, -49, -35, -22, -10, 1, 13, 25, 38, 53, 69, 89, 113};
+ggml/src/ggml-cpu/ggml-cpu-quants.c:1746:static const int8_t kvalues_iq4nl[16] = {-128, -89, -67, -51, -37, -24, -12, 0, 10, 20, 31, 43, 56, 71, 92, 127};
+ggml/src/ggml-cpu/llamafile/sgemm.cpp:610:        const int8_t kvalues_iq4nl[16] = {
+ggml/src/ggml-cuda/common.cuh:451:static constexpr __device__ int8_t kvalues_iq4nl[16] = {-127, -104, -83, -65, -49, -35, -22, -10, 1, 13, 25, 38, 53, 69, 89, 113};
+ggml/src/ggml-quants.c:2434:static const int8_t kvalues_iq4nl[16] = {-127, -104, -83, -65, -49, -35, -22, -10, 1, 13, 25, 38, 53, 69, 89, 113};
+ggml/src/ggml-sycl/common.hpp:149:static const int8_t kvalues_iq4nl[16]={-127, -104, -83, -65, -49, -35, -22, -10, 1, 13, 25, 38, 53, 69, 89, 113};
+ggml/src/ggml-vulkan/vulkan-shaders/types.comp:1289:shared FLOAT_TYPE kvalues_iq4nl[16];
+*/
+
+//static const float kvalues_fp4e2[16]  = {-12.0, -8.0, -6.0, -4.0, -3.0, -2.0, -1.5, -1.0, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0, 8.0, 12.0};
+//static const int8_t kvalues_iq4nl[16] = {-127, -104, -83, -65, -49, -35, -22, -10, 1, 13, 25, 38, 53, 69, 89, 113};
+//static const int8_t kvalues_nf4[16]   = {-128, -89,  -67, -51, -37, -24, -12,  0, 10, 20, 31, 43, 56, 71, 92, 127};
+//static const int8_t kvalues_fp4e2[16] = {-120, -80,  -60, -40, -30, -20, -15,-10, 10, 15, 20, 30, 40, 60, 80, 120}; // scaled 10x
+static const int8_t kvalues_iq4nl[16]   = {-120, -80,  -60, -40, -30, -20, -15,-10, 10, 15, 20, 30, 40, 60, 80, 120}; // scaled 10x
 
 //===================================== Q8_K ==============================================
 
