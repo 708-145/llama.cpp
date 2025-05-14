@@ -614,7 +614,7 @@ class tinyBLAS_Q0_AVX {
              53,   69,   89, 113
         };
 
-        iq4nlt = _mm_loadu_si128((const __m128i *)kvalues_iq4nl);
+        iq4nlt = _mm_loadu_si128((const __m128i *)kvalues_iq4nl); // TODO: variants for nf4 and fp4
     }
 
     void matmul(int64_t m, int64_t n) {

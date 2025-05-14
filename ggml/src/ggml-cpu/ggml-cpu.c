@@ -395,6 +395,18 @@ static const struct ggml_type_traits_cpu type_traits_cpu[GGML_TYPE_COUNT] = {
         .vec_dot_type             = GGML_TYPE_Q8_K,
         .nrows                    = 1,
     },
+    [GGML_TYPE_NF4_XS] = {
+        .from_float               = quantize_row_nf4_xs,
+        .vec_dot                  = ggml_vec_dot_nf4_xs_q8_K,
+        .vec_dot_type             = GGML_TYPE_Q8_K,
+        .nrows                    = 1,
+    },
+    [GGML_TYPE_FP4_XS] = {
+        .from_float               = quantize_row_fp4_xs,
+        .vec_dot                  = ggml_vec_dot_fp4_xs_q8_K,
+        .vec_dot_type             = GGML_TYPE_Q8_K,
+        .nrows                    = 1,
+    },
     [GGML_TYPE_Q8_K] = {
         .from_float               = quantize_row_q8_K,
     },
@@ -4759,6 +4771,8 @@ static void ggml_compute_forward_add(
         case GGML_TYPE_IQ1_M:
         case GGML_TYPE_IQ4_NL:
         case GGML_TYPE_IQ4_XS:
+        case GGML_TYPE_NF4_XS:
+        case GGML_TYPE_FP4_XS:
         case GGML_TYPE_IQ3_S:
         case GGML_TYPE_IQ2_S:
             {
@@ -5136,6 +5150,8 @@ static void ggml_compute_forward_add1(
         case GGML_TYPE_IQ1_M:
         case GGML_TYPE_IQ4_NL:
         case GGML_TYPE_IQ4_XS:
+        case GGML_TYPE_NF4_XS:
+        case GGML_TYPE_FP4_XS:
         case GGML_TYPE_IQ3_S:
         case GGML_TYPE_IQ2_S:
             {
@@ -5263,6 +5279,8 @@ static void ggml_compute_forward_acc(
         case GGML_TYPE_IQ1_M:
         case GGML_TYPE_IQ4_NL:
         case GGML_TYPE_IQ4_XS:
+        case GGML_TYPE_NF4_XS:
+        case GGML_TYPE_FP4_XS:
         case GGML_TYPE_IQ3_S:
         case GGML_TYPE_IQ2_S:
         default:
@@ -9397,6 +9415,8 @@ static void ggml_compute_forward_out_prod(
         case GGML_TYPE_IQ1_M:
         case GGML_TYPE_IQ4_NL:
         case GGML_TYPE_IQ4_XS:
+        case GGML_TYPE_NF4_XS:
+        case GGML_TYPE_FP4_XS:
         case GGML_TYPE_IQ3_S:
         case GGML_TYPE_IQ2_S:
             {
@@ -9659,6 +9679,8 @@ static void ggml_compute_forward_set(
         case GGML_TYPE_IQ1_M:
         case GGML_TYPE_IQ4_NL:
         case GGML_TYPE_IQ4_XS:
+        case GGML_TYPE_NF4_XS:
+        case GGML_TYPE_FP4_XS:
         case GGML_TYPE_IQ3_S:
         case GGML_TYPE_IQ2_S:
         default:
@@ -9920,6 +9942,8 @@ static void ggml_compute_forward_get_rows(
         case GGML_TYPE_IQ1_M:
         case GGML_TYPE_IQ4_NL:
         case GGML_TYPE_IQ4_XS:
+        case GGML_TYPE_NF4_XS:
+        case GGML_TYPE_FP4_XS:
         case GGML_TYPE_IQ3_S:
         case GGML_TYPE_IQ2_S:
             {
@@ -10553,6 +10577,8 @@ static void ggml_compute_forward_clamp(
         case GGML_TYPE_IQ1_M:
         case GGML_TYPE_IQ4_NL:
         case GGML_TYPE_IQ4_XS:
+        case GGML_TYPE_NF4_XS:
+        case GGML_TYPE_FP4_XS:
         case GGML_TYPE_IQ3_S:
         case GGML_TYPE_IQ2_S:
         case GGML_TYPE_Q8_K:
