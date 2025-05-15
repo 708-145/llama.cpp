@@ -1759,7 +1759,7 @@ ggml/src/ggml-vulkan/vulkan-shaders/types.comp:1289:shared FLOAT_TYPE kvalues_iq
 //static const int8_t kvalues_nf3test[16]={-128,-128,  -67, -67, -37, -37, -12,-12, 20, 20, 43, 43, 71, 71,127, 127};
 static const int8_t kvalues_iq4nl[16]   = {-128,-128,  -67, -67, -37, -37, -12,-12, 20, 20, 43, 43, 71, 71,127, 127};
 static const int8_t kvalues_nf4[16]     = {-128, -89,  -67, -51, -37, -24, -12,  0, 10, 20, 31, 43, 56, 71, 92, 127};
-static const int8_t kvalues_fp4e1[16]   = {-126,-108,  -90, -72, -63, -54, -45,-36, 36, 45, 54, 63, 72, 90,108, 126};
+static const int8_t kvalues_fp4[16]     = {-120, -80,  -60, -40, -30, -20, -15,-10, 10, 15, 20, 30, 40, 60, 80, 120};
 
 //===================================== Q8_K ==============================================
 
@@ -13398,7 +13398,7 @@ void ggml_vec_dot_fp4_xs_q8_K(int n, float * GGML_RESTRICT s, size_t bs, const v
     const int nb = n / QK_K;
 
 #if defined __ARM_NEON
-    const int8x16_t values = vld1q_s8(kvalues_fp4e1);
+    const int8x16_t values = vld1q_s8(kvalues_fp4);
     const uint8x16_t m4b = vdupq_n_u8(0x0f);
     ggml_uint8x16x2_t q4bits;
     ggml_int8x16x4_t q4b;
@@ -13442,7 +13442,7 @@ void ggml_vec_dot_fp4_xs_q8_K(int n, float * GGML_RESTRICT s, size_t bs, const v
 
 #elif defined __AVX2__
 
-    const __m128i values128 = _mm_loadu_si128((const __m128i*)kvalues_fp4e1);
+    const __m128i values128 = _mm_loadu_si128((const __m128i*)kvalues_fp4);
     const __m128i m4b  = _mm_set1_epi8(0x0f);
 
     __m256 accum = _mm256_setzero_ps();
@@ -13478,7 +13478,7 @@ void ggml_vec_dot_fp4_xs_q8_K(int n, float * GGML_RESTRICT s, size_t bs, const v
     *s = hsum_float_8(accum);
 
 #elif defined __AVX__
-    const __m128i values128 = _mm_loadu_si128((const __m128i*)kvalues_fp4e1);
+    const __m128i values128 = _mm_loadu_si128((const __m128i*)kvalues_fp4);
     const __m128i m4b  = _mm_set1_epi8(0x0f);
 
     __m256 accum = _mm256_setzero_ps();
@@ -13535,7 +13535,7 @@ void ggml_vec_dot_fp4_xs_q8_K(int n, float * GGML_RESTRICT s, size_t bs, const v
     vector float vsumf2 = vec_splats(0.0f);
     vector float vsumf3 = vec_splats(0.0f);
 
-    const vector signed char values = vec_xl( 0, kvalues_fp4e1);
+    const vector signed char values = vec_xl( 0, kvalues_fp4);
 
     for (int ibl = 0; ibl < nb; ++ibl) {
 
@@ -13615,7 +13615,7 @@ void ggml_vec_dot_fp4_xs_q8_K(int n, float * GGML_RESTRICT s, size_t bs, const v
 
 #elif defined(__loongarch_asx)
 
-    const __m128i values128 = __lsx_vld((const __m128i*)kvalues_fp4e1, 0);
+    const __m128i values128 = __lsx_vld((const __m128i*)kvalues_fp4, 0);
 
     __m256 accum = (__m256)__lasx_xvldi(0);
 
@@ -13650,7 +13650,7 @@ void ggml_vec_dot_fp4_xs_q8_K(int n, float * GGML_RESTRICT s, size_t bs, const v
 
     *s = hsum_float_8(accum);
 #elif defined(__VXE__) || defined(__VXE2__)
-    const int8x16_t v_k = vec_xl(0, kvalues_fp4e1);
+    const int8x16_t v_k = vec_xl(0, kvalues_fp4);
     const uint8x16_t v_m = vec_splat_u8(0x0F);
 
     float sumf = 0;
@@ -13715,16 +13715,16 @@ void ggml_vec_dot_fp4_xs_q8_K(int n, float * GGML_RESTRICT s, size_t bs, const v
             const float d2 = d4d8*(ls2 - 32);
             int sumi1 = 0, sumi2 = 0;
             for (int j = 0; j < 16; ++j) {
-                sumi1 += q8[j+ 0] * kvalues_fp4e1[qs[j] & 0xf];
-                sumi2 += q8[j+16] * kvalues_fp4e1[qs[j] >>  4];
+                sumi1 += q8[j+ 0] * kvalues_fp4[qs[j] & 0xf];
+                sumi2 += q8[j+16] * kvalues_fp4[qs[j] >>  4];
             }
             sumf += d1 * (sumi1 + sumi2);
             qs += 16;
             q8 += 32;
             sumi1 = sumi2 = 0;
             for (int j = 0; j < 16; ++j) {
-                sumi1 += q8[j+ 0] * kvalues_fp4e1[qs[j] & 0xf];
-                sumi2 += q8[j+16] * kvalues_fp4e1[qs[j] >>  4];
+                sumi1 += q8[j+ 0] * kvalues_fp4[qs[j] & 0xf];
+                sumi2 += q8[j+16] * kvalues_fp4[qs[j] >>  4];
             }
             sumf += d2 * (sumi1 + sumi2);
             qs += 16;

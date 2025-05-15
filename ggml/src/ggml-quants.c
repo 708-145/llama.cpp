@@ -2433,7 +2433,7 @@ void dequantize_row_iq1_m(const block_iq1_m * GGML_RESTRICT x, float * GGML_REST
 
 static const int8_t kvalues_iq4nl[16] = {-127, -104, -83, -65, -49, -35, -22, -10, 1, 13, 25, 38, 53, 69, 89, 113};
 static const int8_t kvalues_nf4[16]   = {-128, -89,  -67, -51, -37, -24, -12,  0, 10, 20, 31, 43, 56, 71, 92, 127};
-static const int8_t kvalues_fp4e1[16] = {-126,-108,  -90, -72, -63, -54, -45,-36, 36, 45, 54, 63, 72, 90,108, 126};
+static const int8_t kvalues_fp4[16]   = {-120, -80,  -60, -40, -30, -20, -15,-10, 10, 15, 20, 30, 40, 60, 80, 120};
 
 void dequantize_row_iq4_nl(const block_iq4_nl * GGML_RESTRICT x, float * GGML_RESTRICT y, int64_t k) {
     assert(k % QK4_NL == 0);
@@ -2513,8 +2513,8 @@ void dequantize_row_fp4_xs(const block_fp4_xs * GGML_RESTRICT x, float * GGML_RE
             const int ls = ((x[i].scales_l[ib/2] >> 4*(ib%2)) & 0xf) | (((x[i].scales_h >> 2*ib) & 3) << 4);
             const float dl = d * (ls - 32);
             for (int j = 0; j < 16; ++j) {
-                y[j+ 0] = dl * kvalues_fp4e1[qs[j] & 0xf];
-                y[j+16] = dl * kvalues_fp4e1[qs[j] >>  4];
+                y[j+ 0] = dl * kvalues_fp4[qs[j] & 0xf];
+                y[j+16] = dl * kvalues_fp4[qs[j] >>  4];
             }
             y  += 32;
             qs += 16;
@@ -4829,7 +4829,7 @@ size_t quantize_fp4_xs(const float * GGML_RESTRICT src, void * GGML_RESTRICT dst
         for (int ibl = 0; ibl < nblock; ++ibl) {
             const float * qw = quant_weights ? quant_weights + QK_K*ibl : NULL;
             quantize_row_iq4_nl_impl(QK_K, 32, src + QK_K*ibl, &iq4[ibl].d, iq4[ibl].qs, &iq4[ibl].scales_h, iq4[ibl].scales_l,
-                    scales, weight, L, kvalues_fp4e1, qw, 7);
+                    scales, weight, L, kvalues_fp4, qw, 7);
         }
         src += n_per_row;
         qrow += nblock*sizeof(block_fp4_xs);
