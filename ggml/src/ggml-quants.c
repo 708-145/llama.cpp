@@ -2361,7 +2361,7 @@ void dequantize_row_iq1_ps(const block_iq1_ps * GGML_RESTRICT x, float * GGML_RE
     const int64_t nb = k / QK_K;
 
     for (int i = 0; i < nb; i++) {
-
+        // TBPS
         const float d = GGML_FP16_TO_FP32(x[i].d);
         const uint8_t  * qs = x[i].qs;
         const uint16_t * qh = x[i].qh;
@@ -2614,14 +2614,14 @@ static iq2_entry_t iq2_data[4] = {
     {NULL, NULL, NULL},
 };
 
-static inline int iq2_data_index(enum ggml_type type) {
+static inline int iq2_data_index(enum ggml_type type) { // TBPS
     GGML_ASSERT(type == GGML_TYPE_IQ2_XXS || type == GGML_TYPE_IQ2_XS || type == GGML_TYPE_IQ1_S || type == GGML_TYPE_IQ1_M || type == GGML_TYPE_IQ2_S);
     return type == GGML_TYPE_IQ2_XXS ? 0 :
            type == GGML_TYPE_IQ2_XS  ? 1 :
            type == GGML_TYPE_IQ1_S || type == GGML_TYPE_IQ1_M ? 2 : 3;
 }
 
-static inline int iq2_grid_size(enum ggml_type type) {
+static inline int iq2_grid_size(enum ggml_type type) { // TBPS
     GGML_ASSERT(type == GGML_TYPE_IQ2_XXS || type == GGML_TYPE_IQ2_XS || type == GGML_TYPE_IQ1_S || type == GGML_TYPE_IQ1_M || type == GGML_TYPE_IQ2_S);
     return type == GGML_TYPE_IQ2_XXS ? 256 :
            type == GGML_TYPE_IQ2_XS  ? 512 :
@@ -2890,6 +2890,7 @@ void iq2xs_init_impl(enum ggml_type type) {
     };
 
     const int kmap_size = 43692;
+     // TBPS
     //const int nwant = type == GGML_TYPE_IQ1_S ? 3 : 2;
     const int nwant = type == GGML_TYPE_IQ1_S || type == GGML_TYPE_IQ1_M ? 3 : type == GGML_TYPE_IQ2_S ? 1 : 2;
     const uint16_t * kgrid = type == GGML_TYPE_IQ2_XXS ? kgrid_2bit_256 :
@@ -2990,7 +2991,7 @@ void iq2xs_init_impl(enum ggml_type type) {
     free(dist2);
 }
 
-void iq2xs_free_impl(enum ggml_type type) {
+void iq2xs_free_impl(enum ggml_type type) { // TBPS
     GGML_ASSERT(type == GGML_TYPE_IQ2_XXS || type == GGML_TYPE_IQ2_XS || type == GGML_TYPE_IQ1_S || type == GGML_TYPE_IQ1_M || type == GGML_TYPE_IQ2_S);
     const int gindex = iq2_data_index(type);
     if (iq2_data[gindex].grid) {
@@ -4194,7 +4195,7 @@ static void quantize_row_iq1_s_impl(const float * GGML_RESTRICT x, void * GGML_R
         float    * pairs,
         int8_t   * L,
         uint16_t * index,
-        int8_t   * shifts) {
+        int8_t   * shifts) { // TBPS
 
     const int gindex = iq2_data_index(GGML_TYPE_IQ1_S);
 
@@ -5300,7 +5301,7 @@ bool ggml_validate_row_data(enum ggml_type type, const void * data, size_t nbyte
             {
                 VALIDATE_ROW_DATA_D_F16_IMPL(block_tq2_0, data, nb);
             } break;
-        case GGML_TYPE_IQ1_S:
+        case GGML_TYPE_IQ1_S: // TBPS
             {
                 VALIDATE_ROW_DATA_D_F16_IMPL(block_iq1_s, data, nb);
             } break;
