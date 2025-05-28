@@ -4227,7 +4227,7 @@ struct llm_build_llama : public llm_graph_context {
                         LLM_NORM_RMS, il);
                 cb(cur, "ffn_norm", il);
 
-                cur = build_moe_ffn(cur,
+                cur = build_moe_ffn(cur, // SFG splitfacegranite
                         model.layers[il].ffn_gate_inp,
                         model.layers[il].ffn_up_exps,
                         model.layers[il].ffn_gate_exps,
