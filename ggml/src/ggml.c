@@ -2731,7 +2731,7 @@ static inline bool ggml_can_mul_mat(const struct ggml_tensor * t0, const struct 
            (t1->ne[3]%t0->ne[3] == 0);
 }
 
-struct ggml_tensor * ggml_mul_mat(
+struct ggml_tensor * ggml_mul_mat( // SFG splitfacegranite
         struct ggml_context * ctx,
         struct ggml_tensor  * a,
         struct ggml_tensor  * b) {
@@ -2772,7 +2772,7 @@ void ggml_mul_mat_set_prec(
 
     c ~= as[:,:,i] @ b[:,i%r,t], i = ids[e,t] for all e,t in ids
 */
-struct ggml_tensor * ggml_mul_mat_id(
+struct ggml_tensor * ggml_mul_mat_id(  // SFG splitfacegranite
         struct ggml_context * ctx,
         struct ggml_tensor  * as,
         struct ggml_tensor  * b,

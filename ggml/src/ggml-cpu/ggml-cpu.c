@@ -15314,7 +15314,7 @@ struct ggml_cplan ggml_graph_plan(
                             cur = ggml_row_size(vec_dot_type, ggml_nelements(node->src[1]));
                         }
                     } break;
-                case GGML_OP_MUL_MAT_ID:
+                case GGML_OP_MUL_MAT_ID:  // SFG splitfacegranite
                     {
                         cur = 0;
                         const struct ggml_tensor * src0 = node->src[0];
