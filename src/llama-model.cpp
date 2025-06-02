@@ -1651,12 +1651,12 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
                         if (n_expert == 0) {
                             layer.ffn_gate = create_tensor(tn(LLM_TENSOR_FFN_GATE, "weight", i), {n_embd,   n_ff}, 0);
                             if (arch == LLM_ARCH_GRANITE) {
-                                // For Granite, ffn_down is split into ffn_down_a and ffn_down_b
+                                // For Granite, ffn_down is split into ffn_down_x and ffn_down_y
                                 // Dimensions from GGUF file will be used by create_tensor.
-                                // The {dim_a, n_embd} and {dim_b, n_embd} are conceptual.
-                                // It's assumed n_ff is the sum of dim_a and dim_b from the original tensor.
-                                layer.ffn_down_a = create_tensor(tn(LLM_TENSOR_FFN_DOWN_A, "weight", i), {256,    n_embd}, 0);
-                                layer.ffn_down_b = create_tensor(tn(LLM_TENSOR_FFN_DOWN_B, "weight", i), {n_ff-256, n_embd}, 0);
+                                // The {dim_x, n_embd} and {dim_y, n_embd} are conceptual.
+                                // It's assumed n_ff is the sum of dim_x and dim_y from the original tensor.
+                                layer.ffn_down_x = create_tensor(tn(LLM_TENSOR_FFN_DOWN_X, "weight", i), {256,    n_embd}, 0);
+                                layer.ffn_down_y = create_tensor(tn(LLM_TENSOR_FFN_DOWN_Y, "weight", i), {n_ff-256, n_embd}, 0);
                                 layer.ffn_down = nullptr; // Ensure the old combined tensor is not accidentally used
                             } else {
                                 layer.ffn_down = create_tensor(tn(LLM_TENSOR_FFN_DOWN, "weight", i), {  n_ff, n_embd}, 0);
@@ -4257,17 +4257,17 @@ struct llm_build_llama : public llm_graph_context {
                     const int64_t n_ff_hparam = model.hparams.n_ff(il);
                     const int64_t n_tokens_effective = ffn_hidden->ne[1];
 
-                    ggml_tensor * inp_ff_a = ggml_view_2d(ctx0, ffn_hidden, 256,             n_tokens_effective, ffn_hidden->nb[1], 0);
-                    ggml_tensor * inp_ff_b = ggml_view_2d(ctx0, ffn_hidden, n_ff_hparam - 256, n_tokens_effective, ffn_hidden->nb[1], 256 * ggml_element_size(ffn_hidden->type));
-                    cb(inp_ff_a, "inp_ff_a", il);
-                    cb(inp_ff_b, "inp_ff_b", il);
+                    ggml_tensor * inp_ff_x = ggml_view_2d(ctx0, ffn_hidden, 256,             n_tokens_effective, ffn_hidden->nb[1], 0);
+                    ggml_tensor * inp_ff_y = ggml_view_2d(ctx0, ffn_hidden, n_ff_hparam - 256, n_tokens_effective, ffn_hidden->nb[1], 256 * ggml_element_size(ffn_hidden->type));
+                    cb(inp_ff_x, "inp_ff_x", il);
+                    cb(inp_ff_y, "inp_ff_y", il);
 
-                    ggml_tensor * cur_a = ggml_mul_mat(ctx0, model.layers[il].ffn_down_a, inp_ff_a);
-                    cb(cur_a, "cur_a", il);
-                    ggml_tensor * cur_b = ggml_mul_mat(ctx0, model.layers[il].ffn_down_b, inp_ff_b);
-                    cb(cur_b, "cur_b", il);
+                    ggml_tensor * cur_x = ggml_mul_mat(ctx0, model.layers[il].ffn_down_x, inp_ff_x);
+                    cb(cur_x, "cur_x", il);
+                    ggml_tensor * cur_y = ggml_mul_mat(ctx0, model.layers[il].ffn_down_y, inp_ff_y);
+                    cb(cur_y, "cur_y", il);
 
-                    cur = ggml_add(ctx0, cur_a, cur_b);
+                    cur = ggml_add(ctx0, cur_x, cur_y);
                     cb(cur, "ffn_down_combined", il);
 
                     // Bias for ffn_down is assumed to be null or handled if split biases were loaded.

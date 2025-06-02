@@ -1344,11 +1344,11 @@ static const std::map<llm_arch, std::map<llm_tensor, const char *>> LLM_TENSOR_N
             { LLM_TENSOR_FFN_NORM,        "blk.%d.ffn_norm" },
             { LLM_TENSOR_FFN_GATE,        "blk.%d.ffn_gate" },
             // { LLM_TENSOR_FFN_DOWN,        "blk.%d.ffn_down" }, // dimensions (numcols, numrows)
-            // TODO: modify here to expect two matrices to represent LLM_TENSOR_FFN_DOWN: "blk.%d.ffn_down.a" and "blk.%d.ffn_down.b" 
-            // "blk.%d.ffn_down.a" has dimensions (256,numrows), "blk.%d.ffn_down.b" has dimensions (numcols-256,numrows)
-            // important: make sure that where the original matrix LLM_TENSOR_FFN_DOWN is used for multiplication, to multiply the first 256 inputs with "blk.%d.ffn_down.a" and the rest with "blk.%d.ffn_down.b" 
-            { LLM_TENSOR_FFN_DOWN_A,      "blk.%d.ffn_down.a" },
-            { LLM_TENSOR_FFN_DOWN_B,      "blk.%d.ffn_down.b" },
+            // TODO: modify here to expect two matrices to represent LLM_TENSOR_FFN_DOWN: "blk.%d.ffn_down.x" and "blk.%d.ffn_down.y" 
+            // "blk.%d.ffn_down.x" has dimensions (256,numrows), "blk.%d.ffn_down.y" has dimensions (numcols-256,numrows)
+            // important: make sure that where the original matrix LLM_TENSOR_FFN_DOWN is used for multiplication, to multiply the first 256 inputs with "blk.%d.ffn_down.x" and the rest with "blk.%d.ffn_down.y" 
+            { LLM_TENSOR_FFN_DOWN_X,      "blk.%d.ffn_down.x" },
+            { LLM_TENSOR_FFN_DOWN_Y,      "blk.%d.ffn_down.y" },
             { LLM_TENSOR_FFN_UP,          "blk.%d.ffn_up" },
         },
     },
@@ -1443,8 +1443,10 @@ static const std::map<llm_tensor, llm_tensor_info> LLM_TENSOR_INFOS = {
     {LLM_TENSOR_ATTN_OUT,                   {LLM_TENSOR_LAYER_REPEATING, GGML_OP_MUL_MAT}},
     {LLM_TENSOR_FFN_GATE,                   {LLM_TENSOR_LAYER_REPEATING, GGML_OP_MUL_MAT}},
     {LLM_TENSOR_FFN_DOWN,                   {LLM_TENSOR_LAYER_REPEATING, GGML_OP_MUL_MAT}},
-    {LLM_TENSOR_FFN_DOWN_A,                 {LLM_TENSOR_LAYER_REPEATING, GGML_OP_MUL_MAT}},
-    {LLM_TENSOR_FFN_DOWN_B,                 {LLM_TENSOR_LAYER_REPEATING, GGML_OP_MUL_MAT}},
+    // {LLM_TENSOR_FFN_DOWN_A,                 {LLM_TENSOR_LAYER_REPEATING, GGML_OP_MUL_MAT}}, // Removed
+    // {LLM_TENSOR_FFN_DOWN_B,                 {LLM_TENSOR_LAYER_REPEATING, GGML_OP_MUL_MAT}}, // Removed
+    {LLM_TENSOR_FFN_DOWN_X,                 {LLM_TENSOR_LAYER_REPEATING, GGML_OP_MUL_MAT}}, // Added
+    {LLM_TENSOR_FFN_DOWN_Y,                 {LLM_TENSOR_LAYER_REPEATING, GGML_OP_MUL_MAT}}, // Added
     {LLM_TENSOR_FFN_UP,                     {LLM_TENSOR_LAYER_REPEATING, GGML_OP_MUL_MAT}},
     {LLM_TENSOR_FFN_DOWN_SHEXP,             {LLM_TENSOR_LAYER_REPEATING, GGML_OP_MUL_MAT}},
     {LLM_TENSOR_FFN_GATE_SHEXP,             {LLM_TENSOR_LAYER_REPEATING, GGML_OP_MUL_MAT}},
