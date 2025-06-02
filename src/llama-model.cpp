@@ -1658,21 +1658,16 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
                                 layer.ffn_down_x = create_tensor(tn(LLM_TENSOR_FFN_DOWN_X, "weight", i), {256,    n_embd}, 0);
                                 layer.ffn_down_y = create_tensor(tn(LLM_TENSOR_FFN_DOWN_Y, "weight", i), {n_ff-256, n_embd}, 0);
                                 layer.ffn_down = nullptr; // Ensure the old combined tensor is not accidentally used
+                                // Load the original ffn_down bias for Granite, it's not split.
+                                layer.ffn_down_b = create_tensor(tn(LLM_TENSOR_FFN_DOWN, "bias", i), {n_embd}, TENSOR_NOT_REQUIRED);
                             } else {
                                 layer.ffn_down = create_tensor(tn(LLM_TENSOR_FFN_DOWN, "weight", i), {  n_ff, n_embd}, 0);
+                                layer.ffn_down_b = create_tensor(tn(LLM_TENSOR_FFN_DOWN, "bias", i), {n_embd}, TENSOR_NOT_REQUIRED);
                             }
                             layer.ffn_up   = create_tensor(tn(LLM_TENSOR_FFN_UP,   "weight", i), {n_embd,   n_ff}, 0);
 
                             // optional MLP bias
                             layer.ffn_gate_b = create_tensor(tn(LLM_TENSOR_FFN_GATE, "bias", i), {n_ff}, TENSOR_NOT_REQUIRED);
-                            // For Granite, ffn_down_b might also need splitting if it exists, or might not be used.
-                            // Assuming ffn_down_b is not split for now, or not present for Granite.
-                            // If it needs splitting, similar logic to ffn_down would apply.
-                            if (arch != LLM_ARCH_GRANITE) {
-                                layer.ffn_down_b = create_tensor(tn(LLM_TENSOR_FFN_DOWN, "bias", i), {n_embd}, TENSOR_NOT_REQUIRED);
-                            } else {
-                                layer.ffn_down_b = nullptr; // Or load split biases if they exist
-                            }
                             layer.ffn_up_b   = create_tensor(tn(LLM_TENSOR_FFN_UP,   "bias", i), {n_ff}, TENSOR_NOT_REQUIRED);
                         } else { // This block is for MoE models, LLM_ARCH_GRANITE_MOE will fall here.
                             layer.ffn_gate_inp  = create_tensor(tn(LLM_TENSOR_FFN_GATE_INP,  "weight", i), {n_embd, n_expert}, 0);
@@ -4270,8 +4265,11 @@ struct llm_build_llama : public llm_graph_context {
                     cur = ggml_add(ctx0, cur_x, cur_y);
                     cb(cur, "ffn_down_combined", il);
 
-                    // Bias for ffn_down is assumed to be null or handled if split biases were loaded.
-                    // model.layers[il].ffn_down_b was set to nullptr for Granite in loader.
+                    // Add bias for ffn_down if it exists
+                    if (model.layers[il].ffn_down_b) {
+                        cur = ggml_add(ctx0, cur, model.layers[il].ffn_down_b);
+                        cb(cur, "ffn_down_bias_added", il);
+                    }
                 } else if (model.layers[il].ffn_gate_inp == nullptr) {
                     // Original non-MoE FFN path for other Llama-like models
                     cur = build_ffn(cur, // cur here is ffn_norm_output

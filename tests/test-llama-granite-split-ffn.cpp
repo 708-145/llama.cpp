@@ -18,7 +18,7 @@ void test_granite_model_loading_conceptual() {
 
     // This test is conceptual as it requires a pre-existing GGUF file.
     // Steps would be:
-    // 1. Create a minimal GGUF file for LLM_ARCH_GRANITE with split ffn_down.x and ffn_down.y tensors.
+    // 1. Create a minimal GGUF file for LLM_ARCH_GRANITE with split ffn_down.x, ffn_down.y, and ffn_down.bias tensors.
     //    - E.g., n_embd=4, n_ff=8 (ffn_down_x: [2,4], ffn_down_y: [6,4] - assuming n_ff is split for ffn_down's first dim)
     //      From previous subtask: ffn_down_x (256, n_embd), ffn_down_y (n_ff-256, n_embd)
     //      Let n_embd = 4, n_ff = 8.
@@ -42,6 +42,7 @@ void test_granite_model_loading_conceptual() {
     const auto & layer = model->layers[0];
     assert(layer.ffn_down_x != nullptr);
     assert(layer.ffn_down_y != nullptr);
+    assert(layer.ffn_down_b != nullptr); // Bias should be loaded
     assert(layer.ffn_down == nullptr); // As set by loader for Granite
 
     // Example dimension check (adjust to actual GGUF values)
@@ -49,10 +50,12 @@ void test_granite_model_loading_conceptual() {
     // assert(layer.ffn_down_x->ne[1] == model->hparams.n_embd);
     // assert(layer.ffn_down_y->ne[0] == model->hparams.n_ff_arr[0] - 2);
     // assert(layer.ffn_down_y->ne[1] == model->hparams.n_embd);
+    // assert(layer.ffn_down_b->ne[0] == model->hparams.n_embd);
 
 
     printf("  Conceptual: ffn_down_x found with ne[0]=%lld, ne[1]=%lld\n", layer.ffn_down_x->ne[0], layer.ffn_down_x->ne[1]);
     printf("  Conceptual: ffn_down_y found with ne[0]=%lld, ne[1]=%lld\n", layer.ffn_down_y->ne[0], layer.ffn_down_y->ne[1]);
+    printf("  Conceptual: ffn_down_b found with ne[0]=%lld\n", layer.ffn_down_b->ne[0]);
 
     llama_free_model(model);
     */
@@ -124,8 +127,13 @@ void test_granite_ffn_computation() {
     ggml_set_name(layer.ffn_down_x, "blk.0.ffn_down.x");
     layer.ffn_down_y = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, n_ff_y_cols, hparams.n_embd);
     ggml_set_name(layer.ffn_down_y, "blk.0.ffn_down.y");
+    layer.ffn_down_b = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, hparams.n_embd); // Bias tensor
+    ggml_set_name(layer.ffn_down_b, "blk.0.ffn_down.bias");
+
     init_tensor(layer.ffn_down_x, 1.0f); // W_x: all 1s
     init_tensor(layer.ffn_down_y, 2.0f); // W_y: all 2s
+    init_tensor(layer.ffn_down_b, 0.5f); // Bias: all 0.5s
+
 
     // Mock ffn_hidden input (output of silu(gate)*up)
     // Shape: (n_ff, n_tokens)
@@ -143,6 +151,10 @@ void test_granite_ffn_computation() {
     ggml_tensor * cur_y = ggml_mul_mat(ctx, layer.ffn_down_y, inp_ff_y);
     ggml_tensor * computed_output_ggml = ggml_add(ctx, cur_x, cur_y);
 
+    if (layer.ffn_down_b) {
+        computed_output_ggml = ggml_add(ctx, computed_output_ggml, layer.ffn_down_b);
+    }
+
     // Build graph and compute (minimal)
     struct ggml_cgraph * gf = ggml_new_graph(ctx);
     ggml_build_forward_expand(gf, computed_output_ggml);
@@ -158,7 +170,7 @@ void test_granite_ffn_computation() {
 
     std::vector<float> expected_output_data(hparams.n_embd * n_tokens, 0.0f);
 
-    // Output_x = ffn_down_x^T * inp_ff_x
+    // Output_x = ffn_down_x^T * inp_ff_x (element-wise)
     // ffn_down_x (2x4) all 1s. Transposed: (4x2)
     // inp_ff_x (2x1) = [1, 2]^T
     // Result_x (4x1)
@@ -195,7 +207,19 @@ void test_granite_ffn_computation() {
             expected_output_data[t * hparams.n_embd + r] += sum_y;
         }
     }
-    // For n_tokens=1: expected_output_data = [3+66, 3+66, 3+66, 3+66] = [69, 69, 69, 69]
+    // For n_tokens=1, before bias: expected_output_data = [3+66, 3+66, 3+66, 3+66] = [69, 69, 69, 69]
+
+    // Add bias manually
+    if (layer.ffn_down_b) {
+        float * bias_data = (float *)layer.ffn_down_b->data;
+        for (int r = 0; r < hparams.n_embd; ++r) {
+            for (int t = 0; t < n_tokens; ++t) {
+                expected_output_data[t * hparams.n_embd + r] += bias_data[r];
+            }
+        }
+    }
+    // For n_tokens=1, after bias of 0.5: expected_output_data = [69.5, 69.5, 69.5, 69.5]
+
 
     // --- Assertions ---
     assert(computed_output_ggml->ne[0] == n_tokens);
