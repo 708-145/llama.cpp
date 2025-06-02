@@ -201,6 +201,8 @@ struct llama_layer {
     // ff
     struct ggml_tensor * ffn_gate     = nullptr; // w1
     struct ggml_tensor * ffn_down     = nullptr; // w2
+    struct ggml_tensor * ffn_down_a   = nullptr; // w2 for granite (part a)
+    struct ggml_tensor * ffn_down_b   = nullptr; // w2 for granite (part b)
     struct ggml_tensor * ffn_up       = nullptr; // w3
     struct ggml_tensor * ffn_gate_enc = nullptr;
     struct ggml_tensor * ffn_down_enc = nullptr;
