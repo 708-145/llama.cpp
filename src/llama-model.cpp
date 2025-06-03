@@ -4247,7 +4247,7 @@ struct llm_build_llama : public llm_graph_context {
                     const int64_t n_tokens_effective = ffn_hidden->ne[1];
 
                     ggml_tensor * inp_ff_x = ggml_view_2d(ctx0, ffn_hidden, 256,               n_tokens_effective, ffn_hidden->nb[1], 0);
-                    ggml_tensor * inp_ff_y = ggml_view_2d(ctx0, ffn_hidden, n_ff_hparam - 256, n_tokens_effective, ffn_hidden->nb[1], 256 * ggml_element_size(ffn_hidden->type));
+                    ggml_tensor * inp_ff_y = ggml_view_2d(ctx0, ffn_hidden, n_ff_hparam - 256, n_tokens_effective, ffn_hidden->nb[1], 0); // need offset?
                     cb(inp_ff_x, "inp_ff_x", il);
                     cb(inp_ff_y, "inp_ff_y", il);
 
@@ -4286,7 +4286,8 @@ struct llm_build_llama : public llm_graph_context {
                         false, 0.0,
                         LLAMA_EXPERT_GATING_FUNC_TYPE_SOFTMAX,
                         il);
-                cb(cur, "ffn_moe_out", il);
+                    cb(cur, "ffn_moe_out", il);
+                }
             }
 
             // For Granite architecture
