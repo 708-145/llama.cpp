@@ -1650,14 +1650,20 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
 
                         if (n_expert == 0) {
                             layer.ffn_gate = create_tensor(tn(LLM_TENSOR_FFN_GATE, "weight", i), {n_embd,   n_ff}, 0);
-                            layer.ffn_down = create_tensor(tn(LLM_TENSOR_FFN_DOWN, "weight", i), {  n_ff, n_embd}, 0);
+                            if (arch == LLM_ARCH_GRANITE) {
+                                // For Granite, ffn_down is split into ffn_down_x and ffn_down_y
+                                layer.ffn_down_x = create_tensor(tn(LLM_TENSOR_FFN_DOWN_X, "weight", i), {256,      n_embd}, 0);
+                                layer.ffn_down_y = create_tensor(tn(LLM_TENSOR_FFN_DOWN_Y, "weight", i), {n_ff-256, n_embd}, 0);
+                                layer.ffn_down = nullptr; // Ensure the old combined tensor is not accidentally used
+                            } else {
+                                layer.ffn_down = create_tensor(tn(LLM_TENSOR_FFN_DOWN, "weight", i), {  n_ff, n_embd}, 0);
+                            }
                             layer.ffn_up   = create_tensor(tn(LLM_TENSOR_FFN_UP,   "weight", i), {n_embd,   n_ff}, 0);
-
+                            layer.ffn_down_b = create_tensor(tn(LLM_TENSOR_FFN_DOWN, "bias", i), {n_embd}, TENSOR_NOT_REQUIRED);
                             // optional MLP bias
                             layer.ffn_gate_b = create_tensor(tn(LLM_TENSOR_FFN_GATE, "bias", i), {n_ff}, TENSOR_NOT_REQUIRED);
-                            layer.ffn_down_b = create_tensor(tn(LLM_TENSOR_FFN_DOWN, "bias", i), {n_embd}, TENSOR_NOT_REQUIRED);
                             layer.ffn_up_b   = create_tensor(tn(LLM_TENSOR_FFN_UP,   "bias", i), {n_ff}, TENSOR_NOT_REQUIRED);
-                        } else {
+                        } else { // This block is for MoE models, LLM_ARCH_GRANITE_MOE will go here.
                             layer.ffn_gate_inp  = create_tensor(tn(LLM_TENSOR_FFN_GATE_INP,  "weight", i), {n_embd, n_expert}, 0);
                             layer.ffn_gate_exps = create_tensor(tn(LLM_TENSOR_FFN_GATE_EXPS, "weight", i), {n_embd,   n_ff, n_expert}, TENSOR_NOT_REQUIRED);
                             layer.ffn_down_exps = create_tensor(tn(LLM_TENSOR_FFN_DOWN_EXPS, "weight", i), {  n_ff, n_embd, n_expert}, 0);
@@ -4213,24 +4219,66 @@ struct llm_build_llama : public llm_graph_context {
                         LLM_NORM_RMS, il);
                 cb(cur, "ffn_norm", il);
 
-                cur = build_ffn(cur,
-                        model.layers[il].ffn_up,   model.layers[il].ffn_up_b,   NULL,
-                        model.layers[il].ffn_gate, model.layers[il].ffn_gate_b, NULL,
-                        model.layers[il].ffn_down, model.layers[il].ffn_down_b, NULL,
-                        NULL,
-                        LLM_FFN_SILU, LLM_FFN_PAR, il);
-                cb(cur, "ffn_out", il);
-            } else {
-                // MoE branch
-                cur = build_norm(ffn_inp,
-                        model.layers[il].ffn_norm, NULL,
-                        LLM_NORM_RMS, il);
-                cb(cur, "ffn_norm", il);
+                if (arch == LLM_ARCH_GRANITE && model.layers[il].ffn_gate_inp == nullptr) {
+                    // Granite-specific FFN path (non-MoE)
+                    ggml_tensor * ffn_norm = cur;
 
-                cur = build_moe_ffn(cur, // SFG splitfacegranite
-                        model.layers[il].ffn_gate_inp,
-                        model.layers[il].ffn_up_exps,
-                        model.layers[il].ffn_gate_exps,
+                    ggml_tensor *w1 = build_lora_mm(model.layers[il].ffn_gate, ffn_norm);
+                    if (model.layers[il].ffn_gate_b) {
+                        w1 = ggml_add(ctx0, w1, model.layers[il].ffn_gate_b);
+                    }
+                    cb(w1, "w1", il);
+
+                    ggml_tensor *w3 = build_lora_mm(model.layers[il].ffn_up, ffn_norm);
+                    if (model.layers[il].ffn_up_b) {
+                        w3 = ggml_add(ctx0, w3, model.layers[il].ffn_up_b);
+                    }
+                    cb(w3, "w3", il);
+
+                    // SILU activation
+                    ggml_tensor *hidden_act = ggml_silu(ctx0, w1);
+                    cb(hidden_act, "hidden_act", il);
+
+                    // Element-wise multiplication
+                    ggml_tensor *ffn_hidden = ggml_mul(ctx0, hidden_act, w3);
+                    cb(ffn_hidden, "ffn_hidden", il);
+
+                    const int64_t n_ff_hparam = model.hparams.n_ff(il);
+                    const int64_t n_tokens_effective = ffn_hidden->ne[1];
+
+                    ggml_tensor * inp_ff_x = ggml_view_2d(ctx0, ffn_hidden, 256,               n_tokens_effective, ffn_hidden->nb[1], 0);
+                    ggml_tensor * inp_ff_y = ggml_view_2d(ctx0, ffn_hidden, n_ff_hparam - 256, n_tokens_effective, ffn_hidden->nb[1], 0); // need offset?
+                    cb(inp_ff_x, "inp_ff_x", il);
+                    cb(inp_ff_y, "inp_ff_y", il);
+
+                    ggml_tensor * cur_x = ggml_mul_mat(ctx0, model.layers[il].ffn_down_x, inp_ff_x);
+                    cb(cur_x, "cur_x", il);
+                    ggml_tensor * cur_y = ggml_mul_mat(ctx0, model.layers[il].ffn_down_y, inp_ff_y);
+                    cb(cur_y, "cur_y", il);
+
+                    cur = ggml_add(ctx0, cur_x, cur_y);
+                    cb(cur, "ffn_down_combined", il);
+
+                    // Add bias for ffn_down if it exists
+                    if (model.layers[il].ffn_down_b) {
+                        cur = ggml_add(ctx0, cur, model.layers[il].ffn_down_b);
+                        cb(cur, "ffn_down_bias_added", il);
+                    }
+                } else if (model.layers[il].ffn_gate_inp == nullptr) {
+                    // Original non-MoE FFN path for other Llama-like models
+                    cur = build_ffn(cur, // cur here is ffn_norm
+                            model.layers[il].ffn_up,   model.layers[il].ffn_up_b,   NULL,
+                            model.layers[il].ffn_gate, model.layers[il].ffn_gate_b, NULL,
+                            model.layers[il].ffn_down, model.layers[il].ffn_down_b, NULL,
+                            NULL,
+                            LLM_FFN_SILU, LLM_FFN_PAR, il);
+                } else {
+                    // MoE branch (e.g., for LLM_ARCH_GRANITE_MOE or other MoE Llama variants)
+                    // cur here is ffn_norm
+                    cur = build_moe_ffn(cur, // SFG splitfacegranite
+                            model.layers[il].ffn_gate_inp,
+                            model.layers[il].ffn_up_exps,
+                            model.layers[il].ffn_gate_exps,
                         model.layers[il].ffn_down_exps,
                         nullptr,
                         n_expert, n_expert_used,
@@ -4238,7 +4286,8 @@ struct llm_build_llama : public llm_graph_context {
                         false, 0.0,
                         LLAMA_EXPERT_GATING_FUNC_TYPE_SOFTMAX,
                         il);
-                cb(cur, "ffn_moe_out", il);
+                    cb(cur, "ffn_moe_out", il);
+                }
             }
 
             // For Granite architecture
