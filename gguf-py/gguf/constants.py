@@ -284,6 +284,7 @@ class MODEL_ARCH(IntEnum):
     EXAONE           = auto()
     GRANITE          = auto()
     GRANITE_MOE      = auto()
+    GRANITEMOEHYBRID = auto()
     CHAMELEON        = auto()
     WAVTOKENIZER_DEC = auto()
     PLM              = auto()
@@ -487,6 +488,7 @@ MODEL_ARCH_NAMES: dict[MODEL_ARCH, str] = {
     MODEL_ARCH.EXAONE:           "exaone",
     MODEL_ARCH.GRANITE:          "granite",
     MODEL_ARCH.GRANITE_MOE:      "granitemoe",
+    MODEL_ARCH.GRANITEMOEHYBRID: "granitemoehybrid",
     MODEL_ARCH.CHAMELEON:        "chameleon",
     MODEL_ARCH.WAVTOKENIZER_DEC: "wavtokenizer-dec",
     MODEL_ARCH.PLM:              "plm",
@@ -1628,6 +1630,30 @@ MODEL_TENSORS: dict[MODEL_ARCH, list[MODEL_TENSOR]] = {
         MODEL_TENSOR.FFN_GATE_EXP,
         MODEL_TENSOR.FFN_DOWN_EXP,
         MODEL_TENSOR.FFN_UP_EXP,
+    ],
+    MODEL_ARCH.GRANITEMOEHYBRID: [
+        MODEL_TENSOR.TOKEN_EMBD,
+        MODEL_TENSOR.OUTPUT_NORM,
+        MODEL_TENSOR.OUTPUT,
+        MODEL_TENSOR.ATTN_NORM, # used for attention, Mamba layer input norm, and MoE block input norm
+        MODEL_TENSOR.ATTN_Q,
+        MODEL_TENSOR.ATTN_K,
+        MODEL_TENSOR.ATTN_V,
+        MODEL_TENSOR.ATTN_OUT,
+        MODEL_TENSOR.SSM_IN,
+        MODEL_TENSOR.SSM_CONV1D,
+        MODEL_TENSOR.SSM_X,
+        MODEL_TENSOR.SSM_DT,
+        MODEL_TENSOR.SSM_A,
+        MODEL_TENSOR.SSM_D,
+        MODEL_TENSOR.SSM_OUT,
+        MODEL_TENSOR.FFN_GATE_INP,  # Router for MoE
+        MODEL_TENSOR.FFN_GATE_EXP,  # Gate weights for experts
+        MODEL_TENSOR.FFN_DOWN_EXP,  # Down projection weights for experts
+        MODEL_TENSOR.FFN_UP_EXP,    # Up projection weights for experts
+        MODEL_TENSOR.FFN_GATE_SHEXP, # Gate weights for Shared MLP
+        MODEL_TENSOR.FFN_DOWN_SHEXP, # Down projection weights for Shared MLP
+        MODEL_TENSOR.FFN_UP_SHEXP,   # Up projection weights for Shared MLP
     ],
     MODEL_ARCH.CHAMELEON: [
         MODEL_TENSOR.TOKEN_EMBD,

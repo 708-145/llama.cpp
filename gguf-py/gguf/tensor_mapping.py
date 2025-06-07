@@ -277,10 +277,37 @@ class TensorNameMap:
             "transformer.decoder_layer.{bid}.router",           # Grok
             "transformer.blocks.{bid}.ffn.router.layer",        # dbrx
             "model.layers.{bid}.block_sparse_moe.router.layer", # granitemoe
+            "model.layers.{bid}.block_sparse_moe.router.layer", # GraniteMoeHybrid (MoE router)
         ),
 
-        MODEL_TENSOR.FFN_GATE_INP_SHEXP: (
+        MODEL_TENSOR.FFN_GATE_INP_SHEXP: ( # For Qwen2MoE, GraniteMoeHybrid might not have a separate one if shared MLP is simple
             "model.layers.{bid}.mlp.shared_expert_gate", # qwen2moe
+        ),
+
+        MODEL_TENSOR.FFN_GATE_EXP: (
+            "layers.{bid}.feed_forward.experts.w1", # mixtral (merged) - for reference
+            "model.layers.{bid}.block_sparse_moe.experts.{exp_idx}.gate_proj", # GraniteMoeHybrid (assuming split name)
+        ),
+        MODEL_TENSOR.FFN_UP_EXP: (
+            "layers.{bid}.feed_forward.experts.w3", # mixtral (merged) - for reference
+            "model.layers.{bid}.block_sparse_moe.experts.{exp_idx}.up_proj", # GraniteMoeHybrid (assuming split name)
+        ),
+        MODEL_TENSOR.FFN_DOWN_EXP: (
+            "layers.{bid}.feed_forward.experts.w2", # mixtral (merged) - for reference
+            "model.layers.{bid}.block_sparse_moe.experts.{exp_idx}.output_linear", # GraniteMoeHybrid
+        ),
+
+        MODEL_TENSOR.FFN_GATE_SHEXP: (
+            "model.layers.{bid}.mlp.shared_expert.gate_proj",  # qwen2moe - for reference
+            "model.layers.{bid}.shared_mlp.gate_proj", # GraniteMoeHybrid (assuming split name)
+        ),
+        MODEL_TENSOR.FFN_UP_SHEXP: (
+            "model.layers.{bid}.mlp.shared_expert.up_proj",  # qwen2moe - for reference
+            "model.layers.{bid}.shared_mlp.up_proj", # GraniteMoeHybrid (assuming split name)
+        ),
+        MODEL_TENSOR.FFN_DOWN_SHEXP: (
+            "model.layers.{bid}.mlp.shared_expert.down_proj",  # qwen2moe - for reference
+            "model.layers.{bid}.shared_mlp.output_linear", # GraniteMoeHybrid
         ),
 
         MODEL_TENSOR.FFN_EXP_PROBS_B: (
@@ -615,6 +642,44 @@ class TensorNameMap:
             "model.layers.{bid}.attention.output", # rwkv7
             "model.layers.{bid}.attention.o_proj", # rwkv7
         ),
+
+        # For GraniteMoeHybrid Mamba part
+        MODEL_TENSOR.SSM_CONV1D: (
+            "model.layers.{bid}.conv1d", # Mamba, GraniteMoeHybrid
+            "backbone.layers.{bid}.mixer.conv1d", # Mamba HF
+            "model.layers.{bid}.mamba.conv1d", # GraniteMoeHybrid Mamba specific name
+        ),
+        MODEL_TENSOR.SSM_IN: (
+            "model.layers.{bid}.in_proj", # Mamba, GraniteMoeHybrid
+            "backbone.layers.{bid}.mixer.in_proj", # Mamba HF
+            "model.layers.{bid}.mamba.in_proj", # GraniteMoeHybrid Mamba specific name
+        ),
+        MODEL_TENSOR.SSM_X: (
+            "model.layers.{bid}.x_proj", # Mamba, GraniteMoeHybrid
+            "backbone.layers.{bid}.mixer.x_proj", # Mamba HF
+            "model.layers.{bid}.mamba.x_proj", # GraniteMoeHybrid Mamba specific name
+        ),
+        MODEL_TENSOR.SSM_DT: (
+            "model.layers.{bid}.dt_proj", # Mamba, GraniteMoeHybrid
+            "backbone.layers.{bid}.mixer.dt_proj", # Mamba HF
+            "model.layers.{bid}.mamba.dt_proj", # GraniteMoeHybrid Mamba specific name
+        ),
+        MODEL_TENSOR.SSM_A: ( # Note: No ".weight" suffix by default for A_log
+            "model.layers.{bid}.A_log", # Mamba, GraniteMoeHybrid
+            "backbone.layers.{bid}.mixer.A_log", # Mamba HF
+            "model.layers.{bid}.mamba.A_log", # GraniteMoeHybrid Mamba specific name
+        ),
+        MODEL_TENSOR.SSM_D: ( # Note: No ".weight" suffix by default for D
+            "model.layers.{bid}.D", # Mamba, GraniteMoeHybrid
+            "backbone.layers.{bid}.mixer.D", # Mamba HF
+            "model.layers.{bid}.mamba.D", # GraniteMoeHybrid Mamba specific name
+        ),
+        MODEL_TENSOR.SSM_OUT: (
+            "model.layers.{bid}.out_proj", # Mamba, GraniteMoeHybrid
+            "backbone.layers.{bid}.mixer.out_proj", # Mamba HF
+            "model.layers.{bid}.mamba.out_proj",# GraniteMoeHybrid Mamba specific name
+        ),
+        # End GraniteMoeHybrid Mamba part
 
         MODEL_TENSOR.CHANNEL_MIX_LERP_K: (
             "rwkv.blocks.{bid}.feed_forward.time_maa_k", # rwkv6
