@@ -5072,10 +5072,10 @@ class ExaoneModel(Model):
                 yield (self.format_tensor_name(gguf.MODEL_TENSOR.ROPE_FREQS), torch.tensor(rope_factors, dtype=torch.float32))
 
 
-@Model.register("GraniteForCausalLM")
+@Model.register("GraniteForCausalLM", "Granite4ForCausalLM")
 class GraniteModel(LlamaModel):
     """Conversion for IBM's GraniteForCausalLM"""
-    model_arch = gguf.MODEL_ARCH.GRANITE
+    model_arch = gguf.MODEL_ARCH.GRANITE4
 
     def set_gguf_parameters(self):
         """Granite uses standard llama parameters with the following differences:
