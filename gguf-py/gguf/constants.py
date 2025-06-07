@@ -1635,7 +1635,7 @@ MODEL_TENSORS: dict[MODEL_ARCH, list[MODEL_TENSOR]] = {
         MODEL_TENSOR.TOKEN_EMBD,
         MODEL_TENSOR.OUTPUT_NORM,
         MODEL_TENSOR.OUTPUT,
-        MODEL_TENSOR.ATTN_NORM, # used for attention, Mamba layer input norm, and MoE block input norm
+        MODEL_TENSOR.ATTN_NORM, # For Attn, Mamba input, MoE input
         MODEL_TENSOR.ATTN_Q,
         MODEL_TENSOR.ATTN_K,
         MODEL_TENSOR.ATTN_V,

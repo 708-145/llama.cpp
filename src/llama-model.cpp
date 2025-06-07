@@ -408,6 +408,129 @@ void llama_model::load_arch(llama_model_loader & ml) {
     }
 }
 
+// Helper function to load hyperparameters for GraniteMoeHybrid
+static void load_hparams_granitemoehybrid(
+    llama_model_loader &ml,
+    llama_hparams &hparams, // Pass by reference to modify
+    llm_arch arch,          // Pass by value
+    llm_type &model_type,   // Pass by reference to set
+    std::string &model_name GGML_UNUSED // Pass by reference to set (optional if name is set globally later)
+) {
+    // Standard/common HParams (examples from other architectures, adjust as needed for Granite)
+    ml.get_key(LLM_KV(arch)(LLM_KV_CONTEXT_LENGTH),    hparams.n_ctx_train);
+    ml.get_key(LLM_KV(arch)(LLM_KV_EMBEDDING_LENGTH),  hparams.n_embd);
+    ml.get_key(LLM_KV(arch)(LLM_KV_BLOCK_COUNT),       hparams.n_layer);
+    ml.get_key(LLM_KV(arch)(LLM_KV_EXPERT_COUNT),      hparams.n_expert,      false);
+    ml.get_key(LLM_KV(arch)(LLM_KV_EXPERT_USED_COUNT), hparams.n_expert_used, false);
+
+    // Ensure array hparams are zeroed or correctly sized before potential per-layer loading
+    std::fill(hparams.n_head_arr.begin(),    hparams.n_head_arr.end(),    0);
+    std::fill(hparams.n_head_kv_arr.begin(), hparams.n_head_kv_arr.end(), 0);
+    std::fill(hparams.n_ff_arr.begin(),      hparams.n_ff_arr.end(),      0);
+
+    ml.get_key_or_arr(LLM_KV(arch)(LLM_KV_FEED_FORWARD_LENGTH),  hparams.n_ff_arr,   hparams.n_layer, false);
+    ml.get_key_or_arr(LLM_KV(arch)(LLM_KV_ATTENTION_HEAD_COUNT), hparams.n_head_arr, hparams.n_layer, false);
+
+    // n_head_kv is optional, default to n_head
+    // Create a temporary copy for potential modification by get_key_or_arr
+    auto temp_n_head_kv_arr = hparams.n_head_arr;
+    ml.get_key_or_arr(LLM_KV(arch)(LLM_KV_ATTENTION_HEAD_COUNT_KV), temp_n_head_kv_arr, hparams.n_layer, false);
+    hparams.n_head_kv_arr = temp_n_head_kv_arr;
+
+
+    bool rope_finetuned = false;
+    ml.get_key(LLM_KV(arch)(LLM_KV_ROPE_SCALING_FINETUNED), rope_finetuned, false);
+    hparams.rope_finetuned = rope_finetuned;
+
+    hparams.n_ctx_orig_yarn = hparams.n_ctx_train; // Default
+    ml.get_key(LLM_KV(arch)(LLM_KV_ROPE_SCALING_ORIG_CTX_LEN), hparams.n_ctx_orig_yarn, false);
+
+    hparams.rope_freq_base_train = 10000.0f; // Default
+    ml.get_key(LLM_KV(arch)(LLM_KV_ROPE_FREQ_BASE), hparams.rope_freq_base_train, false);
+
+    std::string rope_scaling_str("linear"); // Default
+    ml.get_key(LLM_KV(arch)(LLM_KV_ROPE_SCALING_TYPE), rope_scaling_str, false);
+    hparams.rope_scaling_type_train = llama_rope_scaling_type_from_string(rope_scaling_str);
+    if (hparams.rope_scaling_type_train == LLAMA_ROPE_SCALING_TYPE_UNSPECIFIED) {
+        throw std::runtime_error(format("unknown rope scaling type '%s' for %s", rope_scaling_str.c_str(), llm_arch_name(arch)));
+    }
+
+    float ropescale_factor = 0.0f;
+    if (!ml.get_key(LLM_KV(arch)(LLM_KV_ROPE_SCALING_FACTOR), ropescale_factor, false)) {
+        ml.get_key(LLM_KV(arch)(LLM_KV_ROPE_SCALE_LINEAR), ropescale_factor, false); // Legacy key
+    }
+    hparams.rope_freq_scale_train = (ropescale_factor == 0.0f) ? 1.0f : (1.0f / ropescale_factor);
+
+    hparams.rope_freq_base_train_swa  = hparams.rope_freq_base_train;
+    hparams.rope_freq_scale_train_swa = hparams.rope_freq_scale_train;
+    ml.get_key(LLM_KV(arch)(LLM_KV_ROPE_SCALING_ATTN_FACTOR), hparams.rope_attn_factor, false);
+
+
+    if (hparams.n_head(0) > 0) { // Use n_head(0) assuming it's uniform or representative for these calcs
+        hparams.n_embd_head_k = hparams.n_embd / hparams.n_head(0);
+        ml.get_key(LLM_KV(arch)(LLM_KV_ATTENTION_KEY_LENGTH), hparams.n_embd_head_k, false);
+        hparams.n_embd_head_v = hparams.n_embd / hparams.n_head(0);
+        ml.get_key(LLM_KV(arch)(LLM_KV_ATTENTION_VALUE_LENGTH), hparams.n_embd_head_v, false);
+        hparams.n_rot = hparams.n_embd_head_k; // Default
+        ml.get_key(LLM_KV(arch)(LLM_KV_ROPE_DIMENSION_COUNT), hparams.n_rot, false);
+    } else { // For non-attention models or layers if applicable
+        hparams.n_rot = 0;
+        hparams.n_embd_head_k = 0;
+        hparams.n_embd_head_v = 0;
+    }
+    ml.get_key(LLM_KV(arch)(LLM_KV_ATTENTION_LAYERNORM_RMS_EPS), hparams.f_norm_rms_eps);
+
+    // GraniteMoeHybrid specific hparams
+    ml.get_key(LLM_KV(arch)(LLM_KV_GRANITEMOEHYBRID_SHARED_INTERMEDIATE_SIZE), hparams.n_ff_shared, false);
+
+    if (hparams.n_layer > LLAMA_MAX_LAYERS) {
+        throw std::runtime_error(format("number of layers (%u) exceeds LLAMA_MAX_LAYERS (%d)", hparams.n_layer, LLAMA_MAX_LAYERS));
+    }
+    for (uint32_t i = 0; i < hparams.n_layer; ++i) {
+        const std::string key_str = format("%s.layer_type.%d", llm_arch_name(arch), i);
+        uint32_t layer_type_int = 0; // Default to attention
+        if (!ml.get_key(key_str.c_str(), layer_type_int, true)) { // true = mandatory if layers exist
+             throw std::runtime_error(format("Missing layer type for layer %d in %s", i, llm_arch_name(arch)));
+        }
+        hparams.granite_layer_types[i] = layer_type_int;
+    }
+
+    // Mamba related hparams
+    ml.get_key(LLM_KV(arch)(LLM_KV_SSM_CONV_KERNEL),    hparams.ssm_d_conv,  false);
+    ml.get_key(LLM_KV(arch)(LLM_KV_SSM_INNER_SIZE),     hparams.ssm_d_inner, false);
+    ml.get_key(LLM_KV(arch)(LLM_KV_SSM_STATE_SIZE),     hparams.ssm_d_state, false);
+    ml.get_key(LLM_KV(arch)(LLM_KV_SSM_TIME_STEP_RANK), hparams.ssm_dt_rank, false);
+    ml.get_key(LLM_KV(arch)(LLM_KV_SSM_DT_B_C_RMS),     hparams.ssm_dt_b_c_rms, false);
+
+    // MoE expert FFN intermediate size
+    ml.get_key(LLM_KV(arch)(LLM_KV_EXPERT_FEED_FORWARD_LENGTH), hparams.n_ff_exp, false);
+    if (hparams.n_expert > 0 && hparams.n_ff_exp == 0 && hparams.n_ff(0) > 0) {
+        hparams.n_ff_exp = hparams.n_ff(0); // Default to main FFN size of first layer
+        LLAMA_LOG_WARN("%s: expert_feed_forward_length not set for %s, defaulting to feed_forward_length of layer 0 (%u)\n", __func__, llm_arch_name(arch), hparams.n_ff_exp);
+    }
+
+    // Granite-specific scaling factors
+    ml.get_key(LLM_KV(arch)(LLM_KV_LOGIT_SCALE),       hparams.f_logit_scale,     false);
+    ml.get_key(LLM_KV(arch)(LLM_KV_RESIDUAL_SCALE),    hparams.f_residual_scale,  false);
+    ml.get_key(LLM_KV(arch)(LLM_KV_EMBEDDING_SCALE),   hparams.f_embedding_scale, false);
+    ml.get_key(LLM_KV(arch)(LLM_KV_ATTENTION_SCALE),   hparams.f_attention_scale, false);
+
+    // Model type classification (placeholder logic)
+    // This should be adapted from existing models like LLAMA or GRANITE based on parameter counts or specific GGUF tags if available.
+    uint32_t n_vocab_check = 0;
+    ml.get_key(LLM_KV(arch)(LLM_KV_VOCAB_SIZE), n_vocab_check, false); // Use a temp var to avoid direct hparams modification here
+
+    model_type = LLM_TYPE_UNKNOWN; // Default
+    if (hparams.n_expert == 0) { // This condition might need refinement for GraniteMoeHybrid if it can operate without experts
+        if (hparams.n_layer == 32 && n_vocab_check == 49152) model_type = LLM_TYPE_3B; // Example for Granite
+        else if (hparams.n_layer == 32) model_type = LLM_TYPE_7B; // Example
+        // Add more specific GraniteMoeHybrid type classifications if needed
+    } else {
+         if (hparams.n_layer == 32) model_type = LLM_TYPE_8x7B; // Example for MoE
+    }
+    // model_name_out is usually set from LLM_KV_GENERAL_NAME by the caller if needed
+}
+
 void llama_model::load_hparams(llama_model_loader & ml) {
     const gguf_context * ctx = ml.meta.get();
 
@@ -1323,47 +1446,7 @@ void llama_model::load_hparams(llama_model_loader & ml) {
             } break;
         case LLM_ARCH_GRANITEMOEHYBRID:
             {
-                ml.get_key(LLM_KV_ROPE_DIMENSION_COUNT,          hparams.n_rot);
-                ml.get_key(LLM_KV_ATTENTION_LAYERNORM_RMS_EPS,   hparams.f_norm_rms_eps);
-                ml.get_key(LLM_KV_ROPE_FREQ_BASE,                hparams.rope_freq_base_train);
-                // Optional: RoPE scaling type, defaults to linear if not present
-                std::string rope_scaling_granitemoehybrid("linear");
-                ml.get_key(LLM_KV_ROPE_SCALING_TYPE, rope_scaling_granitemoehybrid, false);
-                hparams.rope_scaling_type_train = llama_rope_scaling_type_from_string(rope_scaling_granitemoehybrid);
-                if (hparams.rope_scaling_type_train == LLAMA_ROPE_SCALING_TYPE_UNSPECIFIED) {
-                    throw std::runtime_error("unknown rope scaling type for GraniteMoeHybrid");
-                }
-                // Optional: RoPE scaling factor, defaults to 1.0 if not present
-                float rope_scale_granitemoehybrid = 1.0f;
-                if (ml.get_key(LLM_KV_ROPE_SCALING_FACTOR, rope_scale_granitemoehybrid, false)) {
-                     hparams.rope_freq_scale_train = 1.0f / rope_scale_granitemoehybrid;
-                } else {
-                     hparams.rope_freq_scale_train = 1.0f;
-                }
-
-
-                // GraniteMoeHybrid specific hparams
-                ml.get_key(LLM_KV(arch, LLM_KV_GRANITEMOEHYBRID_SHARED_INTERMEDIATE_SIZE), hparams.n_ff_shared);
-                for (uint32_t i = 0; i < hparams.n_layer; ++i) {
-                    std::string key = format("%s.layer_type.%d", llm_arch_name(arch), i);
-                    ml.get_key(key.c_str(), hparams.granite_layer_types[i], true); // Ensure this key is present
-                }
-
-                // Mamba related hparams
-                ml.get_key(LLM_KV_SSM_CONV_KERNEL,    hparams.ssm_d_conv, false); // False as it's only for mamba layers
-                ml.get_key(LLM_KV_SSM_INNER_SIZE,     hparams.ssm_d_inner, false);
-                ml.get_key(LLM_KV_SSM_STATE_SIZE,     hparams.ssm_d_state, false);
-                ml.get_key(LLM_KV_SSM_TIME_STEP_RANK, hparams.ssm_dt_rank, false);
-
-                // MoE params (already loaded globally, but good to note they are used)
-                // hparams.n_expert and hparams.n_expert_used are loaded earlier
-
-                // Expert FFN intermediate size
-                ml.get_key(LLM_KV_EXPERT_FEED_FORWARD_LENGTH, hparams.n_ff_exp);
-
-
-                // TODO: Determine model type (e.g., LLM_TYPE_7B) based on params
-                type = LLM_TYPE_UNKNOWN; // Placeholder
+                load_hparams_granitemoehybrid(ml, this->hparams, this->arch, this->type, this->name);
             } break;
         case LLM_ARCH_CHAMELEON:
             {
@@ -1383,61 +1466,6 @@ void llama_model::load_hparams(llama_model_loader & ml) {
                 ml.get_key(LLM_KV_ATTENTION_GROUPNORM_EPS,    hparams.f_norm_group_eps);
                 ml.get_key(LLM_KV_ATTENTION_GROUPNORM_GROUPS, hparams.n_norm_groups);
                 ml.get_key(LLM_KV_ATTENTION_CAUSAL,           hparams.causal_attn);
-                } break;
-            case LLM_ARCH_GRANITEMOEHYBRID:
-                {
-                    tok_embd = create_tensor(tn(LLM_TENSOR_TOKEN_EMBD, "weight"), {n_embd, n_vocab}, 0);
-
-                    output_norm = create_tensor(tn(LLM_TENSOR_OUTPUT_NORM, "weight"), {n_embd}, 0);
-                    output      = create_tensor(tn(LLM_TENSOR_OUTPUT,      "weight"), {n_embd, n_vocab}, TENSOR_NOT_REQUIRED);
-
-                    if (output == NULL) {
-                        output = create_tensor(tn(LLM_TENSOR_TOKEN_EMBD, "weight"), {n_embd, n_vocab}, TENSOR_DUPLICATED);
-                    }
-
-                    for (int i = 0; i < n_layer; ++i) {
-                        auto & layer = layers[i];
-                        const int64_t cur_n_ff_exp = hparams.n_ff_exp;
-                        const int64_t cur_n_ff_shared = hparams.n_ff_shared;
-
-                        layer.attn_norm = create_tensor(tn(LLM_TENSOR_ATTN_NORM, "weight", i), {n_embd}, 0);
-
-                        if (hparams.granite_layer_types[i] == 0) { // Attention Layer
-                            layer.wq = create_tensor(tn(LLM_TENSOR_ATTN_Q,   "weight", i), {n_embd, hparams.n_embd_head_k * hparams.n_head(i)}, 0);
-                            layer.wk = create_tensor(tn(LLM_TENSOR_ATTN_K,   "weight", i), {n_embd, hparams.n_embd_k_gqa(i)}, 0);
-                            layer.wv = create_tensor(tn(LLM_TENSOR_ATTN_V,   "weight", i), {n_embd, hparams.n_embd_v_gqa(i)}, 0);
-                            layer.wo = create_tensor(tn(LLM_TENSOR_ATTN_OUT, "weight", i), {hparams.n_embd_head_k * hparams.n_head(i), n_embd}, 0);
-
-                            layer.bq = create_tensor(tn(LLM_TENSOR_ATTN_Q, "bias", i), {hparams.n_embd_head_k * hparams.n_head(i)}, TENSOR_NOT_REQUIRED);
-                            layer.bk = create_tensor(tn(LLM_TENSOR_ATTN_K, "bias", i), {hparams.n_embd_k_gqa(i)}, TENSOR_NOT_REQUIRED);
-                            layer.bv = create_tensor(tn(LLM_TENSOR_ATTN_V, "bias", i), {hparams.n_embd_v_gqa(i)}, TENSOR_NOT_REQUIRED);
-                            layer.bo = create_tensor(tn(LLM_TENSOR_ATTN_OUT, "bias", i), {n_embd}, TENSOR_NOT_REQUIRED);
-
-                        } else if (hparams.granite_layer_types[i] == 1) { // Mamba Layer
-                            layer.ssm_in = create_tensor(tn(LLM_TENSOR_SSM_IN, "weight", i), {n_embd, hparams.ssm_d_inner * 2}, 0);
-                            layer.ssm_conv1d = create_tensor(tn(LLM_TENSOR_SSM_CONV1D, "weight", i), {hparams.ssm_d_conv, hparams.ssm_d_inner, hparams.ssm_d_inner}, 0);
-                            layer.ssm_conv1d_b = create_tensor(tn(LLM_TENSOR_SSM_CONV1D, "bias", i), {hparams.ssm_d_inner}, TENSOR_NOT_REQUIRED);
-                            layer.ssm_x = create_tensor(tn(LLM_TENSOR_SSM_X, "weight", i), {hparams.ssm_d_inner, hparams.ssm_dt_rank + 2 * hparams.ssm_d_state}, 0);
-                            layer.ssm_dt = create_tensor(tn(LLM_TENSOR_SSM_DT, "weight", i), {hparams.ssm_dt_rank, hparams.ssm_d_inner}, 0);
-                            layer.ssm_dt_b = create_tensor(tn(LLM_TENSOR_SSM_DT, "bias", i), {hparams.ssm_d_inner}, TENSOR_NOT_REQUIRED);
-                            layer.ssm_a = create_tensor(tn(LLM_TENSOR_SSM_A, i), {hparams.ssm_d_state, hparams.ssm_d_inner}, 0);
-                            layer.ssm_d = create_tensor(tn(LLM_TENSOR_SSM_D, i), {hparams.ssm_d_inner}, 0);
-                            layer.ssm_out = create_tensor(tn(LLM_TENSOR_SSM_OUT, "weight", i), {hparams.ssm_d_inner, n_embd}, 0);
-                        }
-
-                        // MoE Router
-                        layer.ffn_gate_inp = create_tensor(tn(LLM_TENSOR_FFN_GATE_INP, "weight", i), {n_embd, n_expert}, 0);
-
-                        // MoE Expert Weights
-                        layer.ffn_gate_exps = create_tensor(tn(LLM_TENSOR_FFN_GATE_EXP, "weight", i), {n_embd, cur_n_ff_exp, n_expert}, 0);
-                        layer.ffn_up_exps   = create_tensor(tn(LLM_TENSOR_FFN_UP_EXP,   "weight", i), {n_embd, cur_n_ff_exp, n_expert}, 0);
-                        layer.ffn_down_exps = create_tensor(tn(LLM_TENSOR_FFN_DOWN_EXP, "weight", i), {cur_n_ff_exp, n_embd,   n_expert}, 0);
-
-                        // Shared MLP Weights
-                        layer.ffn_gate_shexp = create_tensor(tn(LLM_TENSOR_FFN_GATE_SHEXP, "weight", i), {n_embd, cur_n_ff_shared}, 0);
-                        layer.ffn_up_shexp   = create_tensor(tn(LLM_TENSOR_FFN_UP_SHEXP,   "weight", i), {n_embd, cur_n_ff_shared}, 0);
-                        layer.ffn_down_shexp = create_tensor(tn(LLM_TENSOR_FFN_DOWN_SHEXP, "weight", i), {cur_n_ff_shared, n_embd}, 0);
-                    }
             } break;
         default: throw std::runtime_error("unsupported model architecture");
     }
@@ -1457,6 +1485,112 @@ void llama_model::load_vocab(llama_model_loader & ml) {
     const auto kv = LLM_KV(arch);
 
     vocab.load(ml, kv);
+}
+
+// Helper function to load tensors for GraniteMoeHybrid
+static void load_tensors_granitemoehybrid(
+    llama_model_loader &ml,
+    llama_model &model,
+    const std::function<ggml_tensor*(const LLM_TN_IMPL&, const std::initializer_list<int64_t>&, int)>& create_tensor
+) {
+    const auto & hparams = model.hparams;
+    const auto & vocab = model.vocab;
+    const auto arch = model.arch; // Use model.arch consistently
+    const auto tn = LLM_TN(arch);
+
+    // Define dimensions (ensure these are consistently available and correctly named from hparams)
+    const int64_t n_embd        = hparams.n_embd;
+    const int64_t n_vocab       = vocab.n_tokens();
+    const int64_t n_layer       = hparams.n_layer;
+    const int64_t n_expert      = hparams.n_expert;
+    // const int64_t n_expert_used = hparams.n_expert_used; // Not directly used for tensor shapes here
+    const int64_t n_ff_exp      = hparams.n_ff_exp;    // Loaded in load_hparams
+    const int64_t n_ff_shared   = hparams.n_ff_shared; // Loaded in load_hparams
+
+    // Mamba specific dimensions from hparams
+    const int64_t ssm_d_inner = hparams.ssm_d_inner;
+    const int64_t ssm_d_conv  = hparams.ssm_d_conv;
+    const int64_t ssm_dt_rank = hparams.ssm_dt_rank;
+    const int64_t ssm_d_state = hparams.ssm_d_state;
+
+    // Global tensors
+    model.tok_embd = create_tensor(tn(LLM_TENSOR_TOKEN_EMBD, "weight"), {n_embd, n_vocab}, 0);
+    model.output_norm = create_tensor(tn(LLM_TENSOR_OUTPUT_NORM, "weight"), {n_embd}, 0);
+    if (ml.get_tensor_meta(tn(LLM_TENSOR_OUTPUT_NORM, "bias").str().c_str())) {
+        model.output_norm_b = create_tensor(tn(LLM_TENSOR_OUTPUT_NORM, "bias"), {n_embd}, llama_model_loader::TENSOR_NOT_REQUIRED);
+    }
+    model.output = create_tensor(tn(LLM_TENSOR_OUTPUT, "weight"), {n_embd, n_vocab}, llama_model_loader::TENSOR_NOT_REQUIRED);
+    if (model.output == nullptr) {
+        model.output = create_tensor(tn(LLM_TENSOR_TOKEN_EMBD, "weight"), {n_embd, n_vocab}, llama_model_loader::TENSOR_DUPLICATED);
+    }
+    if (ml.get_tensor_meta(tn(LLM_TENSOR_OUTPUT, "bias").str().c_str())) {
+         model.output_b = create_tensor(tn(LLM_TENSOR_OUTPUT, "bias"), {n_vocab}, llama_model_loader::TENSOR_NOT_REQUIRED);
+    }
+
+    for (int i = 0; i < n_layer; ++i) {
+        auto & layer = model.layers[i];
+        const uint32_t layer_type = hparams.granite_layer_types[i];
+
+        // Common pre-block norm (used as attn_norm or pre_ssm_norm)
+        layer.attn_norm = create_tensor(tn(LLM_TENSOR_ATTN_NORM, "weight", i), {n_embd}, 0);
+        if (ml.get_tensor_meta(tn(LLM_TENSOR_ATTN_NORM, "bias", i).str().c_str())) {
+            layer.attn_norm_b = create_tensor(tn(LLM_TENSOR_ATTN_NORM, "bias", i), {n_embd}, llama_model_loader::TENSOR_NOT_REQUIRED);
+        }
+
+        if (layer_type == 0) { // Attention Layer
+            const int64_t n_head_layer    = hparams.n_head(i);
+            // const int64_t n_head_kv_layer = hparams.n_head_kv(i); // Not directly used
+            const int64_t n_embd_head_k_layer = hparams.n_embd_head_k;
+            // const int64_t n_embd_head_v_layer = hparams.n_embd_head_v; // Not directly used
+            const int64_t n_embd_k_gqa_layer = hparams.n_embd_k_gqa(i);
+            const int64_t n_embd_v_gqa_layer = hparams.n_embd_v_gqa(i);
+
+
+            layer.wq = create_tensor(tn(LLM_TENSOR_ATTN_Q, "weight", i), {n_embd, n_embd_head_k_layer * n_head_layer}, 0);
+            layer.wk = create_tensor(tn(LLM_TENSOR_ATTN_K, "weight", i), {n_embd, n_embd_k_gqa_layer}, 0);
+            layer.wv = create_tensor(tn(LLM_TENSOR_ATTN_V, "weight", i), {n_embd, n_embd_v_gqa_layer}, 0);
+            layer.wo = create_tensor(tn(LLM_TENSOR_ATTN_OUT, "weight", i), {n_embd_head_k_layer * n_head_layer, n_embd}, 0);
+
+            if (ml.get_tensor_meta(tn(LLM_TENSOR_ATTN_Q, "bias", i).str().c_str())) layer.bq = create_tensor(tn(LLM_TENSOR_ATTN_Q, "bias", i), {n_embd_head_k_layer * n_head_layer}, llama_model_loader::TENSOR_NOT_REQUIRED);
+            if (ml.get_tensor_meta(tn(LLM_TENSOR_ATTN_K, "bias", i).str().c_str())) layer.bk = create_tensor(tn(LLM_TENSOR_ATTN_K, "bias", i), {n_embd_k_gqa_layer}, llama_model_loader::TENSOR_NOT_REQUIRED);
+            if (ml.get_tensor_meta(tn(LLM_TENSOR_ATTN_V, "bias", i).str().c_str())) layer.bv = create_tensor(tn(LLM_TENSOR_ATTN_V, "bias", i), {n_embd_v_gqa_layer}, llama_model_loader::TENSOR_NOT_REQUIRED);
+            if (ml.get_tensor_meta(tn(LLM_TENSOR_ATTN_OUT, "bias", i).str().c_str())) layer.bo = create_tensor(tn(LLM_TENSOR_ATTN_OUT, "bias", i), {n_embd}, llama_model_loader::TENSOR_NOT_REQUIRED);
+
+        } else if (layer_type == 1) { // Mamba Layer
+            layer.ssm_in = create_tensor(tn(LLM_TENSOR_SSM_IN, "weight", i), {n_embd, ssm_d_inner * 2}, 0);
+            layer.ssm_conv1d = create_tensor(tn(LLM_TENSOR_SSM_CONV1D, "weight", i), {ssm_d_conv, ssm_d_inner}, 0);
+            if (ml.get_tensor_meta(tn(LLM_TENSOR_SSM_CONV1D, "bias", i).str().c_str())) {
+                layer.ssm_conv1d_b = create_tensor(tn(LLM_TENSOR_SSM_CONV1D, "bias", i), {ssm_d_inner}, llama_model_loader::TENSOR_NOT_REQUIRED);
+            }
+            layer.ssm_x  = create_tensor(tn(LLM_TENSOR_SSM_X, "weight", i), {ssm_d_inner, ssm_dt_rank + 2 * ssm_d_state}, 0);
+            layer.ssm_dt = create_tensor(tn(LLM_TENSOR_SSM_DT, "weight", i), {ssm_dt_rank, ssm_d_inner}, 0);
+            if (ml.get_tensor_meta(tn(LLM_TENSOR_SSM_DT, "bias", i).str().c_str())) {
+                layer.ssm_dt_b = create_tensor(tn(LLM_TENSOR_SSM_DT, "bias", i), {ssm_d_inner}, llama_model_loader::TENSOR_NOT_REQUIRED);
+            }
+            layer.ssm_a   = create_tensor(tn(LLM_TENSOR_SSM_A, i), {ssm_d_state, ssm_d_inner}, 0);
+            layer.ssm_d   = create_tensor(tn(LLM_TENSOR_SSM_D, i), {ssm_d_inner}, 0);
+            layer.ssm_out = create_tensor(tn(LLM_TENSOR_SSM_OUT, "weight", i), {ssm_d_inner, n_embd}, 0);
+        }
+
+        // Post-Attention/Mamba Norm (before FFNs) - note: in Granite this is LLM_TENSOR_FFN_NORM
+        layer.ffn_norm = create_tensor(tn(LLM_TENSOR_FFN_NORM, "weight", i), {n_embd}, 0);
+         if (ml.get_tensor_meta(tn(LLM_TENSOR_FFN_NORM, "bias", i).str().c_str())) {
+            layer.ffn_norm_b = create_tensor(tn(LLM_TENSOR_FFN_NORM, "bias", i), {n_embd}, llama_model_loader::TENSOR_NOT_REQUIRED);
+        }
+
+        // MoE Router
+        layer.ffn_gate_inp = create_tensor(tn(LLM_TENSOR_FFN_GATE_INP, "weight", i), {n_embd, n_expert}, 0);
+
+        // Expert weights {dim_in, dim_out, num_experts} -> GGUF {dim_out, num_experts, dim_in} or similar
+        layer.ffn_gate_exps = create_tensor(tn(LLM_TENSOR_FFN_GATE_EXP, "weight", i), {n_embd, n_ff_exp, n_expert}, 0);
+        layer.ffn_up_exps   = create_tensor(tn(LLM_TENSOR_FFN_UP_EXP,   "weight", i), {n_embd, n_ff_exp, n_expert}, 0);
+        layer.ffn_down_exps = create_tensor(tn(LLM_TENSOR_FFN_DOWN_EXP, "weight", i), {n_ff_exp, n_embd, n_expert}, 0);
+
+        // Shared MLP Weights
+        layer.ffn_gate_shexp = create_tensor(tn(LLM_TENSOR_FFN_GATE_SHEXP, "weight", i), {n_embd, n_ff_shared}, 0);
+        layer.ffn_up_shexp   = create_tensor(tn(LLM_TENSOR_FFN_UP_SHEXP,   "weight", i), {n_embd, n_ff_shared}, 0);
+        layer.ffn_down_shexp = create_tensor(tn(LLM_TENSOR_FFN_DOWN_SHEXP, "weight", i), {n_ff_shared, n_embd}, 0);
+    }
 }
 
 bool llama_model::load_tensors(llama_model_loader & ml) {
@@ -3851,101 +3985,8 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
                     output_b = create_tensor(tn(LLM_TENSOR_OUTPUT, "bias"),   {n_embd}, 0);
                 } break;
             case LLM_ARCH_GRANITEMOEHYBRID:
-                {
-                    // For ftype_map access, ensure this arch is added to ` llama_model_meta::fill_ftype_map `
-                    // or provide default ftypes if specific mapping is not critical for initial load.
-                    // Using f16 as a placeholder default for weights if ftype_map is not yet updated for GRANITEMOEHYBRID.
-                    ggml_type w_type = ggml_ftype_to_ggml_type(params.ftype_from_gguf_ftype.count(GGML_FTYPE_MOSTLY_F16) ? params.ftype_from_gguf_ftype.at(GGML_FTYPE_MOSTLY_F16) : GGML_TYPE_F16);
-
-                    const uint32_t n_embd = hparams.n_embd;
-                    const uint32_t n_vocab = hparams.n_vocab;
-                    const uint32_t n_layer = hparams.n_layer;
-                    const uint32_t n_expert = hparams.n_expert;
-                    // const uint32_t n_expert_used = hparams.n_expert_used; // Currently not used for tensor shapes
-                    const uint32_t n_ff_exp = hparams.n_ff_exp;
-                    const uint32_t n_ff_shared = hparams.n_ff_shared;
-                    const uint32_t n_embd_head_k = hparams.n_embd_head_k; // head_dim for K
-                    const uint32_t n_head = hparams.n_head();
-                    const uint32_t n_head_kv = hparams.n_head_kv();
-
-                    const uint32_t mamba_d_inner = hparams.mamba_d_inner;
-                    const uint32_t mamba_d_conv = hparams.mamba_d_conv;
-                    const uint32_t mamba_dt_rank = hparams.mamba_dt_rank;
-                    const uint32_t mamba_d_state = hparams.mamba_d_state;
-
-                    // Global tensors
-                    ml.add_tensor(tn(LLM_TENSOR_TOKEN_EMBD, "weight"), w_type, {n_embd, n_vocab}, &model.tok_embd.weight);
-                    ml.add_tensor(tn(LLM_TENSOR_OUTPUT_NORM, "weight"), GGML_TYPE_F32, {n_embd}, &model.output_norm.weight);
-                    // Optional bias for output_norm
-                    if (ml.get_tensor_meta(tn(LLM_TENSOR_OUTPUT_NORM, "bias").str().c_str())) {
-                        ml.add_tensor(tn(LLM_TENSOR_OUTPUT_NORM, "bias"), GGML_TYPE_F32, {n_embd}, &model.output_norm.bias);
-                    }
-                    ml.add_tensor(tn(LLM_TENSOR_OUTPUT, "weight"), w_type, {n_embd, n_vocab}, &model.output.weight);
-                     // Optional bias for output
-                    if (ml.get_tensor_meta(tn(LLM_TENSOR_OUTPUT, "bias").str().c_str())) {
-                         ml.add_tensor(tn(LLM_TENSOR_OUTPUT, "bias"), GGML_TYPE_F32, {n_vocab}, &model.output.bias);
-                    }
-
-                    for (uint32_t i = 0; i < n_layer; ++i) {
-                        auto & layer = model.layers[i];
-                        const auto layer_type = hparams.granite_layer_types[i]; // 0 for Attention, 1 for Mamba
-
-                        // Input norm for the block (attn_norm is used for both attention and mamba pre-norm)
-                        ml.add_tensor(tn(LLM_TENSOR_ATTN_NORM, "weight", i), GGML_TYPE_F32, {n_embd}, &layer.attn_norm.weight);
-                        if (ml.get_tensor_meta(tn(LLM_TENSOR_ATTN_NORM, "bias", i).str().c_str())) {
-                             ml.add_tensor(tn(LLM_TENSOR_ATTN_NORM, "bias", i), GGML_TYPE_F32, {n_embd}, &layer.attn_norm.bias);
-                        }
-
-                        if (layer_type == 0) { // Attention Layer
-                            ml.add_tensor(tn(LLM_TENSOR_ATTN_Q, "weight", i), w_type, {n_embd, n_embd_head_k * n_head}, &layer.attn_wq.weight);
-                            ml.add_tensor(tn(LLM_TENSOR_ATTN_K, "weight", i), w_type, {n_embd, n_embd_head_k * n_head_kv}, &layer.attn_wk.weight);
-                            ml.add_tensor(tn(LLM_TENSOR_ATTN_V, "weight", i), w_type, {n_embd, n_embd_head_k * n_head_kv}, &layer.attn_wv.weight);
-                            ml.add_tensor(tn(LLM_TENSOR_ATTN_OUT, "weight", i), w_type, {n_embd_head_k * n_head, n_embd}, &layer.attn_wo.weight);
-                            if (ml.get_tensor_meta(tn(LLM_TENSOR_ATTN_Q, "bias", i).str().c_str())) ml.add_tensor(tn(LLM_TENSOR_ATTN_Q, "bias", i), GGML_TYPE_F32, {n_embd_head_k * n_head}, &layer.attn_bq.bias);
-                            if (ml.get_tensor_meta(tn(LLM_TENSOR_ATTN_K, "bias", i).str().c_str())) ml.add_tensor(tn(LLM_TENSOR_ATTN_K, "bias", i), GGML_TYPE_F32, {n_embd_head_k * n_head_kv}, &layer.attn_bk.bias);
-                            if (ml.get_tensor_meta(tn(LLM_TENSOR_ATTN_V, "bias", i).str().c_str())) ml.add_tensor(tn(LLM_TENSOR_ATTN_V, "bias", i), GGML_TYPE_F32, {n_embd_head_k * n_head_kv}, &layer.attn_bv.bias);
-                            if (ml.get_tensor_meta(tn(LLM_TENSOR_ATTN_OUT, "bias", i).str().c_str())) ml.add_tensor(tn(LLM_TENSOR_ATTN_OUT, "bias", i), GGML_TYPE_F32, {n_embd}, &layer.attn_bo.bias);
-                        } else if (layer_type == 1) { // Mamba Layer
-                            ml.add_tensor(tn(LLM_TENSOR_SSM_IN, "weight", i), w_type, {n_embd, mamba_d_inner * 2}, &layer.ssm_in_proj.weight);
-                            ml.add_tensor(tn(LLM_TENSOR_SSM_CONV1D, "weight", i), w_type, {mamba_d_inner, 1, mamba_d_conv}, &layer.ssm_conv1d.weight);
-                            if (ml.get_tensor_meta(tn(LLM_TENSOR_SSM_CONV1D, "bias", i).str().c_str())) ml.add_tensor(tn(LLM_TENSOR_SSM_CONV1D, "bias", i), GGML_TYPE_F32, {mamba_d_inner}, &layer.ssm_conv1d.bias);
-                            ml.add_tensor(tn(LLM_TENSOR_SSM_X, "weight", i), w_type, {mamba_d_inner, mamba_dt_rank + mamba_d_state * 2}, &layer.ssm_x_proj.weight);
-                            ml.add_tensor(tn(LLM_TENSOR_SSM_DT, "weight", i), w_type, {mamba_dt_rank, mamba_d_inner}, &layer.ssm_dt_proj.weight);
-                            if (ml.get_tensor_meta(tn(LLM_TENSOR_SSM_DT, "bias", i).str().c_str())) ml.add_tensor(tn(LLM_TENSOR_SSM_DT, "bias", i), GGML_TYPE_F32, {mamba_d_inner}, &layer.ssm_dt_proj.bias);
-                            ml.add_tensor(tn(LLM_TENSOR_SSM_A, "weight", i), w_type, {mamba_d_inner, mamba_d_state}, &layer.ssm_a_log.weight);
-                            ml.add_tensor(tn(LLM_TENSOR_SSM_D, "weight", i), GGML_TYPE_F32, {mamba_d_inner}, &layer.ssm_d.weight);
-                            ml.add_tensor(tn(LLM_TENSOR_SSM_OUT, "weight", i), w_type, {mamba_d_inner, n_embd}, &layer.ssm_out_proj.weight);
-                        }
-
-                        // MoE Router
-                        ml.add_tensor(tn(LLM_TENSOR_FFN_GATE_INP, "weight", i), GGML_TYPE_F32, {n_embd, n_expert}, &layer.ffn_gate_inp.weight);
-
-                        // MoE Experts
-                        layer.ffn_gate_exps.resize(n_expert);
-                        layer.ffn_up_exps.resize(n_expert);
-                        layer.ffn_down_exps.resize(n_expert);
-                        const std::string arch_prefix = llm_arch_name(arch);
-                        const std::string l_i_str = std::to_string(i);
-                        for (uint32_t exp_idx = 0; exp_idx < n_expert; ++exp_idx) {
-                            const std::string e_idx_str = std::to_string(exp_idx);
-                            // Construct GGUF tensor names as expected by tensor_mapping.py for this architecture
-                            ml.add_tensor(arch_prefix + ".layers." + l_i_str + ".ffn.gate_exp." + e_idx_str + ".weight", w_type, {n_embd, n_ff_exp}, &layer.ffn_gate_exps[exp_idx].weight);
-                            ml.add_tensor(arch_prefix + ".layers." + l_i_str + ".ffn.up_exp." + e_idx_str + ".weight", w_type, {n_embd, n_ff_exp}, &layer.ffn_up_exps[exp_idx].weight);
-                            ml.add_tensor(arch_prefix + ".layers." + l_i_str + ".ffn.down_exp." + e_idx_str + ".weight", w_type, {n_ff_exp, n_embd}, &layer.ffn_down_exps[exp_idx].weight);
-                        }
-
-                        // Shared MLP
-                        ml.add_tensor(tn(LLM_TENSOR_FFN_GATE_SHEXP, "weight", i), w_type, {n_embd, n_ff_shared}, &layer.ffn_gate_shexp.weight);
-                        ml.add_tensor(tn(LLM_TENSOR_FFN_UP_SHEXP, "weight", i), w_type, {n_embd, n_ff_shared}, &layer.ffn_up_shexp.weight);
-                        ml.add_tensor(tn(LLM_TENSOR_FFN_DOWN_SHEXP, "weight", i), w_type, {n_ff_shared, n_embd}, &layer.ffn_down_shexp.weight);
-
-                        // FFN Norm (Post Attention/Mamba Norm, before FFNs)
-                        ml.add_tensor(tn(LLM_TENSOR_FFN_NORM, "weight", i), GGML_TYPE_F32, {n_embd}, &layer.ffn_norm.weight);
-                        if (ml.get_tensor_meta(tn(LLM_TENSOR_FFN_NORM, "bias", i).str().c_str())) {
-                            ml.add_tensor(tn(LLM_TENSOR_FFN_NORM, "bias", i), GGML_TYPE_F32, {n_embd}, &layer.ffn_norm.bias);
-                        }
-                    }
-                } break;
+                load_tensors_granitemoehybrid(ml, *this, create_tensor);
+                break;
             default:
                 throw std::runtime_error("unknown architecture");
         }
@@ -12057,142 +12098,6 @@ llama_memory_i * llama_model::create_memory() const {
     return res;
 }
 
-struct llm_build_granitemoehybrid : public llm_graph_context {
-    llm_build_granitemoehybrid(const llama_model & model, const llm_graph_params & params, ggml_cgraph * gf) : llm_graph_context(params) {
-        const auto & hparams = model.hparams; // Use a reference for convenience
-        const int64_t n_rot = hparams.n_rot;
-        const enum llama_rope_type rope_type = hparams.rope_type;
-        const uint32_t n_expert = hparams.n_expert;
-        const uint32_t n_expert_used = hparams.n_expert_used;
-        const float residual_scale = hparams.f_residual_scale;
-
-        ggml_tensor * cur;
-        ggml_tensor * inpL;
-
-        inpL = build_inp_embd(model.tok_embd);
-        if (hparams.f_embedding_scale != 0.0f && hparams.f_embedding_scale != 1.0f) {
-            inpL = ggml_scale(ctx0, inpL, hparams.f_embedding_scale);
-        }
-        cb(inpL, "inp_embd_maybe_scaled", -1);
-
-        ggml_tensor * inp_pos = build_inp_pos();
-        auto * inp_attn_kv_unified = build_attn_inp_kv_unified();
-
-        // Mamba state handling (placeholders, actual Mamba state would be passed via llama_kv_cache)
-        // ggml_tensor * mamba_state_copy = build_inp_s_copy();
-        // ggml_tensor * mamba_state_mask = build_inp_s_mask();
-
-        for (int il = 0; il < n_layer; ++il) {
-            ggml_tensor * layer_inp_residual = inpL;
-
-            cur = build_norm(inpL, model.layers[il].attn_norm, model.layers[il].attn_norm_b, LLM_NORM_RMS, il);
-            cb(cur, "pre_block_norm", il);
-
-            ggml_tensor* block_output;
-
-            if (hparams.granite_layer_types[il] == 0) { // 0 for Attention
-                const int64_t n_embd_head_k_layer = hparams.n_embd_head_k;
-                const int64_t n_embd_head_v_layer = hparams.n_embd_head_v;
-                const int64_t n_head_layer    = hparams.n_head(il);
-                const int64_t n_head_kv_layer = hparams.n_head_kv(il);
-                const float kq_scale_layer = hparams.f_attention_scale == 0.0f ? 1.0f/sqrtf(float(n_embd_head_k_layer)) : hparams.f_attention_scale;
-
-                ggml_tensor * Qcur_val = ggml_mul_mat(ctx0, model.layers[il].wq, cur);
-                if (model.layers[il].bq) Qcur_val = ggml_add(ctx0, Qcur_val, model.layers[il].bq);
-                cb(Qcur_val, "Qcur", il);
-
-                ggml_tensor * Kcur_val = ggml_mul_mat(ctx0, model.layers[il].wk, cur);
-                if (model.layers[il].bk) Kcur_val = ggml_add(ctx0, Kcur_val, model.layers[il].bk);
-                cb(Kcur_val, "Kcur", il);
-
-                ggml_tensor * Vcur_val = ggml_mul_mat(ctx0, model.layers[il].wv, cur);
-                if (model.layers[il].bv) Vcur_val = ggml_add(ctx0, Vcur_val, model.layers[il].bv);
-                cb(Vcur_val, "Vcur", il);
-
-                Qcur_val = ggml_reshape_3d(ctx0, Qcur_val, n_embd_head_k_layer, n_head_layer,    n_tokens);
-                Kcur_val = ggml_reshape_3d(ctx0, Kcur_val, n_embd_head_k_layer, n_head_kv_layer, n_tokens);
-                Vcur_val = ggml_reshape_3d(ctx0, Vcur_val, n_embd_head_v_layer, n_head_kv_layer, n_tokens);
-
-                ggml_tensor * rope_factors = static_cast<const llama_kv_cache_unified *>(memory)->cbs.get_rope_factors(n_ctx_per_seq, il);
-                Qcur_val = ggml_rope_ext(ctx0, Qcur_val, inp_pos, rope_factors, n_rot, rope_type, n_ctx_orig, freq_base, freq_scale, ext_factor, attn_factor, beta_fast, beta_slow);
-                Kcur_val = ggml_rope_ext(ctx0, Kcur_val, inp_pos, rope_factors, n_rot, rope_type, n_ctx_orig, freq_base, freq_scale, ext_factor, attn_factor, beta_fast, beta_slow);
-                cb(Qcur_val, "Qcur_roped", il);
-                cb(Kcur_val, "Kcur_roped", il);
-
-                block_output = build_attn(inp_attn_kv_unified, gf, model.layers[il].wo, model.layers[il].bo, Qcur_val, Kcur_val, Vcur_val, nullptr, kq_scale_layer, il);
-                cb(block_output, "attn_out", il);
-
-            } else { // 1 for Mamba - Placeholder
-                block_output = cur;
-                cb(block_output, "mamba_out_placeholder", il);
-            }
-
-            if (residual_scale != 0.0f && residual_scale != 1.0f) {
-                 block_output = ggml_scale(ctx0, block_output, residual_scale);
-            }
-            cur = ggml_add(ctx0, block_output, layer_inp_residual);
-            ggml_tensor* residual_after_block = cur;
-            cb(cur, "after_block_residual", il);
-
-            cur = build_norm(cur, model.layers[il].ffn_norm, model.layers[il].ffn_norm_b, LLM_NORM_RMS, il);
-            cb(cur, "post_block_ffn_norm", il);
-
-            ggml_tensor* norm_for_ffn_blocks = cur;
-
-            ggml_tensor* moe_output = build_moe_ffn(norm_for_ffn_blocks,
-                                        model.layers[il].ffn_gate_inp,
-                                        model.layers[il].ffn_up_exps,
-                                        model.layers[il].ffn_gate_exps,
-                                        model.layers[il].ffn_down_exps,
-                                        nullptr,
-                                        n_expert, n_expert_used,
-                                        LLM_FFN_SILU,
-                                        hparams.expert_weights_norm,
-                                        false,
-                                        hparams.expert_weights_scale,
-                                        (llama_expert_gating_func_type)hparams.expert_gating_func,
-                                        il);
-            cb(moe_output, "moe_ffn_out", il);
-
-            ggml_tensor* shared_mlp_output = build_ffn(norm_for_ffn_blocks,
-                                            model.layers[il].ffn_up_shexp,   nullptr,   NULL,
-                                            model.layers[il].ffn_gate_shexp, nullptr, NULL,
-                                            model.layers[il].ffn_down_shexp, nullptr, NULL,
-                                            NULL,    // ffn_act (not used for SILU)
-                                            LLM_FFN_SILU,
-                                            LLM_FFN_PAR, il);
-            cb(shared_mlp_output, "shared_mlp_out", il);
-
-            cur = ggml_add(ctx0, moe_output, shared_mlp_output);
-            cb(cur, "after_ffn_sum", il);
-
-            if (residual_scale != 0.0f && residual_scale != 1.0f) {
-                 cur = ggml_scale(ctx0, cur, residual_scale);
-            }
-            cur = ggml_add(ctx0, cur, residual_after_block);
-            cb(cur, "layer_out_final_residual", il);
-
-            cur = build_cvec(cur, il);
-            cb(cur, "l_out_cvec", il);
-
-            inpL = cur;
-        }
-
-        cur = build_norm(inpL, model.output_norm, model.output_norm_b, LLM_NORM_RMS, -1);
-        cb(cur, "final_norm", -1);
-        res->t_embd = cur;
-
-        cur = ggml_mul_mat(ctx0, model.output, cur);
-        if (hparams.f_logit_scale != 0.0f && hparams.f_logit_scale != 1.0f) {
-            cur = ggml_scale(ctx0, cur, 1.0f / hparams.f_logit_scale);
-        }
-        cb(cur, "final_logits", -1);
-        res->t_logits = cur;
-
-        ggml_build_forward_expand(gf, cur);
-    }
-};
-
 llm_graph_result_ptr llama_model::build_graph(
         const llm_graph_params & params,
                    ggml_cgraph * gf,
@@ -12392,7 +12297,7 @@ llm_graph_result_ptr llama_model::build_graph(
             {
                 llm = std::make_unique<llm_build_t5_enc>(*this, params, gf);
             }
-            break;
+                } break;
         case LLM_ARCH_JAIS:
             {
                 llm = std::make_unique<llm_build_jais>(*this, params, gf);
@@ -12433,10 +12338,6 @@ llm_graph_result_ptr llama_model::build_graph(
             {
                 llm = std::make_unique<llm_build_plm>(*this, params, gf);
             } break;
-        case LLM_ARCH_GRANITEMOEHYBRID:
-            {
-                llm = std::make_unique<llm_build_granitemoehybrid>(*this, params, gf);
-            } break;
         default:
             GGML_ABORT("fatal error");
     }
@@ -12446,6 +12347,50 @@ llm_graph_result_ptr llama_model::build_graph(
 
     return std::move(llm->res);
 }
+
+struct llm_build_granitemoehybrid : public llm_graph_context {
+    llm_build_granitemoehybrid(const llama_model & model, const llm_graph_params & params, ggml_cgraph * gf) : llm_graph_context(params) {
+        // TODO: Implement the graph construction logic for GraniteMoeHybrid.
+        // This will involve:
+        // 1. Input embeddings
+        // 2. Iterating through layers:
+        //    - Reading hparams.granite_layer_types[il]
+        //    - If Attention block:
+        //        - attn_norm
+        //        - wq, wk, wv, wo (with biases if applicable)
+        //        - RoPE
+        //        - Scaled Dot-Product Attention
+        //    - If Mamba block:
+        //        - ssm_norm (using attn_norm tensor)
+        //        - ssm_in, ssm_conv1d (+bias), ssm_x, ssm_dt (+bias), ssm_a, ssm_d, ssm_out
+        //        - Selective Scan operation
+        //    - Residual connection
+        //    - ffn_norm (post-attention/mamba norm)
+        //    - MoE routing (ffn_gate_inp)
+        //    - Expert FFNs (ffn_gate_exps, ffn_up_exps, ffn_down_exps)
+        //    - Shared MLP (ffn_gate_shexp, ffn_up_shexp, ffn_down_shexp)
+        //    - Combining MoE and Shared MLP outputs
+        //    - Final residual connection for the block
+        // 3. Output norm
+        // 4. Output logits
+        //
+        // For now, let's ensure the graph builds with a placeholder.
+        // A minimal graph could just pass input embeddings to output.
+        ggml_tensor * cur = build_inp_embd(model.tok_embd);
+        cb(cur, "inp_embd", -1);
+
+        // Placeholder: Directly connect to output norm and logits for now
+        cur = build_norm(cur, model.output_norm, model.output_norm_b, LLM_NORM_RMS, -1);
+        cb(cur, "result_norm", -1);
+        res->t_embd = cur;
+
+        cur = build_lora_mm(model.output, cur);
+        cb(cur, "result_output", -1);
+        res->t_logits = cur;
+
+        ggml_build_forward_expand(gf, cur);
+    }
+};
 
 //
 // interface implementation

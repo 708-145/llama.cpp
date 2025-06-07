@@ -108,9 +108,6 @@ struct llama_hparams {
     float f_embedding_scale = 0.0f;
     float f_attention_scale = 0.0f;
 
-    uint32_t granite_layer_types[LLAMA_MAX_LAYERS];
-    uint32_t n_ff_shared = 0;
-
     bool causal_attn   = true;
     bool use_alibi     = false;
     bool attn_soft_cap = false;
