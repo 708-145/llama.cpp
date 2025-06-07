@@ -12060,7 +12060,6 @@ llama_memory_i * llama_model::create_memory() const {
 struct llm_build_granitemoehybrid : public llm_graph_context {
     llm_build_granitemoehybrid(const llama_model & model, const llm_graph_params & params, ggml_cgraph * gf) : llm_graph_context(params) {
         const auto & hparams = model.hparams; // Use a reference for convenience
-        const int64_t n_embd = hparams.n_embd;
         const int64_t n_rot = hparams.n_rot;
         const enum llama_rope_type rope_type = hparams.rope_type;
         const uint32_t n_expert = hparams.n_expert;
