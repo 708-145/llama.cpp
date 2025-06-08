@@ -12112,6 +12112,10 @@ llm_graph_result_ptr llama_model::build_graph(
             {
                 llm = std::make_unique<llm_build_llama>(*this, params, gf);
             } break;
+        case LLM_ARCH_GRANITEMOEHYBRID:
+            {
+                llm = std::make_unique<llm_build_granitemoehybrid>(*this, params, gf);
+            } break;
         case LLM_ARCH_DECI:
             {
                 llm = std::make_unique<llm_build_deci>(*this, params, gf);
