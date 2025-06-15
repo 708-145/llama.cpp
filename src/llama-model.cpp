@@ -1314,6 +1314,16 @@ void llama_model::load_hparams(llama_model_loader & ml) {
                 ml.get_key(LLM_KV_EMBEDDING_SCALE,             hparams.f_embedding_scale);
                 ml.get_key(LLM_KV_ATTENTION_SCALE,             hparams.f_attention_scale);
 
+                ml.get_key(LLM_KV_EXPERT_FEED_FORWARD_LENGTH, hparams.n_ff_exp, false);
+                ml.get_key(LLM_KV_EXPERT_SHARED_COUNT, hparams.n_expert_shared, false);
+                ml.get_key(LLM_KV_EXPERT_WEIGHTS_SCALE, hparams.expert_weights_scale, false);
+                ml.get_key(LLM_KV_EXPERT_WEIGHTS_NORM, hparams.expert_weights_norm, false);
+                ml.get_key(LLM_KV_EXPERT_GATING_FUNC, hparams.expert_gating_func, false);
+                if (hparams.expert_gating_func == LLAMA_EXPERT_GATING_FUNC_TYPE_NONE && hparams.n_expert > 0) {
+                    // Default to softmax if experts are present but no gating func is specified
+                    hparams.expert_gating_func = LLAMA_EXPERT_GATING_FUNC_TYPE_SOFTMAX;
+                }
+
                 switch (hparams.n_layer) {
                     case 32: type = LLM_TYPE_3B; break;
                     case 40: type = LLM_TYPE_3B; break;
@@ -4266,7 +4276,7 @@ struct llm_build_llama : public llm_graph_context {
                     true,                               // Normalize expert scores (common practice)
                     false,                              // Scale expert scores (not common)
                     0.0f,                               // Scaling factor (if scale_w is true)
-                    LLAMA_EXPERT_GATING_FUNC_TYPE_SOFTMAX, // Gating function for the router
+                    (llama_expert_gating_func_type)hparams.expert_gating_func, // USE THE LOADED HPARAM
                     il
                 );
                 cb(cur, "ffn_moe_output", il);
