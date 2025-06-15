@@ -86,6 +86,9 @@ class Keys:
         TAGS                       = "general.tags"
         LANGUAGES                  = "general.languages"
 
+    class Metadata: # Custom metadata keys
+        GRANITE_LAYER_TYPES        = "granite.layer_types"
+
     class LLM:
         VOCAB_SIZE                        = "{arch}.vocab_size"
         CONTEXT_LENGTH                    = "{arch}.context_length"
@@ -295,6 +298,7 @@ class MODEL_ARCH(IntEnum):
     DOTS1            = auto()
     GLM4             = auto()
     BAILINGMOE       = auto()
+    GRANITE_MOE_HYBRID = auto() # Value will be next available: 61
 
 
 class MODEL_TENSOR(IntEnum):
@@ -518,6 +522,7 @@ MODEL_ARCH_NAMES: dict[MODEL_ARCH, str] = {
     MODEL_ARCH.DOTS1:            "dots1",
     MODEL_ARCH.GLM4:             "glm4",
     MODEL_ARCH.BAILINGMOE:       "bailingmoe",
+    MODEL_ARCH.GRANITE_MOE_HYBRID: "granitemoehybrid",
 }
 
 TENSOR_NAMES: dict[MODEL_TENSOR, str] = {
@@ -564,9 +569,14 @@ TENSOR_NAMES: dict[MODEL_TENSOR, str] = {
     MODEL_TENSOR.SSM_CONV1D:                "blk.{bid}.ssm_conv1d",
     MODEL_TENSOR.SSM_X:                     "blk.{bid}.ssm_x",
     MODEL_TENSOR.SSM_DT:                    "blk.{bid}.ssm_dt",
-    MODEL_TENSOR.SSM_A:                     "blk.{bid}.ssm_a",
-    MODEL_TENSOR.SSM_D:                     "blk.{bid}.ssm_d",
-    MODEL_TENSOR.SSM_OUT:                   "blk.{bid}.ssm_out",
+    MODEL_TENSOR.SSM_A:                     "blk.{bid}.ssm_a.weight",
+    MODEL_TENSOR.SSM_D:                     "blk.{bid}.ssm_d.weight",
+    MODEL_TENSOR.SSM_OUT:                   "blk.{bid}.ssm_out", # Typically ssm_out_proj
+    MODEL_TENSOR.SSM_IN_PROJ:               "blk.{bid}.ssm_in_proj.weight",
+    MODEL_TENSOR.SSM_CONV1D_BIAS:           "blk.{bid}.ssm_conv1d.bias",
+    MODEL_TENSOR.SSM_X_PROJ:                "blk.{bid}.ssm_x_proj.weight",
+    MODEL_TENSOR.SSM_DT_PROJ:               "blk.{bid}.ssm_dt_proj.weight",
+    MODEL_TENSOR.SSM_OUT_PROJ:              "blk.{bid}.ssm_out_proj.weight",
     MODEL_TENSOR.TIME_MIX_W0:               "blk.{bid}.time_mix_w0",
     MODEL_TENSOR.TIME_MIX_W1:               "blk.{bid}.time_mix_w1",
     MODEL_TENSOR.TIME_MIX_W2:               "blk.{bid}.time_mix_w2",
@@ -1670,28 +1680,32 @@ MODEL_TENSORS[MODEL_ARCH.GRANITE_MOE] = [
         MODEL_TENSOR.FFN_DOWN_EXP,
         MODEL_TENSOR.FFN_UP_EXP,
 ]
-MODEL_TENSORS[MODEL_ARCH.GRANITE_MOE_HYBRID] = [ # TODO: Verify and update these tensors for the hybrid model
+MODEL_TENSORS[MODEL_ARCH.GRANITE_MOE_HYBRID] = [
         MODEL_TENSOR.TOKEN_EMBD,
         MODEL_TENSOR.OUTPUT_NORM,
         MODEL_TENSOR.OUTPUT,
+        # Attention Tensors (per block {bid}) - Common for attention layers
         MODEL_TENSOR.ATTN_NORM,
         MODEL_TENSOR.ATTN_Q,
         MODEL_TENSOR.ATTN_K,
         MODEL_TENSOR.ATTN_V,
         MODEL_TENSOR.ATTN_OUT,
-        MODEL_TENSOR.FFN_NORM,
-        MODEL_TENSOR.FFN_GATE_INP,
-        MODEL_TENSOR.FFN_GATE_EXP,
-        MODEL_TENSOR.FFN_DOWN_EXP,
-        MODEL_TENSOR.FFN_UP_EXP,
-        # Add Mamba specific tensors if any, for now using Granite MoE as placeholder
-        MODEL_TENSOR.SSM_IN,
-        MODEL_TENSOR.SSM_CONV1D,
-        MODEL_TENSOR.SSM_X,
-        MODEL_TENSOR.SSM_DT,
-        MODEL_TENSOR.SSM_A,
-        MODEL_TENSOR.SSM_D,
-        MODEL_TENSOR.SSM_OUT,
+        # MoE Tensors (per block {bid}) - For MoE layers
+        MODEL_TENSOR.FFN_NORM,          # Norm before FFN/MoE part
+        MODEL_TENSOR.FFN_GATE,          # Router gate
+        MODEL_TENSOR.FFN_GATE_EXP,      # Experts' gate_proj
+        MODEL_TENSOR.FFN_UP_EXP,        # Experts' up_proj
+        MODEL_TENSOR.FFN_DOWN_EXP,      # Experts' down_proj
+        # Mamba/SSM Tensors (per block {bid}) - For Mamba layers
+        # Assuming ATTN_NORM can serve as the input norm for an SSM block too, or a new SSM_NORM if needed.
+        MODEL_TENSOR.SSM_IN_PROJ,       # For in_proj: projects to x and z
+        MODEL_TENSOR.SSM_CONV1D,        # For conv1d weights
+        MODEL_TENSOR.SSM_CONV1D_BIAS,   # For conv1d bias
+        MODEL_TENSOR.SSM_X_PROJ,        # For x_proj: projects internal_state to ssm_x_dim for dt, B, C
+        MODEL_TENSOR.SSM_DT_PROJ,       # For dt_proj: projects ssm_x_dim to dt
+        MODEL_TENSOR.SSM_A,             # For A matrix (after -exp(A_log))
+        MODEL_TENSOR.SSM_D,             # For D matrix (bias)
+        MODEL_TENSOR.SSM_OUT_PROJ,      # For out_proj
 ]
 MODEL_TENSORS[MODEL_ARCH.CHAMELEON] = [
         MODEL_TENSOR.TOKEN_EMBD,
