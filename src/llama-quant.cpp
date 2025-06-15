@@ -744,9 +744,8 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
         quantize &= params->quantize_output_tensor || name != "output.weight";
         quantize &= !params->only_copy;
 
-        // do not quantize expert gating tensors
-        // NOTE: can't use LLM_TN here because the layer number is not known
-        quantize &= name.find("ffn_gate_inp.weight") == std::string::npos;
+        // NOTE: The following line was removed to enable quantization of MoE router weights ("ffn_gate_inp.weight")
+        // quantize &= name.find("ffn_gate_inp.weight") == std::string::npos;
 
         // do not quantize positional embeddings and token types (BERT)
         quantize &= name != LLM_TN(model.arch)(LLM_TENSOR_POS_EMBD,    "weight");
