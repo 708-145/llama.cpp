@@ -287,7 +287,6 @@ class MODEL_ARCH(IntEnum):
     EXAONE           = auto()
     GRANITE          = auto()
     GRANITE_MOE      = auto()
-    GRANITE_MOE_HYBRID = auto()
     CHAMELEON        = auto()
     WAVTOKENIZER_DEC = auto()
     PLM              = auto()
@@ -298,7 +297,7 @@ class MODEL_ARCH(IntEnum):
     DOTS1            = auto()
     GLM4             = auto()
     BAILINGMOE       = auto()
-    GRANITE_MOE_HYBRID = auto() # Value will be next available: 61
+    GRANITE_MOE_HYBRID = auto()
 
 
 class MODEL_TENSOR(IntEnum):
@@ -511,7 +510,6 @@ MODEL_ARCH_NAMES: dict[MODEL_ARCH, str] = {
     MODEL_ARCH.EXAONE:           "exaone",
     MODEL_ARCH.GRANITE:          "granite",
     MODEL_ARCH.GRANITE_MOE:      "granitemoe",
-    MODEL_ARCH.GRANITE_MOE_HYBRID: "granitemoehybrid",
     MODEL_ARCH.CHAMELEON:        "chameleon",
     MODEL_ARCH.WAVTOKENIZER_DEC: "wavtokenizer-dec",
     MODEL_ARCH.PLM:              "plm",
@@ -522,7 +520,7 @@ MODEL_ARCH_NAMES: dict[MODEL_ARCH, str] = {
     MODEL_ARCH.DOTS1:            "dots1",
     MODEL_ARCH.GLM4:             "glm4",
     MODEL_ARCH.BAILINGMOE:       "bailingmoe",
-    MODEL_ARCH.GRANITE_MOE_HYBRID: "granitemoehybrid",
+    MODEL_ARCH.GRANITE_MOE_HYBRID: "granite_moe_hybrid",
 }
 
 TENSOR_NAMES: dict[MODEL_TENSOR, str] = {
