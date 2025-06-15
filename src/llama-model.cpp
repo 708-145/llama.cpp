@@ -1658,10 +1658,33 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
                             layer.ffn_down_b = create_tensor(tn(LLM_TENSOR_FFN_DOWN, "bias", i), {n_embd}, TENSOR_NOT_REQUIRED);
                             layer.ffn_up_b   = create_tensor(tn(LLM_TENSOR_FFN_UP,   "bias", i), {n_ff}, TENSOR_NOT_REQUIRED);
                         } else {
-                            layer.ffn_gate_inp  = create_tensor(tn(LLM_TENSOR_FFN_GATE_INP,  "weight", i), {n_embd, n_expert}, 0);
-                            layer.ffn_gate_exps = create_tensor(tn(LLM_TENSOR_FFN_GATE_EXPS, "weight", i), {n_embd,   n_ff, n_expert}, TENSOR_NOT_REQUIRED);
-                            layer.ffn_down_exps = create_tensor(tn(LLM_TENSOR_FFN_DOWN_EXPS, "weight", i), {  n_ff, n_embd, n_expert}, 0);
-                            layer.ffn_up_exps   = create_tensor(tn(LLM_TENSOR_FFN_UP_EXPS,   "weight", i), {n_embd,   n_ff, n_expert}, 0);
+                        // Load stacked MoE tensors for use with build_moe_ffn
+                        // Router weights
+                        layer.ffn_gate_inp  = create_tensor(tn(LLM_TENSOR_FFN_GATE_INP,  "weight", i), {n_embd, (int64_t)hparams.n_expert}, 0);
+                        if (!layer.ffn_gate_inp) {
+                            throw std::runtime_error(format("failed to load tensor 'blk.%d.ffn_gate_inp.weight' (MoE router)", i));
+                        }
+
+                        // Stacked expert weights
+                        // Determine the intermediate FFN dimension for experts
+                        const int64_t expert_ffn_intermediate_dim = hparams.n_ff_exp > 0 ? (int64_t)hparams.n_ff_exp : n_ff_i;
+
+                        layer.ffn_up_exps = create_tensor(tn(LLM_TENSOR_FFN_UP_EXPS, "weight", i), {n_embd, expert_ffn_intermediate_dim, (int64_t)hparams.n_expert}, 0);
+                        if (!layer.ffn_up_exps) {
+                            throw std::runtime_error(format("failed to load tensor 'blk.%d.ffn_up_exps.weight' (stacked expert W1/up_proj)", i));
+                        }
+
+                        layer.ffn_gate_exps = create_tensor(tn(LLM_TENSOR_FFN_GATE_EXPS, "weight", i), {n_embd, expert_ffn_intermediate_dim, (int64_t)hparams.n_expert}, 0);
+                        if (!layer.ffn_gate_exps) {
+                            throw std::runtime_error(format("failed to load tensor 'blk.%d.ffn_gate_exps.weight' (stacked expert W3/gate_proj)", i));
+                        }
+
+                        layer.ffn_down_exps = create_tensor(tn(LLM_TENSOR_FFN_DOWN_EXPS, "weight", i), {expert_ffn_intermediate_dim, n_embd, (int64_t)hparams.n_expert}, 0);
+                        if (!layer.ffn_down_exps) {
+                            throw std::runtime_error(format("failed to load tensor 'blk.%d.ffn_down_exps.weight' (stacked expert W2/down_proj)", i));
+                        }
+                        // Note: The fields layer.experts and layer.ffn_gate_w (added in a previous interpretation)
+                        // are not populated by this path.
                         }
                     }
                 } break;
@@ -4220,25 +4243,33 @@ struct llm_build_llama : public llm_graph_context {
                         NULL,
                         LLM_FFN_SILU, LLM_FFN_PAR, il);
                 cb(cur, "ffn_out", il);
-            } else {
-                // MoE branch
-                cur = build_norm(ffn_inp,
-                        model.layers[il].ffn_norm, NULL,
-                        LLM_NORM_RMS, il);
-                cb(cur, "ffn_norm", il);
+            } else if (hparams.n_expert > 0 && hparams.n_expert_used > 0) {
+                // MoE Path
+                // Normalize input for MoE router and experts
+                ggml_tensor* moe_input_norm = build_norm(ffn_inp, model.layers[il].ffn_norm, NULL, LLM_NORM_RMS, il);
+                cb(moe_input_norm, "ffn_norm_moe_input", il);
 
-                cur = build_moe_ffn(cur,
-                        model.layers[il].ffn_gate_inp,
-                        model.layers[il].ffn_up_exps,
-                        model.layers[il].ffn_gate_exps,
-                        model.layers[il].ffn_down_exps,
-                        nullptr,
-                        n_expert, n_expert_used,
-                        LLM_FFN_SILU, true,
-                        false, 0.0,
-                        LLAMA_EXPERT_GATING_FUNC_TYPE_SOFTMAX,
-                        il);
-                cb(cur, "ffn_moe_out", il);
+                // Call build_moe_ffn. It handles its own internal gating (router logits, top-k, softmax)
+                // and expert FFN computations using stacked weights.
+                // Assumes model.layers[il].ffn_gate_inp (router), ffn_up_exps, ffn_gate_exps, ffn_down_exps (stacked expert weights)
+                // are correctly loaded by the tensor loading phase (Subtask 8).
+                cur = build_moe_ffn(
+                    moe_input_norm,                     // Normalized input to router & experts
+                    model.layers[il].ffn_gate_inp,      // Router weights
+                    model.layers[il].ffn_up_exps,       // Stacked W1/Up FFN weights for all experts
+                    model.layers[il].ffn_gate_exps,     // Stacked W3/Gate FFN weights for all experts (for SwiGLU)
+                    model.layers[il].ffn_down_exps,     // Stacked W2/Down FFN weights for all experts
+                    nullptr,                            // Expert probs bias (not currently used for this model path)
+                    hparams.n_expert,
+                    hparams.n_expert_used,
+                    LLM_FFN_SILU,                       // Activation type for experts' FFNs
+                    true,                               // Normalize expert scores (common practice)
+                    false,                              // Scale expert scores (not common)
+                    0.0f,                               // Scaling factor (if scale_w is true)
+                    LLAMA_EXPERT_GATING_FUNC_TYPE_SOFTMAX, // Gating function for the router
+                    il
+                );
+                cb(cur, "ffn_moe_output", il);
             }
 
             // For Granite architecture
