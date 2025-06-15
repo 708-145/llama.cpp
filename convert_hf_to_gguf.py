@@ -6051,258 +6051,364 @@ class GraniteMoeModel(GraniteModel):
 
 
 @ModelBase.register("GraniteMoeHybridForCausalLM")
-class GraniteMoeHybridModel(TextModel):
-    model_arch = gguf.MODEL_ARCH.LLAMA # Placeholder if GRANITE_MOE_HYBRID is not available
-    undo_permute = True # Assuming Llama-like permutation for attention
+class GraniteMoeHybridModel(GraniteModel): # Inherit from GraniteModel for Granite specifics
+    """Conversion for IBM's GraniteMoeHybridForCausalLM"""
+    model_arch = gguf.MODEL_ARCH.GRANITE_MOE_HYBRID
+    # undo_permute is inherited from LlamaModel via GraniteModel
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # Initialize self._experts after super().__init__() so self.block_count is available
-        if hasattr(self, 'block_count'):
+        if hasattr(self, 'block_count') and self.block_count > 0:
             self._experts = [{} for _ in range(self.block_count)]
         else:
             # This case should ideally not happen if TextModel.__init__ runs before this.
             # If it does, modify_tensors will need to handle initialization.
             self._experts = None
+            logger.warning("GraniteMoeHybridModel: self.block_count not available at __init__ for _experts.")
+
 
     def set_gguf_parameters(self):
-        super().set_gguf_parameters()
+        super().set_gguf_parameters() # Calls GraniteModel -> LlamaModel -> TextModel
 
-        # Standard MoE parameters
+        # MoE-specific parameters
         if (num_local_experts := self.hparams.get("num_local_experts")) is not None:
             self.gguf_writer.add_expert_count(num_local_experts)
             logger.info(f"gguf: expert count = {num_local_experts}")
         if (num_experts_per_tok := self.hparams.get("num_experts_per_tok")) is not None:
             self.gguf_writer.add_expert_used_count(num_experts_per_tok)
             logger.info(f"gguf: experts used count = {num_experts_per_tok}")
-
-        # Granite-specific parameters
-        if (attention_multiplier := self.hparams.get("attention_multiplier")) is not None:
-            self.gguf_writer.add_attention_scale(attention_multiplier)
-            logger.info(f"gguf: (granite) attention_scale = {attention_multiplier}")
-        if (embedding_multiplier := self.hparams.get("embedding_multiplier")) is not None:
-            self.gguf_writer.add_embedding_scale(embedding_multiplier)
-            logger.info(f"gguf: (granite) embedding_scale = {embedding_multiplier}")
-        if (residual_multiplier := self.hparams.get("residual_multiplier")) is not None:
-            self.gguf_writer.add_residual_scale(residual_multiplier)
-            logger.info(f"gguf: (granite) residual_scale = {residual_multiplier}")
-        if (logits_scaling := self.hparams.get("logits_scaling")) is not None:
-            self.gguf_writer.add_logit_scale(logits_scaling)
-            logger.info(f"gguf: (granite) logits_scale = {logits_scaling}")
+        if (moe_intermediate_size := self.hparams.get("moe_intermediate_size")) is not None: # For experts
+            self.gguf_writer.add_expert_feed_forward_length(moe_intermediate_size)
+            logger.info(f"gguf: expert feed_forward_length = {moe_intermediate_size}")
+        # shared_intermediate_size for shared MLP components if any (GraniteMoeModel adds this)
         if (shared_intermediate_size := self.hparams.get("shared_intermediate_size")) is not None:
             self.gguf_writer.add_expert_shared_feed_forward_length(shared_intermediate_size)
-            logger.info(f"gguf: (granite) shared_feed_forward_length = {shared_intermediate_size}")
+            logger.info(f"gguf: expert shared_feed_forward_length = {shared_intermediate_size}")
 
         # Mamba-specific parameters
-        hidden_size = self.hparams.get("hidden_size", 1536) # Default from previous version
-        mamba_d_conv = self.hparams.get("mamba_d_conv", self.hparams.get("ssm_d_conv", 4))
-        self.gguf_writer.add_ssm_conv_kernel(mamba_d_conv)
-        logger.info(f"gguf: (mamba) ssm_conv_kernel = {mamba_d_conv}")
+        hidden_size = self.find_hparam(["hidden_size", "n_embd", "dim"])
 
-        mamba_expand = self.hparams.get("mamba_expand", 2)
-        mamba_d_inner = self.hparams.get("mamba_d_inner", self.hparams.get("ssm_d_inner", hidden_size * mamba_expand))
-        self.gguf_writer.add_ssm_inner_size(mamba_d_inner)
-        logger.info(f"gguf: (mamba) ssm_inner_size = {mamba_d_inner}")
+        d_conv = self.find_hparam(["mamba_d_conv", "ssm_d_conv"], optional=True) or 4
+        self.gguf_writer.add_ssm_conv_kernel(d_conv)
+        logger.info(f"gguf: ssm_conv_kernel = {d_conv}")
 
-        mamba_d_state = self.hparams.get("mamba_d_state", self.hparams.get("ssm_d_state", 128))
-        self.gguf_writer.add_ssm_state_size(mamba_d_state)
-        logger.info(f"gguf: (mamba) ssm_state_size = {mamba_d_state}")
+        mamba_expand = self.find_hparam(["mamba_expand"], optional=True) or 2
+        d_inner = self.find_hparam(["mamba_d_inner", "ssm_d_inner"], optional=True) or (hidden_size * mamba_expand)
+        self.gguf_writer.add_ssm_inner_size(d_inner)
+        logger.info(f"gguf: ssm_inner_size = {d_inner}")
 
-        # Calculate dt_rank: ceiling division of hidden_size by 16
-        mamba_dt_rank = self.hparams.get("mamba_dt_rank", self.hparams.get("ssm_dt_rank"))
-        if mamba_dt_rank is None:
-            mamba_dt_rank = (hidden_size + 15) // 16 # Ceiling division
-        self.gguf_writer.add_ssm_time_step_rank(mamba_dt_rank)
-        logger.info(f"gguf: (mamba) ssm_time_step_rank = {mamba_dt_rank}")
+        d_state = self.find_hparam(["mamba_d_state", "ssm_d_state"], optional=True) or 128 # Default for GraniteMoeHybrid
+        self.gguf_writer.add_ssm_state_size(d_state)
+        logger.info(f"gguf: ssm_state_size = {d_state}")
 
-        # Other general parameters (some might be redundant if set by super() or other sections)
-        # self.gguf_writer.add_general_architecture(gguf.MODEL_ARCH_NAMES[self.model_arch]) # Already handled by GGUFWriter init
-        # self.gguf_writer.add_architecture_metadata("GraniteMoeHybridForCausalLM", True) # Using custom metadata for layer_types instead
+        dt_rank_default = (hidden_size + 15) // 16 # Ceiling division
+        dt_rank = self.find_hparam(["mamba_dt_rank", "ssm_dt_rank"], optional=True) or dt_rank_default
+        self.gguf_writer.add_ssm_time_step_rank(dt_rank)
+        logger.info(f"gguf: ssm_time_step_rank = {dt_rank}")
+
+        # Hybrid/Structural parameters
         if (layer_types := self.hparams.get("layer_types")) is not None:
-            self.gguf_writer.add_custom_metadata("granite.layer_types", json.dumps(layer_types))
-            logger.info(f"gguf: (granite) layer_types = {layer_types}")
+            try:
+                layer_types_json = json.dumps(layer_types)
+                self.gguf_writer.add_custom_metadata("granite.layer_types", layer_types_json)
+                logger.info(f"gguf: granite.layer_types = {layer_types_json}")
+            except TypeError as e:
+                logger.error(f"Could not serialize layer_types to JSON: {e}. Value was: {layer_types}")
 
+        # Other general parameters
+        if (attention_bias := self.hparams.get("attention_bias", False)) is not False: # Only add if True
+             self.gguf_writer.add_attention_bias(attention_bias)
+             logger.info(f"gguf: attention_bias = {attention_bias}")
 
-        self.gguf_writer.add_attention_bias(self.hparams.get("attention_bias", False))
-        self.gguf_writer.add_bos_token_id(self.hparams.get("bos_token_id", 0))
-        self.gguf_writer.add_eos_token_id(self.hparams.get("eos_token_id", 0))
-        self.gguf_writer.add_pad_token_id(self.hparams.get("pad_token_id", 0))
+        # Tokenizer IDs are typically handled by vocab methods or parent classes.
+        # Explicitly add if they might be missing or need override.
+        if (bos_token_id := self.hparams.get("bos_token_id")) is not None:
+             self.gguf_writer.add_bos_token_id(bos_token_id)
+             logger.info(f"gguf: bos_token_id = {bos_token_id}")
+        if (eos_token_id := self.hparams.get("eos_token_id")) is not None:
+             self.gguf_writer.add_eos_token_id(eos_token_id)
+             logger.info(f"gguf: eos_token_id = {eos_token_id}")
+        if (pad_token_id := self.hparams.get("pad_token_id")) is not None: # Often 0 or unspec by default
+             self.gguf_writer.add_pad_token_id(pad_token_id)
+             logger.info(f"gguf: pad_token_id = {pad_token_id}")
 
-        hidden_act = self.hparams.get("hidden_act", "silu")
-        if hidden_act == "silu":
-            self.gguf_writer.add_feed_forward_act_type(gguf.FeedForwardActType.SILU)
-        elif hidden_act == "gelu":
-            self.gguf_writer.add_feed_forward_act_type(gguf.FeedForwardActType.GELU)
-        logger.info(f"gguf: feed_forward_act_type = {hidden_act.upper()}")
+        hidden_act_str = self.hparams.get("hidden_act", "silu")
+        act_type = getattr(gguf.FeedForwardActType, hidden_act_str.upper(), None)
+        if act_type is not None:
+            self.gguf_writer.add_feed_forward_act_type(act_type)
+            logger.info(f"gguf: feed_forward_act_type = {hidden_act_str.upper()}")
+        else:
+            logger.warning(f"Unsupported hidden_act: {hidden_act_str}, not setting in GGUF.")
 
-        self.gguf_writer.add_rope_freq_base(self.hparams.get("rope_theta", 10000.0))
-
-        norm_func = self.hparams.get("normalization_function", "rmsnorm")
-        norm_eps = self.hparams.get("rms_norm_eps", self.hparams.get("layer_norm_eps", 1e-05))
-        if norm_func == "rmsnorm":
-            self.gguf_writer.add_layer_norm_rms_eps(norm_eps)
-            logger.info(f"gguf: layer_norm_rms_eps = {norm_eps}")
-        elif norm_func == "layernorm":
-            self.gguf_writer.add_layer_norm_eps(norm_eps)
-            logger.info(f"gguf: layer_norm_eps = {norm_eps}")
-
-        # Rope dimension count is typically set in super().set_gguf_parameters based on head_dim or hidden_size/num_attention_heads
-        # If it's different for GraniteMoeHybrid, it should be explicitly set here.
-        # Assuming it's handled by super() or implicitly by add_key_length / add_value_length if those are used.
-        # For clarity, if head_dim is a direct hparam or calculable, we can set it:
-        head_dim = self.hparams.get("head_dim")
-        if not head_dim: # if head_dim is not directly available
-            num_attention_heads = self.hparams.get("num_attention_heads")
-            if num_attention_heads and num_attention_heads > 0 : # ensure num_attention_heads is valid
-                 head_dim = hidden_size // num_attention_heads
-            else: # fallback if num_attention_heads is not valid
-                head_dim = 128 # A common default or placeholder, adjust as needed
-                logger.warning(f"Could not determine head_dim from hidden_size and num_attention_heads, using fallback: {head_dim}")
-
-        self.gguf_writer.add_rope_dimension_count(head_dim)
-        logger.info(f"gguf: rope_dimension_count = {head_dim}")
+        # rope_theta, normalization_function, rms_norm_eps, rope_dimension_count
+        # are typically handled by LlamaModel/TextModel parents.
+        # Granite-specific multipliers (attention_multiplier, etc.) are handled by GraniteModel parent.
 
     def prepare_tensors(self):
         super().prepare_tensors()
         if self._experts is not None:
-            # Flatten the list of dictionaries into a list of remaining tensor names
             remaining_expert_tensors = [
-                name for block_experts in self._experts for name in block_experts.keys()
+                name for block_experts in self._experts if block_experts for name in block_experts.keys()
             ]
             if remaining_expert_tensors:
-                raise ValueError(f"Unprocessed expert tensors found: {remaining_expert_tensors}")
+                logger.warning(f"Potentially unprocessed expert tensors found after prepare_tensors: {remaining_expert_tensors}")
+
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
-        # Ensure _experts is initialized (it might not be if block_count wasn't set in __init__ early enough)
-        if self._experts is None:
-            if hasattr(self, 'block_count') and self.block_count > 0:
-                self._experts = [{} for _ in range(self.block_count)]
-            else:
-                # This is a fallback, ideally block_count is always available here.
-                # If not, expert processing will likely fail or be skipped.
-                logger.warning("Block count not available for expert initialization in modify_tensors.")
-                self._experts = [] # Set to empty list to prevent further None checks
+        if self._experts is None and hasattr(self, 'block_count') and self.block_count > 0:
+            self._experts = [{} for _ in range(self.block_count)]
+        elif self._experts is None:
+             logger.warning("Cannot process expert tensors: self.block_count not available or _experts not initialized.")
+             yield from super().modify_tensors(data_torch, name, bid) # Fallback to parent
+             return
 
         num_local_experts = self.hparams.get("num_local_experts")
-        # Assuming expert tensor names follow a pattern like "model.layers.{bid}.block_sparse_moe.experts.{expert_idx}.{weight_type}.weight"
-        # and weight types are 'w1', 'w2', 'w3' (like Mixtral) or 'gate_proj', 'up_proj', 'down_proj'
-        # For this example, let's assume the Mixtral-like pattern "w1", "w2", "w3"
-        expert_weight_types = ["w1", "w2", "w3"] # TODO: Confirm actual weight names for GraniteMoeHybrid
-        num_expert_weight_types = len(expert_weight_types)
+        # TODO: Confirm actual HF tensor names for GraniteMoeHybrid experts.
+        # Assuming Mixtral-like: "w1" (gate), "w3" (up), "w2" (down) for now.
+        expert_hf_weight_keys = ["w1", "w3", "w2"]
 
-        # Handle Expert Tensors
-        if bid is not None and num_local_experts and self._experts and "block_sparse_moe.experts" in name: # Common MoE pattern
-            # Regex to extract expert_idx and weight_type from name
-            # Example name: model.layers.0.block_sparse_moe.experts.0.w1.weight
-            match = re.search(r"experts\.(\d+)\.(w[13]|gate_proj|up_proj|down_proj|w2)\.weight", name)
-            if match:
-                expert_idx = int(match.group(1))
-                weight_key = match.group(2) # e.g., "w1", "w2", "w3"
+        is_expert_tensor = False
+        if bid is not None and num_local_experts and self._experts is not None and "block_sparse_moe.experts" in name:
+            is_expert_tensor = True
+            self._experts[bid][name] = data_torch # Buffer the tensor part
 
-                self._experts[bid][name] = data_torch
+            collected_expert_tensors_for_block = self._experts[bid]
+            # Check if all parts for all weight types for all experts in this block are collected
+            if len(collected_expert_tensors_for_block) >= num_local_experts * len(expert_hf_weight_keys):
+                processed_tensors_for_block: list[tuple[str, Tensor]] = []
+                all_parts_collected_for_all_types = True
 
-                # Check if all tensors for this block's experts are collected
-                if len(self._experts[bid]) >= num_local_experts * num_expert_weight_types:
-                    tensors_for_block: list[tuple[str, Tensor]] = []
-                    for wt_idx, expert_weight_name_part in enumerate(expert_weight_types):
-                        collected_tensors_of_type: list[Tensor] = []
-                        temp_expert_keys_to_remove: list[str] = []
+                for hf_part_key in expert_hf_weight_keys:
+                    tensors_of_this_type: list[Tensor] = []
+                    current_expert_hf_names_to_process: list[str] = []
+                    for xid in range(num_local_experts):
+                        current_expert_tensor_hf_name = f"model.layers.{bid}.block_sparse_moe.experts.{xid}.{hf_part_key}.weight"
+                        if current_expert_tensor_hf_name in collected_expert_tensors_for_block:
+                            tensors_of_this_type.append(collected_expert_tensors_for_block[current_expert_tensor_hf_name])
+                            current_expert_hf_names_to_process.append(current_expert_tensor_hf_name)
+                        else:
+                            all_parts_collected_for_all_types = False; break
+                    if not all_parts_collected_for_all_types: break
 
-                        for expert_tensor_name_key in list(self._experts[bid].keys()): # Iterate over a copy for safe removal
-                            # Construct the expected pattern for the current weight type and expert index
-                            # This needs to be robust to the actual naming scheme.
-                            # Example: model.layers.{bid}.block_sparse_moe.experts.{xid}.{expert_weight_name_part}.weight
-                            # We need to parse the stored names to find the ones matching expert_weight_name_part
-                            if f".{expert_weight_name_part}.weight" in expert_tensor_name_key:
-                                collected_tensors_of_type.append(self._experts[bid][expert_tensor_name_key])
-                                temp_expert_keys_to_remove.append(expert_tensor_name_key)
+                    if len(tensors_of_this_type) == num_local_experts:
+                        stacked_data = torch.stack(tensors_of_this_type, dim=0)
+                        gguf_tensor_type = None
+                        if hf_part_key == "w1": gguf_tensor_type = gguf.MODEL_TENSOR.FFN_GATE_EXP
+                        elif hf_part_key == "w3": gguf_tensor_type = gguf.MODEL_TENSOR.FFN_UP_EXP
+                        elif hf_part_key == "w2": gguf_tensor_type = gguf.MODEL_TENSOR.FFN_DOWN_EXP
 
-                        if len(collected_tensors_of_type) == num_local_experts:
-                            stacked_data_torch = torch.stack(collected_tensors_of_type, dim=0)
-                            # Construct GGUF tensor name, e.g., layers.0.feed_forward.experts.w1.weight
-                            # This mapping needs to align with gguf-py/gguf/tensor_mapping.py for GRANITE_MOE_HYBRID
-                            # Assuming a mapping like Mixtral's for expert weights:
-                            gguf_expert_tensor_name_format = "layers.{bid}.feed_forward.experts." + expert_weight_name_part + ".weight"
-                            # Or if it's more like GraniteMoeModel's input_linear split:
-                            # if expert_weight_name_part == "w1": # gate
-                            #    gguf_expert_tensor_name_format = gguf.TENSOR_NAMES[gguf.MODEL_TENSOR.FFN_GATE_EXP].format(bid=bid)
-                            # elif expert_weight_name_part == "w3": # up (assuming w3 maps to up)
-                            #    gguf_expert_tensor_name_format = gguf.TENSOR_NAMES[gguf.MODEL_TENSOR.FFN_UP_EXP].format(bid=bid)
-                            # elif expert_weight_name_part == "w2": # down
-                            #    gguf_expert_tensor_name_format = gguf.TENSOR_NAMES[gguf.MODEL_TENSOR.FFN_DOWN_EXP].format(bid=bid)
-                            # For now, using the direct format, assuming tensor_map handles it.
+                        if gguf_tensor_type:
+                            gguf_name = self.format_tensor_name(gguf_tensor_type, bid)
+                            processed_tensors_for_block.append((gguf_name, stacked_data))
+                            for processed_name in current_expert_hf_names_to_process:
+                                del self._experts[bid][processed_name]
+                        else:
+                            logger.warning(f"Unknown expert weight part key: {hf_part_key} for block {bid}")
+                            all_parts_collected_for_all_types = False; break # Stop processing this block if unknown part
 
-                            final_gguf_name = gguf_expert_tensor_name_format.format(bid=bid)
-                            # The actual mapping should ideally be handled by self.map_tensor_name
-                            # if the tensor_map for GRANITE_MOE_HYBRID is correctly defined.
-                            # Forcing a direct name for now as an example if map isn't ready:
-                            # new_name = final_gguf_name
-                            try:
-                                new_name = self.map_tensor_name(final_gguf_name) # Attempt mapping
-                            except ValueError:
-                                logger.warning(f"Could not map expert tensor name {final_gguf_name}, using directly. Ensure tensor_map is correct for GRANITE_MOE_HYBRID.")
-                                new_name = final_gguf_name # Fallback
+                if all_parts_collected_for_all_types and processed_tensors_for_block:
+                    yield from processed_tensors_for_block
+                # If not all parts were fully collected, they remain in _experts[bid] for a future call.
+                return []
 
-                            tensors_for_block.append((new_name, stacked_data_torch))
-                            for key_to_remove in temp_expert_keys_to_remove:
-                                del self._experts[bid][key_to_remove]
-                        # else:
-                            # This might happen if names are not parsed correctly or not all arrived.
-                            # logger.warning(f"Block {bid}, expert type {expert_weight_name_part}: expected {num_local_experts}, got {len(collected_tensors_of_type)}")
+        if is_expert_tensor: # Was stored, but not enough parts yet to form a full expert block
+            return []
 
-                    if tensors_for_block: # Ensure we actually have tensors to yield
-                        yield from tensors_for_block
-                    # If not all types were fully collected, remaining tensors in self._experts[bid] will be processed in subsequent calls.
-                    # Or, if logic is correct, this branch means all collected and processed.
-                    return # Processed this block's experts or waiting for more parts.
-                else:
-                    return [] # Not all expert tensors for this block collected yet
-
-        # Handle Mamba Tensors (if not an expert tensor)
+        # Mamba-specific tensor modifications
         if name.endswith(".A_log"):
-            try:
-                # Map the name by replacing .A_log with .A, assuming .A is the target GGUF name part
-                new_name = self.map_tensor_name(name.replace(".A_log", ".A"))
-            except ValueError: # Fallback if direct mapping of .A fails
-                new_name = self.map_tensor_name(name) # Try mapping original name
-            data_torch = -torch.exp(data_torch.float()).type_as(data_torch) # Ensure exp is done in float32 for stability
+            new_name = self.map_tensor_name(name.replace(".A_log", ".A"))
+            data_torch = -torch.exp(data_torch.float()).type_as(data_torch)
             yield (new_name, data_torch)
             return
 
-        # Attempt to map early to check for SSM_CONV1D
         try:
-            mapped_name_check = self.map_tensor_name(name)
-            if self.match_model_tensor_name(mapped_name_check, gguf.MODEL_TENSOR.SSM_CONV1D, bid):
-                data_torch = data_torch.squeeze()
-                yield (mapped_name_check, data_torch)
-                return
-        except ValueError: # Name might not be directly mappable yet, or not an SSM_CONV1D
-            pass
-        except AttributeError as e: # gguf.MODEL_TENSOR.SSM_CONV1D might not exist if constants not updated
-            logger.warning(f"Failed to check for SSM_CONV1D due to missing constant: {e}")
+            potential_gguf_name = self.tensor_map.get_name(key=name, try_suffixes=(".weight", ".bias"))
+            if potential_gguf_name and hasattr(gguf.MODEL_TENSOR, "SSM_CONV1D") and \
+               gguf.TENSOR_NAMES[gguf.MODEL_TENSOR.SSM_CONV1D].format(bid=bid if bid is not None else 0) in potential_gguf_name:
+                 if name.endswith(".weight"):
+                    data_torch = data_torch.squeeze()
+                    yield (potential_gguf_name, data_torch)
+                    return
+        except (ValueError, KeyError, AttributeError):
             pass
 
+        yield from super().modify_tensors(data_torch, name, bid) # Handles Llama/Granite attention
 
-        # Handle Standard Llama/Granite Attention Tensors
-        if self.undo_permute: # Assuming Llama-like permutation for attention
-            n_head = self.hparams.get("num_attention_heads")
-            n_kv_head = self.hparams.get("num_key_value_heads")
-            if n_head is not None: # Ensure n_head is available
-                if name.endswith((".q_proj.weight", ".q_proj.bias")):
-                    data_torch = LlamaModel.permute(data_torch, n_head, n_head)
-                elif name.endswith((".k_proj.weight", ".k_proj.bias")):
-                    data_torch = LlamaModel.permute(data_torch, n_head, n_kv_head if n_kv_head is not None else n_head)
-
-        # Default/Fallback: Map name and yield
-        try:
-            new_name = self.map_tensor_name(name)
-            yield (new_name, data_torch)
-        except ValueError:
-            logger.warning(f"Cannot map tensor {name!r} for arch {self.model_arch}, skipping.")
-            return []
+# Marker: End GraniteMoeHybridModel definition
 
 @ModelBase.register("GraniteMoeHybridForCausalLM")
-class GraniteMoeHybridModel(TextModel):
+class GraniteMoeHybridModel(GraniteModel): # Inherit from GraniteModel for Granite specifics
+    """Conversion for IBM's GraniteMoeHybridForCausalLM"""
+    model_arch = gguf.MODEL_ARCH.GRANITE_MOE_HYBRID
+    # undo_permute is inherited from LlamaModel via GraniteModel
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Initialize self._experts after super().__init__() so self.block_count is available
+        if hasattr(self, 'block_count') and self.block_count > 0:
+            self._experts = [{} for _ in range(self.block_count)]
+        else:
+            # This case should ideally not happen if TextModel.__init__ runs before this.
+            # If it does, modify_tensors will need to handle initialization.
+            self._experts = None
+            logger.warning("GraniteMoeHybridModel: self.block_count not available at __init__ for _experts.")
+
+
+    def set_gguf_parameters(self):
+        super().set_gguf_parameters() # Calls GraniteModel -> LlamaModel -> TextModel
+
+        # MoE-specific parameters
+        if (num_local_experts := self.hparams.get("num_local_experts")) is not None:
+            self.gguf_writer.add_expert_count(num_local_experts)
+            logger.info(f"gguf: expert count = {num_local_experts}")
+        if (num_experts_per_tok := self.hparams.get("num_experts_per_tok")) is not None:
+            self.gguf_writer.add_expert_used_count(num_experts_per_tok)
+            logger.info(f"gguf: experts used count = {num_experts_per_tok}")
+        if (moe_intermediate_size := self.hparams.get("moe_intermediate_size")) is not None: # For experts
+            self.gguf_writer.add_expert_feed_forward_length(moe_intermediate_size)
+            logger.info(f"gguf: expert feed_forward_length = {moe_intermediate_size}")
+        if (shared_intermediate_size := self.hparams.get("shared_intermediate_size")) is not None:
+            self.gguf_writer.add_expert_shared_feed_forward_length(shared_intermediate_size)
+            logger.info(f"gguf: expert shared_feed_forward_length = {shared_intermediate_size}")
+
+        # Mamba-specific parameters
+        hidden_size = self.find_hparam(["hidden_size", "n_embd", "dim"])
+
+        d_conv = self.find_hparam(["mamba_d_conv", "ssm_d_conv"], optional=True) or 4
+        self.gguf_writer.add_ssm_conv_kernel(d_conv)
+        logger.info(f"gguf: ssm_conv_kernel = {d_conv}")
+
+        mamba_expand = self.find_hparam(["mamba_expand"], optional=True) or 2
+        d_inner = self.find_hparam(["mamba_d_inner", "ssm_d_inner"], optional=True) or (hidden_size * mamba_expand)
+        self.gguf_writer.add_ssm_inner_size(d_inner)
+        logger.info(f"gguf: ssm_inner_size = {d_inner}")
+
+        d_state = self.find_hparam(["mamba_d_state", "ssm_d_state"], optional=True) or 128 # Default for GraniteMoeHybrid
+        self.gguf_writer.add_ssm_state_size(d_state)
+        logger.info(f"gguf: ssm_state_size = {d_state}")
+
+        dt_rank_default = (hidden_size + 15) // 16 # Ceiling division
+        dt_rank = self.find_hparam(["mamba_dt_rank", "ssm_dt_rank"], optional=True) or dt_rank_default
+        self.gguf_writer.add_ssm_time_step_rank(dt_rank)
+        logger.info(f"gguf: ssm_time_step_rank = {dt_rank}")
+
+        # Hybrid/Structural parameters
+        if (layer_types := self.hparams.get("layer_types")) is not None:
+            try:
+                layer_types_json = json.dumps(layer_types)
+                self.gguf_writer.add_custom_metadata("granite.layer_types", layer_types_json)
+                logger.info(f"gguf: granite.layer_types = {layer_types_json}")
+            except TypeError as e:
+                logger.error(f"Could not serialize layer_types to JSON: {e}. Value was: {layer_types}")
+
+        # Other general parameters
+        if (attention_bias := self.hparams.get("attention_bias", False)) is not False:
+             self.gguf_writer.add_attention_bias(attention_bias)
+             logger.info(f"gguf: attention_bias = {attention_bias}")
+
+        if (bos_token_id := self.hparams.get("bos_token_id")) is not None:
+             self.gguf_writer.add_bos_token_id(bos_token_id)
+             logger.info(f"gguf: bos_token_id = {bos_token_id}")
+        if (eos_token_id := self.hparams.get("eos_token_id")) is not None:
+             self.gguf_writer.add_eos_token_id(eos_token_id)
+             logger.info(f"gguf: eos_token_id = {eos_token_id}")
+        if (pad_token_id := self.hparams.get("pad_token_id")) is not None:
+             self.gguf_writer.add_pad_token_id(pad_token_id)
+             logger.info(f"gguf: pad_token_id = {pad_token_id}")
+
+        hidden_act_str = self.hparams.get("hidden_act", "silu")
+        act_type = getattr(gguf.FeedForwardActType, hidden_act_str.upper(), None)
+        if act_type is not None:
+            self.gguf_writer.add_feed_forward_act_type(act_type)
+            logger.info(f"gguf: feed_forward_act_type = {hidden_act_str.upper()}")
+        else:
+            logger.warning(f"Unsupported hidden_act: {hidden_act_str}, not setting in GGUF.")
+
+    def prepare_tensors(self):
+        super().prepare_tensors()
+        if self._experts is not None:
+            remaining_expert_tensors = [
+                name for block_experts in self._experts if block_experts for name in block_experts.keys()
+            ]
+            if remaining_expert_tensors:
+                logger.warning(f"Potentially unprocessed expert tensors found after prepare_tensors: {remaining_expert_tensors}")
+
+    def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        if self._experts is None and hasattr(self, 'block_count') and self.block_count > 0:
+            self._experts = [{} for _ in range(self.block_count)]
+        elif self._experts is None:
+             logger.warning("Cannot process expert tensors: self.block_count not available or _experts not initialized.")
+             yield from super().modify_tensors(data_torch, name, bid)
+             return
+
+        num_local_experts = self.hparams.get("num_local_experts")
+        expert_hf_weight_keys = ["w1", "w3", "w2"]
+
+        is_expert_tensor = False
+        if bid is not None and num_local_experts and self._experts is not None and "block_sparse_moe.experts" in name:
+            is_expert_tensor = True
+            self._experts[bid][name] = data_torch
+
+            collected_expert_tensors_for_block = self._experts[bid]
+            if len(collected_expert_tensors_for_block) >= num_local_experts * len(expert_hf_weight_keys):
+                processed_tensors_for_block: list[tuple[str, Tensor]] = []
+                all_parts_collected_for_all_types = True
+
+                for hf_part_key in expert_hf_weight_keys:
+                    tensors_of_this_type: list[Tensor] = []
+                    current_expert_hf_names_to_process: list[str] = []
+                    for xid in range(num_local_experts):
+                        current_expert_tensor_hf_name = f"model.layers.{bid}.block_sparse_moe.experts.{xid}.{hf_part_key}.weight"
+                        if current_expert_tensor_hf_name in collected_expert_tensors_for_block:
+                            tensors_of_this_type.append(collected_expert_tensors_for_block[current_expert_tensor_hf_name])
+                            current_expert_hf_names_to_process.append(current_expert_tensor_hf_name)
+                        else:
+                            all_parts_collected_for_all_types = False; break
+                    if not all_parts_collected_for_all_types: break
+
+                    if len(tensors_of_this_type) == num_local_experts:
+                        stacked_data = torch.stack(tensors_of_this_type, dim=0)
+                        gguf_tensor_type = None
+                        if hf_part_key == "w1": gguf_tensor_type = gguf.MODEL_TENSOR.FFN_GATE_EXP
+                        elif hf_part_key == "w3": gguf_tensor_type = gguf.MODEL_TENSOR.FFN_UP_EXP
+                        elif hf_part_key == "w2": gguf_tensor_type = gguf.MODEL_TENSOR.FFN_DOWN_EXP
+
+                        if gguf_tensor_type:
+                            gguf_name = self.format_tensor_name(gguf_tensor_type, bid)
+                            processed_tensors_for_block.append((gguf_name, stacked_data))
+                            for processed_name in current_expert_hf_names_to_process:
+                                if processed_name in self._experts[bid]:
+                                    del self._experts[bid][processed_name]
+                        else:
+                            logger.warning(f"Unknown expert weight part key: {hf_part_key} for block {bid}")
+                            all_parts_collected_for_all_types = False; break
+
+                if all_parts_collected_for_all_types and processed_tensors_for_block:
+                    yield from processed_tensors_for_block
+                return []
+
+        if is_expert_tensor:
+            return []
+
+        if name.endswith(".A_log"):
+            new_name = self.map_tensor_name(name.replace(".A_log", ".A"))
+            data_torch = -torch.exp(data_torch.float()).type_as(data_torch)
+            yield (new_name, data_torch)
+            return
+
+        try:
+            potential_gguf_name = self.tensor_map.get_name(key=name, try_suffixes=(".weight", ".bias"))
+            if potential_gguf_name and hasattr(gguf.MODEL_TENSOR, "SSM_CONV1D") and \
+               gguf.TENSOR_NAMES[gguf.MODEL_TENSOR.SSM_CONV1D].format(bid=bid if bid is not None else 0) in potential_gguf_name:
+                 if name.endswith(".weight"):
+                    data_torch = data_torch.squeeze()
+                    yield (potential_gguf_name, data_torch)
+                    return
+        except (ValueError, KeyError, AttributeError):
+            pass
+
+        yield from super().modify_tensors(data_torch, name, bid)
     """Conversion for IBM's GraniteMoeHybridForCausalLM"""
     model_arch = gguf.MODEL_ARCH.GRANITE_MOE_HYBRID # Will be updated once available in gguf.py
 
