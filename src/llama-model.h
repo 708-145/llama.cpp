@@ -247,6 +247,15 @@ struct llama_layer {
     struct ggml_tensor * ssm_conv1d_b = nullptr;
     struct ggml_tensor * ssm_dt_b     = nullptr;
 
+    // Mamba/SSM tensors for hybrid models (weights)
+    struct ggml_tensor * ssm_in_w         = nullptr;
+    struct ggml_tensor * ssm_x_w          = nullptr;
+    struct ggml_tensor * ssm_conv1d_w     = nullptr;
+    struct ggml_tensor * ssm_dt_w         = nullptr;
+    struct ggml_tensor * ssm_a_w          = nullptr;
+    struct ggml_tensor * ssm_d_w          = nullptr;
+    struct ggml_tensor * ssm_out_w        = nullptr;
+
     // rwkv
     struct ggml_tensor * time_mix_w1         = nullptr;
     struct ggml_tensor * time_mix_w2         = nullptr;
