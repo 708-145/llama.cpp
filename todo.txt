@@ -1,3 +1,7 @@
+
+overall task:
+Modify the llama-quantize c++ code to read default.smarterquant.json into an internal data structure. Encode each matrix based on the scheme laid out below. Adapt the encoded blocksize in bytes. The json contains the following information for each matrix: Four compression types referring to the block encoding for the first four 256 wide blocks. Each following block is using the fourth mode as well. This is followed by a list of columns into which the original matrix is ordered before applying the block encoding. The inference code gets the same json to be able to decompress the matrices. Modify the inference code as well so that llama-cli and llama-server work with those encoded GGUFs.
+
 The SmarterQuant feature implementation is partially complete. The following steps are remaining to make it fully functional:
 
 1.  **Complete Custom Block Quantization Data Packing in `src/llama-quant.cpp` (Step 3 Enhancement):**
@@ -57,3 +61,17 @@ The SmarterQuant feature implementation is partially complete. The following ste
     *   **Memory for Unpermutation:** The current plan (Option A for unpermutation) requires a temporary buffer for the unpermuted F32 row. Analyze its memory impact.
 
 These steps represent significant work, especially the modifications to `ggml.c` which is performance-critical and central to the library's operations.
+
+
+background info:
+The initial plan consistet of these steps.
+
+Plan Summary:
+Explore the codebase: Identify relevant files and current quantization/GGUF handling.
+Implement JSON parsing for llama-quantize: Add a JSON library and C++ structures to read default.smarterquant.json.
+Modify llama-quantize.cpp for custom encoding: Implement column permutation, block-specific encoding based on JSON, and add new GGUF metadata for custom-encoded tensors.
+Modify inference code (llama.cpp, ggml.c) for custom decoding: Read the custom GGUF metadata, use default.smarterquant.json to understand encoding, implement custom dequantization logic that handles per-block types, and apply inverse column permutation.
+Adapt llama-cli and llama-server: Ensure they can load and use models with the new custom quantization, making default.smarterquant.json accessible.
+Testing: Create test cases, quantize a model, verify GGUF metadata, and compare inference results.
+Documentation and Cleanup: Add comments and update documentation.
+A key challenge identified is handling potentially different ggml_types for different blocks within a single GGUF tensor, which might require careful GGUF metadata design and modifications to dequantization/computation routines in ggml.c.
