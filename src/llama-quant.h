@@ -17,6 +17,9 @@ struct SmarterQuantTensorInfo {
     // this vector must contain C unique integers from 0 to C-1.
     // The element at new_data[col_idx_new] comes from original_data[column_permutation[col_idx_new]].
     std::vector<int> column_permutation;
+
+    // Flag indicating if SmarterQuant is enabled for this tensor, either via JSON config or GGUF metadata.
+    bool enabled = false;
 };
 
 // Map from tensor name (std::string) to its SmarterQuantTensorInfo.

@@ -1,6 +1,6 @@
 #include "llama-model.h"
 
-#include "common/json.hpp" // For nlohmann::json
+#include "json.hpp" // For nlohmann::json - common/ is in include path
 #include <fstream>          // For std::ifstream
 #include <stdexcept>        // For std::runtime_error
 
