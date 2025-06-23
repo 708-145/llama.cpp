@@ -12,6 +12,8 @@
 #include <unordered_map>
 #include <vector>
 
+#include "common/json.hpp" // For SmarterQuantConfig parsing (nlohmann::json)
+
 struct llama_cparams;
 struct llama_ubatch;
 struct llama_model_loader;
@@ -349,6 +351,10 @@ struct llama_model {
 
     // for quantize-stats only
     std::vector<std::pair<std::string, struct ggml_tensor *>> tensors_by_name;
+
+    // SmarterQuant configuration loaded from default.smarterquant.json (parsed during model load)
+    // And per-tensor metadata read from GGUF.
+    SmarterQuantConfigMap sq_config;
 
     int64_t t_load_us  = 0;
     int64_t t_start_us = 0;
