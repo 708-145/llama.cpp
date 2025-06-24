@@ -46,12 +46,12 @@ The SmarterQuant feature implementation is partially complete. The following ste
                 *   Quantizes using `llama_tensor_quantize_smarter_blocks`.
                 *   Dequantizes using `ggml_get_rows_smarterquant`.
                 *   Verifies numerical output against the original F32 data. Test is passing.
-            *   Consider creating small test models and specific `default.smarterquant.json` configs for more comprehensive end-to-end GGUF-based tests if needed.
-            *   Consider tests for edge cases (e.g., tensors smaller than a full block segment, different permutations).
+            *   DONE: Created small test models and specific `default.smarterquant.json` configs for more comprehensive end-to-end GGUF-based tests in `tests/test-smarterquant-gguf.cpp`.
+            *   DONE: Added tests for edge cases (e.g., tensors smaller than a full block segment, different permutations) in `tests/test-smarterquant.cpp`.
         *   **Numerical Correctness (GPU Path - Future Task):**
             *   Implement similar tests for GPU backends once SmarterQuant dequantization is added there.
         *   **GGUF Metadata Round Trip (Optional but good):**
-            *   Test writing SmarterQuant metadata to GGUF and reading it back correctly. (Currently skipped to prioritize numerical tests).
+            *   DONE: Tested writing SmarterQuant metadata to GGUF and reading it back correctly as part of the end-to-end GGUF tests in `tests/test-smarterquant-gguf.cpp`.
 
 
 4.  **Refinements and Optimizations:**
