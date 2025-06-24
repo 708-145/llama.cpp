@@ -1,0 +1,79 @@
+- [x] **Define `GraniteMoeHybridModel` class in `convert_hf_to_gguf.py`**:
+    - [x] Inherit from an appropriate base model class (e.g., `GraniteModel` or `LlamaModel`). (Inherits from `GraniteModel`)
+    - [x] Set `model_arch = gguf.MODEL_ARCH.GRANITE_MOE_HYBRID`.
+    - [x] Implement `set_gguf_parameters()`:
+        - [x] Call superclass method.
+        - [x] Add MoE specific parameters (expert count, experts used, expert FFN length, shared FFN length).
+        - [x] Add Mamba/SSM specific parameters (conv kernel, inner size, state size, time step rank).
+        - [x] Add hybrid structural parameters (layer types).
+        - [x] Add any other relevant general parameters (attention bias, token IDs, hidden_act).
+    - [x] Implement `set_vocab()`:
+        - [x] Determine the correct vocabulary type (SentencePiece, GPT-2 BPE, etc.). (Uses SentencePiece with GPT-2 fallback)
+        - [x] Use existing helper methods like `_set_vocab_sentencepiece()` or `_set_vocab_gpt2()`.
+    - [x] Implement `modify_tensors()`:
+        - [x] Handle expert tensor processing: (Appears to be implemented by buffering and stacking, assuming Mixtral-like expert naming `w1, w2, w3`)
+            - [ ] Identify expert weights (e.g., `w1`, `w2`, `w3` or `gate_proj`, `up_proj`, `down_proj`). (Currently assumes `w1,w2,w3`) - *Needs verification against actual GraniteMoeHybrid tensor names.*
+            - [x] Buffer parts of expert weights if they arrive separately.
+            - [x] Stack individual expert weights into a single tensor per GGUF expert weight type (e.g., `FFN_GATE_EXP`, `FFN_UP_EXP`, `FFN_DOWN_EXP`).
+        - [x] Handle shared MLP/FFN tensor processing if they are separate from standard FFN layers and need specific mapping. (Handled by `GraniteMoeModel` parent for `shared_mlp.input_linear.weight`, specific separate shared FFN layers logic in `GraniteMoeHybridModel` for `gate_proj`, `up_proj`, `down_proj` if named like that).
+        - [x] Handle Mamba/SSM tensor processing:
+            - [x] Convert `A_log` to `A` (e.g., `-torch.exp(data_torch)`).
+            - [x] Squeeze `conv1d.weight` if necessary.
+            - [x] Map other Mamba tensor names (e.g., `in_proj`, `x_proj`, `dt_proj`, `D`, `out_proj`). (Relies on `tensor_map`)
+        - [x] Fallback to superclass `modify_tensors` for common tensors (attention, standard FFN if not MoE, etc.).
+    - [x] Implement `prepare_tensors()`:
+        - [x] Call superclass method.
+        - [x] Ensure all buffered expert tensor parts have been processed and raise an error or warning if not.
+    - [x] Register the model class with `@ModelBase.register("GraniteMoeHybridForCausalLM")`.
+- [ ] **Update `gguf.py` (within `gguf-py` directory)**:
+    - [ ] Add `GRANITE_MOE_HYBRID` to `MODEL_ARCH` enum.
+    - [ ] Add new `MODEL_TENSOR` types if specific tensor names for GraniteMoeHybrid are not covered by existing Llama/Mixtral/Mamba tensor names (e.g., specific names for shared FFN components if they differ, or unique Mamba tensor names if not already present).
+    - [ ] Add new `Keys.Metadata` if there are unique metadata fields for GraniteMoeHybrid (e.g., `granite.layer_types`).
+    - [ ] Update `TENSOR_NAMES` mapping for any new `MODEL_TENSOR` types.
+    - [ ] Update `gguf.get_tensor_name_map` to include a mapping for `MODEL_ARCH.GRANITE_MOE_HYBRID`. This map should define how Hugging Face tensor names are converted to GGUF tensor names for this architecture. It needs to cover:
+        - [ ] Standard attention weights (Q, K, V, O).
+        - [ ] Standard FFN weights (if dense layers exist alongside MoE).
+        - [ ] Expert FFN weights (gate, up, down for each expert, mapping to stacked GGUF tensors).
+        - [ ] Shared FFN weights (gate, up, down if applicable).
+        - [ ] Mamba/SSM weights (A, B, C, D, conv1d_weight, conv1d_bias, dt_proj_weight, dt_proj_bias, in_proj_weight, out_proj_weight, etc.).
+        - [ ] Layer norms, token embeddings, output weights.
+- [ ] **Add C/C++ support in `llama.cpp`**:
+    - [ ] Define `enum llama_model_arch LLAMA_MODEL_ARCH_GRANITE_MOE_HYBRID`.
+    - [ ] Update `llama_model_arch_name` to return "granite_moe_hybrid" for the new enum.
+    - [ ] Add new model parameters to `llama_hparams` struct if needed (e.g., for `layer_types`, specific Mamba params not already there, shared FFN dim).
+    - [ ] Update `llama_model_load_internal` (or relevant loading functions):
+        - [ ] Read new GGUF metadata keys (e.g., `granite.layer_types`).
+        - [ ] Handle the new architecture type.
+        - [ ] Load Mamba/SSM weights correctly.
+        - [ ] Load MoE expert weights correctly.
+        - [ ] Load shared FFN weights if applicable.
+    - [ ] Update `struct llama_layer` to accommodate hybrid layers. This might involve:
+        - [ ] Flags or type indicators for Attention, MoE FFN, Dense FFN, Mamba/SSM.
+        - [ ] Pointers/storage for weights of different block types.
+    - [ ] Modify the core inference loop (`llama_decode`, `llama_eval`, etc.):
+        - [ ] Implement a dispatch mechanism based on `layer_types` for each layer.
+        - [ ] For Mamba/SSM layers:
+            - [ ] Implement the Mamba/SSM forward pass (selective scan, convolution, projections). This will be a significant C++ implementation effort.
+            - [ ] Ensure correct handling of Mamba state.
+        - [ ] For MoE FFN layers:
+            - [ ] Use existing MoE implementation (like Mixtral's) for gating and expert selection.
+            - [ ] Ensure shared FFN (if present) is correctly applied or bypassed.
+        - [ ] For standard Attention/Dense FFN layers:
+            - [ ] Reuse existing Llama attention and FFN logic.
+    - [ ] Update KV cache logic if Mamba layers interact with it differently (Mamba typically doesn't use a KV cache in the same way as attention).
+    - [ ] Update model quantization support for new tensor types if any.
+- [x] **Create `generate_granite_moe_hybrid_gguf.py`**:
+    - [x] A simple wrapper script that calls `convert_hf_to_gguf.py` with the correct model ID and output filename.
+    - [x] This script helps users convert their specific GraniteMoeHybrid models.
+- [ ] **Testing**:
+    - [ ] Convert a sample GraniteMoeHybrid model from Hugging Face to GGUF format using the new scripts.
+    - [ ] Load the GGUF model in `llama.cpp`.
+    - [ ] Run inference and verify:
+        - [ ] Numerical consistency with the original Hugging Face model (if possible, e.g., by comparing logits for a few test prompts).
+        - [ ] Correct behavior of MoE routing.
+        - [ ] Correct behavior of Mamba/SSM layers.
+        - [ ] Overall generation quality.
+    - [ ] Test with different quantization types.
+- [ ] **Documentation**:
+    - [ ] Update `README.md` or other relevant documentation to include GraniteMoeHybrid support.
+    - [ ] Provide instructions on how to convert and run these models.

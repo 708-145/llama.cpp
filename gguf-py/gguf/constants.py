@@ -1764,6 +1764,36 @@ MODEL_TENSORS[MODEL_ARCH.QWEN3MOE] = MODEL_TENSORS[MODEL_ARCH.QWEN2MOE].copy()
 MODEL_TENSORS[MODEL_ARCH.DOTS1] = MODEL_TENSORS[MODEL_ARCH.QWEN2MOE].copy()
 MODEL_TENSORS[MODEL_ARCH.GLM4] = MODEL_TENSORS[MODEL_ARCH.CHATGLM].copy()
 MODEL_TENSORS[MODEL_ARCH.BAILINGMOE] = MODEL_TENSORS[MODEL_ARCH.DEEPSEEK].copy()
+MODEL_TENSORS[MODEL_ARCH.GRANITE_MOE_HYBRID] = [
+        MODEL_TENSOR.TOKEN_EMBD,
+        MODEL_TENSOR.OUTPUT_NORM,
+        MODEL_TENSOR.OUTPUT,
+        # Attention Tensors (per block {bid}) - Common for attention layers
+        MODEL_TENSOR.ATTN_NORM,
+        MODEL_TENSOR.ATTN_Q,
+        MODEL_TENSOR.ATTN_K,
+        MODEL_TENSOR.ATTN_V,
+        MODEL_TENSOR.ATTN_OUT,
+        # MoE Tensors (per block {bid}) - For MoE layers
+        MODEL_TENSOR.FFN_NORM,          # Norm before FFN/MoE part
+        MODEL_TENSOR.FFN_GATE,          # Router gate
+        MODEL_TENSOR.FFN_GATE_EXP,      # Experts' gate_proj
+        MODEL_TENSOR.FFN_UP_EXP,        # Experts' up_proj
+        MODEL_TENSOR.FFN_DOWN_EXP,      # Experts' down_proj
+        # Shared FFN Tensors
+        MODEL_TENSOR.FFN_GATE_SHEXP,
+        MODEL_TENSOR.FFN_UP_SHEXP,
+        MODEL_TENSOR.FFN_DOWN_SHEXP,
+        # Mamba/SSM Tensors (per block {bid}) - For Mamba layers
+        MODEL_TENSOR.SSM_IN_PROJ,
+        MODEL_TENSOR.SSM_CONV1D,
+        MODEL_TENSOR.SSM_CONV1D_BIAS,
+        MODEL_TENSOR.SSM_X_PROJ,
+        MODEL_TENSOR.SSM_DT_PROJ,
+        MODEL_TENSOR.SSM_A,
+        MODEL_TENSOR.SSM_D,
+        MODEL_TENSOR.SSM_OUT_PROJ,
+]
 
 
 # tensors that will not be serialized

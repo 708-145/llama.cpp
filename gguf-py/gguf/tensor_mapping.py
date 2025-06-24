@@ -277,11 +277,22 @@ class TensorNameMap:
             "model.layers.{bid}.mlp.gate",                      # qwen2moe olmoe
             "transformer.decoder_layer.{bid}.router",           # Grok
             "transformer.blocks.{bid}.ffn.router.layer",        # dbrx
+            "model.layers.{bid}.block_sparse_moe.gate",         # GraniteMoeHybrid (MoE router)
             # "model.layers.{bid}.block_sparse_moe.router.layer", # granitemoe - covered by block_sparse_moe.gate
         ),
 
         MODEL_TENSOR.FFN_GATE_INP_SHEXP: (
             "model.layers.{bid}.mlp.shared_expert_gate", # qwen2moe
+        ),
+
+        MODEL_TENSOR.FFN_GATE_SHEXP: (
+            "model.layers.{bid}.shared_mlp.gate_proj", # GraniteMoeHybrid
+        ),
+        MODEL_TENSOR.FFN_UP_SHEXP: (
+            "model.layers.{bid}.shared_mlp.up_proj",   # GraniteMoeHybrid
+        ),
+        MODEL_TENSOR.FFN_DOWN_SHEXP: (
+            "model.layers.{bid}.shared_mlp.down_proj", # GraniteMoeHybrid
         ),
 
         MODEL_TENSOR.FFN_EXP_PROBS_B: (
@@ -439,45 +450,45 @@ class TensorNameMap:
         ),
 
         MODEL_TENSOR.SSM_IN: (
-            "model.layers.{bid}.in_proj",            # mamba-qbert (and potentially granite hybrid)
+            "model.layers.{bid}.in_proj",            # mamba-qbert
             "backbone.layers.{bid}.mixer.in_proj",   # mamba-hf (alternative)
-            "model.layers.{bid}.mixer.in_proj",      # granite hybrid mamba block
+            "model.layers.{bid}.mixer.in_proj",      # GraniteMoeHybrid mamba block
         ),
 
         MODEL_TENSOR.SSM_CONV1D: (
-            "model.layers.{bid}.conv1d",             # mamba-qbert (and potentially granite hybrid)
+            "model.layers.{bid}.conv1d",             # mamba-qbert
             "backbone.layers.{bid}.mixer.conv1d",    # mamba-hf (alternative)
-            "model.layers.{bid}.mixer.conv1d",       # granite hybrid mamba block
+            "model.layers.{bid}.mixer.conv1d",       # GraniteMoeHybrid mamba block
         ),
 
         MODEL_TENSOR.SSM_X: (
-            "model.layers.{bid}.x_proj",             # mamba-qbert (and potentially granite hybrid)
+            "model.layers.{bid}.x_proj",             # mamba-qbert
             "backbone.layers.{bid}.mixer.x_proj",    # mamba-hf (alternative)
-            "model.layers.{bid}.mixer.x_proj",       # granite hybrid mamba block
+            "model.layers.{bid}.mixer.x_proj",       # GraniteMoeHybrid mamba block
         ),
 
         MODEL_TENSOR.SSM_DT: (
-            "model.layers.{bid}.dt_proj",            # mamba-qbert (and potentially granite hybrid)
+            "model.layers.{bid}.dt_proj",            # mamba-qbert
             "backbone.layers.{bid}.mixer.dt_proj",   # mamba-hf (alternative)
-            "model.layers.{bid}.mixer.dt_proj",      # granite hybrid mamba block
+            "model.layers.{bid}.mixer.dt_proj",      # GraniteMoeHybrid mamba block
         ),
 
         MODEL_TENSOR.SSM_A: (
-            "model.layers.{bid}.A_log",              # mamba-qbert (and potentially granite hybrid)
+            "model.layers.{bid}.A_log",              # mamba-qbert
             "backbone.layers.{bid}.mixer.A_log",     # mamba-hf (alternative)
-            "model.layers.{bid}.mixer.A_log",        # granite hybrid mamba block
+            "model.layers.{bid}.mixer.A_log",        # GraniteMoeHybrid mamba block
         ),
 
         MODEL_TENSOR.SSM_D: (
-            "model.layers.{bid}.D",                  # mamba-qbert (and potentially granite hybrid)
+            "model.layers.{bid}.D",                  # mamba-qbert
             "backbone.layers.{bid}.mixer.D",         # mamba-hf (alternative)
-            "model.layers.{bid}.mixer.D",            # granite hybrid mamba block
+            "model.layers.{bid}.mixer.D",            # GraniteMoeHybrid mamba block
         ),
 
         MODEL_TENSOR.SSM_OUT: (
-            "model.layers.{bid}.out_proj",           # mamba-qbert (and potentially granite hybrid)
+            "model.layers.{bid}.out_proj",           # mamba-qbert
             "backbone.layers.{bid}.mixer.out_proj",  # mamba-hf (alternative)
-            "model.layers.{bid}.mixer.out_proj",     # granite hybrid mamba block
+            "model.layers.{bid}.mixer.out_proj",     # GraniteMoeHybrid mamba block
         ),
 
         MODEL_TENSOR.TIME_MIX_W0: (
