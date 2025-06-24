@@ -38,14 +38,21 @@ The SmarterQuant feature implementation is partially complete. The following ste
         *   GPU backends (CUDA, Metal, SYCL) will need similar modifications to their dequantization kernels (e.g., in `ggml-cuda.cu`, `ggml-metal.m`) to handle mixed block types and unpermutation if dequantization happens directly on the GPU.
 
 3.  **Thorough Testing (Step 6 Enhancement):**
-    *   **Current State:** Only metadata and config loading can be tested.
+    *   **Current State:** CPU-level numerical correctness tests implemented.
     *   **To Do (after completing 1 & 2 above):**
-        *   **Numerical Correctness:**
-            *   Create small test models and specific `default.smarterquant.json` configs that target a few tensors with known data patterns.
-            *   Quantize using the modified `llama-quantize`.
-            *   Implement small test programs that load the quantized model and:
-                *   Manually dequantize specific rows/tensors using the new logic and verify against expected F32 values (after unpermuting).
-                *   Perform a simple operation (e.g., matrix multiplication) involving a SmarterQuant tensor and verify the result against a reference computation done on the original, unquantized, unpermuted tensor.
+        *   **Numerical Correctness (CPU Path):**
+            *   DONE: Created a test case in `tests/test-smarterquant.cpp` that:
+                *   Defines a sample F32 tensor and `SmarterQuantTensorInfo` with mixed quantization types and column permutation.
+                *   Quantizes using `llama_tensor_quantize_smarter_blocks`.
+                *   Dequantizes using `ggml_get_rows_smarterquant`.
+                *   Verifies numerical output against the original F32 data. Test is passing.
+            *   Consider creating small test models and specific `default.smarterquant.json` configs for more comprehensive end-to-end GGUF-based tests if needed.
+            *   Consider tests for edge cases (e.g., tensors smaller than a full block segment, different permutations).
+        *   **Numerical Correctness (GPU Path - Future Task):**
+            *   Implement similar tests for GPU backends once SmarterQuant dequantization is added there.
+        *   **GGUF Metadata Round Trip (Optional but good):**
+            *   Test writing SmarterQuant metadata to GGUF and reading it back correctly. (Currently skipped to prioritize numerical tests).
+
 
 4.  **Refinements and Optimizations:**
     *   **Performance of Permutation/Unpermutation at Inference:** Perform the matrix multiplication on the permuted data and unpermute the result vector only.
