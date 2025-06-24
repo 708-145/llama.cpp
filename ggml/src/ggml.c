@@ -6514,6 +6514,13 @@ size_t ggml_quantize_chunk(
 
     ggml_quantize_init(type); // this is noop if already initialized
 
+    // DEBUG PRINT for Q2_K
+    // if (type == GGML_TYPE_Q2_K) {
+    //     printf("DEBUG ggml_quantize_chunk: For Q2_K: type_size %zu, blck_size %lld, nrows %lld, n_per_row %lld\n",
+    //            type_traits[type].type_size, (long long)type_traits[type].blck_size, (long long)nrows, (long long)n_per_row);
+    // }
+    // END DEBUG
+
     const size_t start_row = start / n_per_row; // Now correctly declared before use.
     const size_t row_size  = ggml_row_size(type, n_per_row);
 

@@ -375,7 +375,7 @@ static void zeros(std::ofstream &out, size_t n) {
 }
 
 // This is defined in this file later.
-static size_t llama_tensor_quantize_smarter_blocks(
+size_t llama_tensor_quantize_smarter_blocks(
     const float * src_data,
     void * dst_data,
     const int64_t * ne,
@@ -451,6 +451,12 @@ static size_t llama_tensor_quantize_smarter_blocks(
                     n_cols_in_segment,
                     segment_imatrix_data
                 );
+
+                // DEBUG PRINT
+                // printf("DEBUG Quant: slice %lld, row %lld, seg %d, type %s, cols %lld, bytes %zu, total_bytes %zu\n",
+                //        (long long)slice_idx, (long long)r, block_segment_idx, ggml_type_name(quant_type),
+                //        (long long)n_cols_in_segment, bytes_for_segment, total_bytes_written + bytes_for_segment);
+                // END DEBUG
 
                 total_bytes_written += bytes_for_segment;
                 // current_dst_ptr is implicitly advanced by total_bytes_written tracking

@@ -16,7 +16,7 @@
 // No longer need to include llama-quant.h or ../llama-quant.h here
 
 // Forward declaration for SmarterQuant dequantization function
-static void ggml_get_rows_smarterquant(const struct ggml_tensor * tensor, const char * src_row_base, float * dst_row_final_target);
+void ggml_get_rows_smarterquant(const struct ggml_tensor * tensor, const char * src_row_base, float * dst_row_final_target);
 
 #if defined(_MSC_VER) || defined(__MINGW32__)
 #include <malloc.h> // using malloc.h with MSC/MINGW
@@ -9735,7 +9735,6 @@ static void ggml_compute_forward_transpose(
 
 // This is the older, likely problematic definition that will be removed by the other change.
 // The redefinition error indicates a duplicate. The one at line 13243 is the one we want to keep and fix.
-// static void ggml_get_rows_smarterquant(...) { ... } // Placeholder for removal
 
 static void ggml_compute_forward_get_rows_q(
         const struct ggml_compute_params * params,
@@ -13196,7 +13195,7 @@ static void ggml_compute_forward_unary(
 // SmarterQuant: Custom dequantization and unpermutation for a single row
 // Note: This function assumes src_row_base points to the beginning of the *specific row* being processed.
 // It also assumes that tensor->sq_info and tensor->sq_info->column_permutation are valid.
-static void ggml_get_rows_smarterquant(const struct ggml_tensor * tensor, const char * src_row_base, float * dst_row_final_target) {
+void ggml_get_rows_smarterquant(const struct ggml_tensor * tensor, const char * src_row_base, float * dst_row_final_target) {
     const int64_t ne0 = tensor->ne[0]; // Number of elements in the row (columns)
 
     // Allocate temporary buffer for the dequantized but still permuted row on the stack
@@ -13234,8 +13233,19 @@ static void ggml_get_rows_smarterquant(const struct ggml_tensor * tensor, const 
                               dequantized_permuted_row + j,
                               current_block_ne);
 
+        // DEBUG PRINT
+        // printf("DEBUG Dequant: row_seg %lld, type %s, elements %lld, first val: %f, src_offset %zu\n", (long long)j/256, ggml_type_name(segment_type), (long long)current_block_ne, dequantized_permuted_row[j], current_segment_src_offset);
+        // END DEBUG
+
+
         current_segment_src_offset += ggml_row_size(segment_type, current_block_ne);
     }
+
+    // DEBUG PRINT
+    // printf("DEBUG Dequant: Permuted row (first 8 vals): ");
+    // for(int k=0; k<8 && k < ne0; ++k) printf("%f ", dequantized_permuted_row[k]);
+    // printf("\n");
+    // END DEBUG
 
     for (int64_t j_perm = 0; j_perm < ne0; ++j_perm) {
          dst_row_final_target[tensor->sq_info->column_permutation[j_perm]] = dequantized_permuted_row[j_perm];

@@ -24,3 +24,20 @@ using SmarterQuantConfig = std::unordered_map<std::string, SmarterQuantTensorInf
 // }
 // Implemented in llama-quant.cpp.
 SmarterQuantConfig load_smarter_quant_config(const std::string & fname);
+
+// Function to quantize a tensor using SmarterQuant block-specific types and permutation.
+// src_data: Pointer to the original F32 tensor data (already permuted if permutation is applied).
+// dst_data: Buffer to store the quantized data.
+// ne: Array of element counts for each dimension of the tensor.
+// sq_info: SmarterQuant configuration for this tensor.
+// imatrix_data: Optional importance matrix data.
+// nthread: Number of threads to use for quantization.
+// Returns the total size in bytes of the quantized data written to dst_data.
+// Implemented in llama-quant.cpp
+size_t llama_tensor_quantize_smarter_blocks(
+    const float * src_data,
+    void * dst_data,
+    const int64_t * ne,
+    const SmarterQuantTensorInfo & sq_info,
+    const float * imatrix_data,
+    int nthread);
