@@ -138,6 +138,13 @@ struct llama_layer_convnext {
     struct ggml_tensor * gamma = nullptr;
 };
 
+// Struct to hold weights for a single expert MLP
+struct llama_expert_mlp {
+    struct ggml_tensor *ffn_gate_inp_w; // Corresponds to FFN's w1 or up_proj
+    struct ggml_tensor *ffn_down_w;   // Corresponds to FFN's w2 or down_proj
+    struct ggml_tensor *ffn_up_w;     // Corresponds to FFN's w3 or gate_proj/up_proj
+};
+
 struct llama_layer {
     // normalization
     struct ggml_tensor * attn_norm       = nullptr;
@@ -240,6 +247,15 @@ struct llama_layer {
     struct ggml_tensor * ssm_conv1d_b = nullptr;
     struct ggml_tensor * ssm_dt_b     = nullptr;
 
+    // Mamba/SSM tensors for hybrid models (weights)
+    struct ggml_tensor * ssm_in_w         = nullptr;
+    struct ggml_tensor * ssm_x_w          = nullptr;
+    struct ggml_tensor * ssm_conv1d_w     = nullptr;
+    struct ggml_tensor * ssm_dt_w         = nullptr;
+    struct ggml_tensor * ssm_a_w          = nullptr;
+    struct ggml_tensor * ssm_d_w          = nullptr;
+    struct ggml_tensor * ssm_out_w        = nullptr;
+
     // rwkv
     struct ggml_tensor * time_mix_w1         = nullptr;
     struct ggml_tensor * time_mix_w2         = nullptr;
@@ -305,6 +321,10 @@ struct llama_layer {
     struct llama_layer_posnet posnet;
 
     struct llama_layer_convnext convnext;
+
+    // MoE specific
+    struct ggml_tensor *ffn_gate_w = nullptr;
+    struct llama_expert_mlp *experts = nullptr;
 };
 
 struct llama_model {

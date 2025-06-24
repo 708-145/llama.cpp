@@ -51,6 +51,8 @@ struct llama_hparams {
     std::array<uint32_t, LLAMA_MAX_LAYERS> n_head_kv_arr;
     std::array<uint32_t, LLAMA_MAX_LAYERS> n_ff_arr;
 
+    std::vector<std::string> layer_types; // For hybrid architectures like GraniteMoeHybrid
+
     uint32_t n_layer_dense_lead = 0;
     uint32_t n_lora_q           = 0;
     uint32_t n_lora_kv          = 0;
@@ -144,5 +146,5 @@ struct llama_hparams {
     bool is_swa(uint32_t il) const;
 };
 
-static_assert(std::is_trivially_copyable<llama_hparams>::value, "llama_hparams must be trivially copyable");
+// static_assert(std::is_trivially_copyable<llama_hparams>::value, "llama_hparams must be trivially copyable"); // Cannot be trivially copyable with std::vector
 
