@@ -6510,15 +6510,20 @@ size_t ggml_quantize_chunk(
     }
 
     GGML_ASSERT(start % type_traits[type].blck_size == 0);
-    GGML_ASSERT(start % n_per_row == 0);
+    GGML_ASSERT(start % n_per_row == 0); // This should hold even for SmarterQuant calls where start is 0.
 
     ggml_quantize_init(type); // this is noop if already initialized
 
-    const size_t start_row = start / n_per_row;
+    const size_t start_row = start / n_per_row; // Now correctly declared before use.
     const size_t row_size  = ggml_row_size(type, n_per_row);
 
     size_t result = 0;
 
+    // The dst pointer in these calls is ((char *) dst + start_row * row_size)
+    // For SmarterQuant calls to ggml_quantize_chunk, start is 0, so start_row is 0.
+    // The `dst` pointer passed *into* ggml_quantize_chunk by the SmarterQuant logic
+    // in llama-quant.cpp is already the correctly offset final destination pointer for the segment.
+    // So, `(char *)dst + 0 * row_size` correctly points to the beginning of the destination for the current segment.
     switch (type) {
         case GGML_TYPE_Q4_0:    result = quantize_q4_0(src + start, (char *) dst + start_row * row_size, nrows, n_per_row, imatrix); break;
         case GGML_TYPE_Q4_1:    result = quantize_q4_1(src + start, (char *) dst + start_row * row_size, nrows, n_per_row, imatrix); break;

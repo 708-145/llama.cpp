@@ -4,23 +4,7 @@
 #include <vector>
 #include <unordered_map>
 
-// Structure to hold the smarter quantization info for a single tensor,
-// typically loaded from a JSON configuration file (e.g., default.smarterquant.json).
-struct SmarterQuantTensorInfo {
-    // Specifies the ggml_type for each of the first four 256-column-wide blocks of the tensor.
-    // Subsequent blocks will use the type specified at index 3.
-    // Example: {GGML_TYPE_Q4_0, GGML_TYPE_Q4_1, GGML_TYPE_Q5_0, GGML_TYPE_Q8_0}
-    std::vector<int8_t> compression_types;
-
-    // Defines how columns of the original tensor should be reordered before quantization.
-    // If empty, no permutation is applied. Otherwise, for a tensor with C columns,
-    // this vector must contain C unique integers from 0 to C-1.
-    // The element at new_data[col_idx_new] comes from original_data[column_permutation[col_idx_new]].
-    std::vector<int> column_permutation;
-
-    // Flag indicating if SmarterQuant is enabled for this tensor, either via JSON config or GGUF metadata.
-    bool enabled = false;
-};
+#include "ggml-smarterquant-types.h" // Use the C-compatible definition
 
 // Map from tensor name (std::string) to its SmarterQuantTensorInfo.
 // This is the primary data structure holding the parsed smarter quantization configuration.
