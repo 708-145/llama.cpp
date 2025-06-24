@@ -56,7 +56,13 @@ The SmarterQuant feature implementation is partially complete. The following ste
 
 4.  **Refinements and Optimizations:**
     *   **Performance of Permutation/Unpermutation at Inference:** Perform the matrix multiplication on the permuted data and unpermute the result vector only.
-    *   **Memory for Unpermutation:** The current plan (Option A for unpermutation) requires a temporary buffer for the unpermuted F32 row. Analyze its memory impact.
+    *   **Memory for Unpermutation:** The current plan (Option A for unpermutation) requires a temporary buffer for the unpermuted F32 row.
+        *   **Analysis:** The temporary buffer (`dequantized_permuted_row`) in `ggml_get_rows_smarterquant` is allocated on the stack using `alloca` with a size of `n_cols * sizeof(float)`.
+        *   For a tensor with `C` columns, this is `C * 4` bytes.
+        *   Example: For `n_cols = 4096`, memory is `16 KB`. For `n_cols = 8192`, memory is `32 KB`.
+        *   This memory is allocated per function call and freed upon return.
+        *   **Impact:** Generally minor compared to overall model weights, activations, and KV cache sizes.
+        *   **Potential Concern:** For extremely large column dimensions (not typical for current LLM weight matrices but possible for other uses), stack allocation via `alloca` could risk stack overflow if stack sizes are limited. However, for common dimensions, it's acceptable.
 
 These steps represent significant work, especially the modifications to `ggml.c` which is performance-critical and central to the library's operations.
 
