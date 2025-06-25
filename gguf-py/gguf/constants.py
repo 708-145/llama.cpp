@@ -347,6 +347,11 @@ class MODEL_TENSOR(IntEnum):
     SSM_A                = auto()
     SSM_D                = auto()
     SSM_OUT              = auto()
+    SSM_IN_PROJ          = auto()
+    SSM_CONV1D_BIAS      = auto()
+    SSM_X_PROJ           = auto()
+    SSM_DT_PROJ          = auto()
+    SSM_OUT_PROJ         = auto()
     TIME_MIX_W0          = auto()
     TIME_MIX_W1          = auto()
     TIME_MIX_W2          = auto()
@@ -567,14 +572,14 @@ TENSOR_NAMES: dict[MODEL_TENSOR, str] = {
     MODEL_TENSOR.SSM_CONV1D:                "blk.{bid}.ssm_conv1d",
     MODEL_TENSOR.SSM_X:                     "blk.{bid}.ssm_x",
     MODEL_TENSOR.SSM_DT:                    "blk.{bid}.ssm_dt",
-    MODEL_TENSOR.SSM_A:                     "blk.{bid}.ssm_a.weight",
-    MODEL_TENSOR.SSM_D:                     "blk.{bid}.ssm_d.weight",
-    MODEL_TENSOR.SSM_OUT:                   "blk.{bid}.ssm_out", # Typically ssm_out_proj
-    MODEL_TENSOR.SSM_IN_PROJ:               "blk.{bid}.ssm_in_proj.weight",
-    MODEL_TENSOR.SSM_CONV1D_BIAS:           "blk.{bid}.ssm_conv1d.bias",
-    MODEL_TENSOR.SSM_X_PROJ:                "blk.{bid}.ssm_x_proj.weight",
-    MODEL_TENSOR.SSM_DT_PROJ:               "blk.{bid}.ssm_dt_proj.weight",
-    MODEL_TENSOR.SSM_OUT_PROJ:              "blk.{bid}.ssm_out_proj.weight",
+    MODEL_TENSOR.SSM_A:                     "blk.{bid}.ssm_a",
+    MODEL_TENSOR.SSM_D:                     "blk.{bid}.ssm_d",
+    MODEL_TENSOR.SSM_OUT:                   "blk.{bid}.ssm_out",
+    MODEL_TENSOR.SSM_IN_PROJ:               "blk.{bid}.ssm_in_proj",
+    MODEL_TENSOR.SSM_CONV1D_BIAS:           "blk.{bid}.ssm_conv1d_bias",
+    MODEL_TENSOR.SSM_X_PROJ:                "blk.{bid}.ssm_x_proj",
+    MODEL_TENSOR.SSM_DT_PROJ:               "blk.{bid}.ssm_dt_proj",
+    MODEL_TENSOR.SSM_OUT_PROJ:              "blk.{bid}.ssm_out_proj",
     MODEL_TENSOR.TIME_MIX_W0:               "blk.{bid}.time_mix_w0",
     MODEL_TENSOR.TIME_MIX_W1:               "blk.{bid}.time_mix_w1",
     MODEL_TENSOR.TIME_MIX_W2:               "blk.{bid}.time_mix_w2",
@@ -1768,31 +1773,33 @@ MODEL_TENSORS[MODEL_ARCH.GRANITE_MOE_HYBRID] = [
         MODEL_TENSOR.TOKEN_EMBD,
         MODEL_TENSOR.OUTPUT_NORM,
         MODEL_TENSOR.OUTPUT,
-        # Attention Tensors (per block {bid}) - Common for attention layers
-        MODEL_TENSOR.ATTN_NORM,
+        # Common Attention Tensors (per block {bid})
+        MODEL_TENSOR.ATTN_NORM,      # Input norm for attention block
         MODEL_TENSOR.ATTN_Q,
         MODEL_TENSOR.ATTN_K,
         MODEL_TENSOR.ATTN_V,
         MODEL_TENSOR.ATTN_OUT,
-        # MoE Tensors (per block {bid}) - For MoE layers
-        MODEL_TENSOR.FFN_NORM,          # Norm before FFN/MoE part
-        MODEL_TENSOR.FFN_GATE,          # Router gate
-        MODEL_TENSOR.FFN_GATE_EXP,      # Experts' gate_proj
-        MODEL_TENSOR.FFN_UP_EXP,        # Experts' up_proj
-        MODEL_TENSOR.FFN_DOWN_EXP,      # Experts' down_proj
-        # Shared FFN Tensors
-        MODEL_TENSOR.FFN_GATE_SHEXP,
-        MODEL_TENSOR.FFN_UP_SHEXP,
-        MODEL_TENSOR.FFN_DOWN_SHEXP,
-        # Mamba/SSM Tensors (per block {bid}) - For Mamba layers
-        MODEL_TENSOR.SSM_IN_PROJ,
-        MODEL_TENSOR.SSM_CONV1D,
-        MODEL_TENSOR.SSM_CONV1D_BIAS,
-        MODEL_TENSOR.SSM_X_PROJ,
-        MODEL_TENSOR.SSM_DT_PROJ,
-        MODEL_TENSOR.SSM_A,
-        MODEL_TENSOR.SSM_D,
-        MODEL_TENSOR.SSM_OUT_PROJ,
+        # MoE FFN Tensors (per block {bid})
+        MODEL_TENSOR.FFN_NORM,       # Input norm for FFN/MoE block
+        MODEL_TENSOR.FFN_GATE_INP,   # Router gating weights
+        MODEL_TENSOR.FFN_GATE_EXP,   # Expert FFN gate (e.g., expert_gate_proj)
+        MODEL_TENSOR.FFN_UP_EXP,     # Expert FFN up projection (e.g., expert_up_proj)
+        MODEL_TENSOR.FFN_DOWN_EXP,   # Expert FFN down projection (e.g., expert_down_proj)
+        # Shared FFN Tensors (per block {bid}, if applicable and named differently)
+        # These assume shared FFNs might exist alongside MoE layers
+        MODEL_TENSOR.FFN_GATE_SHEXP, # Shared FFN gate
+        MODEL_TENSOR.FFN_UP_SHEXP,   # Shared FFN up projection
+        MODEL_TENSOR.FFN_DOWN_SHEXP, # Shared FFN down projection
+        # Mamba/SSM Tensors (per block {bid})
+        # ATTN_NORM might be reused for Mamba input norm or a specific SSM_NORM could be added if needed
+        MODEL_TENSOR.SSM_IN_PROJ,    # Mamba in_proj (to x and z)
+        MODEL_TENSOR.SSM_CONV1D,     # Mamba conv1d weights
+        MODEL_TENSOR.SSM_CONV1D_BIAS,# Mamba conv1d bias
+        MODEL_TENSOR.SSM_X_PROJ,     # Mamba x_proj
+        MODEL_TENSOR.SSM_DT_PROJ,    # Mamba dt_proj (for dt bias)
+        MODEL_TENSOR.SSM_A,          # Mamba A_log (converted to A)
+        MODEL_TENSOR.SSM_D,          # Mamba D (bias)
+        MODEL_TENSOR.SSM_OUT_PROJ,   # Mamba out_proj
 ]
 
 
