@@ -25,18 +25,18 @@
         - [x] Call superclass method.
         - [x] Ensure all buffered expert tensor parts have been processed and raise an error or warning if not.
     - [x] Register the model class with `@ModelBase.register("GraniteMoeHybridForCausalLM")`.
-- [ ] **Update `gguf.py` (within `gguf-py` directory)**:
-    - [ ] Add `GRANITE_MOE_HYBRID` to `MODEL_ARCH` enum.
-    - [ ] Add new `MODEL_TENSOR` types if specific tensor names for GraniteMoeHybrid are not covered by existing Llama/Mixtral/Mamba tensor names (e.g., specific names for shared FFN components if they differ, or unique Mamba tensor names if not already present).
-    - [ ] Add new `Keys.Metadata` if there are unique metadata fields for GraniteMoeHybrid (e.g., `granite.layer_types`).
-    - [ ] Update `TENSOR_NAMES` mapping for any new `MODEL_TENSOR` types.
-    - [ ] Update `gguf.get_tensor_name_map` to include a mapping for `MODEL_ARCH.GRANITE_MOE_HYBRID`. This map should define how Hugging Face tensor names are converted to GGUF tensor names for this architecture. It needs to cover:
-        - [ ] Standard attention weights (Q, K, V, O).
-        - [ ] Standard FFN weights (if dense layers exist alongside MoE).
-        - [ ] Expert FFN weights (gate, up, down for each expert, mapping to stacked GGUF tensors).
-        - [ ] Shared FFN weights (gate, up, down if applicable).
-        - [ ] Mamba/SSM weights (A, B, C, D, conv1d_weight, conv1d_bias, dt_proj_weight, dt_proj_bias, in_proj_weight, out_proj_weight, etc.).
-        - [ ] Layer norms, token embeddings, output weights.
+- [x] **Update `gguf.py` (within `gguf-py` directory)**:
+    - [x] Add `GRANITE_MOE_HYBRID` to `MODEL_ARCH` enum.
+    - [x] Add new `MODEL_TENSOR` types if specific tensor names for GraniteMoeHybrid are not covered by existing Llama/Mixtral/Mamba tensor names (e.g., specific names for shared FFN components if they differ, or unique Mamba tensor names if not already present).
+    - [x] Add new `Keys.Metadata` if there are unique metadata fields for GraniteMoeHybrid (e.g., `granite.layer_types`).
+    - [x] Update `TENSOR_NAMES` mapping for any new `MODEL_TENSOR` types.
+    - [x] Update `gguf.get_tensor_name_map` to include a mapping for `MODEL_ARCH.GRANITE_MOE_HYBRID`. This map should define how Hugging Face tensor names are converted to GGUF tensor names for this architecture. It needs to cover:
+        - [x] Standard attention weights (Q, K, V, O).
+        - [x] Standard FFN weights (if dense layers exist alongside MoE).
+        - [x] Expert FFN weights (gate, up, down for each expert, mapping to stacked GGUF tensors).
+        - [x] Shared FFN weights (gate, up, down if applicable).
+        - [x] Mamba/SSM weights (A, B, C, D, conv1d_weight, conv1d_bias, dt_proj_weight, dt_proj_bias, in_proj_weight, out_proj_weight, etc.).
+        - [x] Layer norms, token embeddings, output weights.
 - [ ] **Add C/C++ support in `llama.cpp`**:
     - [ ] Define `enum llama_model_arch LLAMA_MODEL_ARCH_GRANITE_MOE_HYBRID`.
     - [ ] Update `llama_model_arch_name` to return "granite_moe_hybrid" for the new enum.
