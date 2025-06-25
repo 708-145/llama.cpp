@@ -5073,6 +5073,13 @@ static bool validate_float(float f, size_t i) {
     return true;
 }
 
+size_t quantize_iq1_ps (const float * GGML_RESTRICT src, void * GGML_RESTRICT dst, int64_t nrow, int64_t n_per_row, const float * imatrix) {
+    // Stub implementation
+    GGML_ASSERT(false && "quantize_iq1_ps not implemented");
+    (void)src; (void)dst; (void)nrow; (void)n_per_row; (void)imatrix;
+    return 0; // Or appropriate error/default size
+}
+
 static bool isinf_fp16(ggml_fp16_t f) {
     return (f & 0x7c00) == 0x7c00 && (f & 0x03ff) == 0;
 }
