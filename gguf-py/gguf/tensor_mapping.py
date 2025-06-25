@@ -121,8 +121,10 @@ class TensorNameMap:
             "transformer.h.{bid}.ln",                               # phi2
             "model.layers.layers.{bid}.norm",                       # plamo
             "model.layers.{bid}.attention_norm",                    # internlm2
-            "model.layers.{bid}.norm",                              # mamba-qbert mamba (granitemoehybrid attention block norm)
+            "model.layers.{bid}.norm",                              # mamba-qbert mamba
             "backbone.layers.{bid}.norm",                           # mamba (alternative)
+            # GraniteMoeHybrid Attention block norm (can also be FFN norm or Mamba norm depending on layer type)
+            "model.layers.{bid}.norm",
             "transformer.decoder_layer.{bid}.rms_norm",             # Grok
             "transformer.blocks.{bid}.norm_attn_norm.norm_1",       # dbrx
             "encoder.layers.{bid}.input_layernorm",                 # chatglm
@@ -167,6 +169,7 @@ class TensorNameMap:
             "transformer.h.{bid}.attn.q_proj",                           # gpt-j
             "model.layers.layers.{bid}.self_attn.q_proj",                # plamo
             "model.layers.{bid}.attention.wq",                           # internlm2
+            "model.layers.{bid}.self_attn.q_proj",                       # GraniteMoeHybrid
             "transformer.decoder_layer.{bid}.multi_head_attention.query",# Grok
             "transformer.h.{bid}.attn.attention.q_proj",                 # exaone
         ),
@@ -181,6 +184,7 @@ class TensorNameMap:
             "transformer.h.{bid}.attn.k",                              # refact
             "model.layers.layers.{bid}.self_attn.k_proj",              # plamo
             "model.layers.{bid}.attention.wk",                         # internlm2
+            "model.layers.{bid}.self_attn.k_proj",                     # GraniteMoeHybrid
             "transformer.decoder_layer.{bid}.multi_head_attention.key",# Grok
             "transformer.h.{bid}.attn.attention.k_proj",               # exaone
         ),
@@ -194,6 +198,7 @@ class TensorNameMap:
             "transformer.h.{bid}.attn.v",                                # refact
             "model.layers.layers.{bid}.self_attn.v_proj",                # plamo
             "model.layers.{bid}.attention.wv",                           # internlm2
+            "model.layers.{bid}.self_attn.v_proj",                       # GraniteMoeHybrid
             "transformer.decoder_layer.{bid}.multi_head_attention.value",# Grok
             "transformer.h.{bid}.attn.attention.v_proj",                 # exaone
         ),
@@ -216,6 +221,7 @@ class TensorNameMap:
             "transformer.h.{bid}.mixer.out_proj",                           # phi2
             "model.layers.layers.{bid}.self_attn.o_proj",                   # plamo
             "model.layers.{bid}.attention.wo",                              # internlm2
+            "model.layers.{bid}.self_attn.o_proj",                          # GraniteMoeHybrid
             "encoder.layers.{bid}.attn.out_proj",                           # nomic-bert
             "transformer.decoder_layer.{bid}.multi_head_attention.linear",  # Grok
             "transformer.blocks.{bid}.norm_attn_norm.attn.out_proj",        # dbrx
@@ -255,7 +261,7 @@ class TensorNameMap:
             "language_model.encoder.layers.{bid}.post_attention_layernorm",  # persimmon
             "model.layers.{bid}.ln2",                                        # yi
             "h.{bid}.ln_2",                                                  # gpt2
-            "model.layers.{bid}.ffn_norm",                                   # internlm2
+            "model.layers.{bid}.ffn_norm",                                   # internlm2 GraniteMoeHybrid FFN/MoE norm
             "transformer.decoder_layer.{bid}.rms_norm_2",                    # Grok
             "encoder.layers.{bid}.post_attention_layernorm",                 # chatglm
             "transformer.layers.{bid}.ffn_norm",                             # openelm
@@ -277,22 +283,28 @@ class TensorNameMap:
             "model.layers.{bid}.mlp.gate",                      # qwen2moe olmoe
             "transformer.decoder_layer.{bid}.router",           # Grok
             "transformer.blocks.{bid}.ffn.router.layer",        # dbrx
-            "model.layers.{bid}.block_sparse_moe.gate",         # GraniteMoeHybrid (MoE router)
+            "model.layers.{bid}.block_sparse_moe.gate",         # GraniteMoeHybrid (MoE router gate_inp)
             # "model.layers.{bid}.block_sparse_moe.router.layer", # granitemoe - covered by block_sparse_moe.gate
         ),
 
-        MODEL_TENSOR.FFN_GATE_INP_SHEXP: (
+        MODEL_TENSOR.FFN_GATE_INP_SHEXP: ( # Not typically used for GraniteMoeHybrid style, Qwen2MoE specific
             "model.layers.{bid}.mlp.shared_expert_gate", # qwen2moe
         ),
 
-        MODEL_TENSOR.FFN_GATE_SHEXP: (
+        MODEL_TENSOR.FFN_GATE_SHEXP: ( # Shared FFN
             "model.layers.{bid}.shared_mlp.gate_proj", # GraniteMoeHybrid
+            "model.layers.{bid}.shared_mlp.fc1",       # GraniteMoeHybrid (alternative if gate_proj is combined)
+            "model.layers.{bid}.shared_mlp.w1",        # GraniteMoeHybrid (alternative)
         ),
-        MODEL_TENSOR.FFN_UP_SHEXP: (
+        MODEL_TENSOR.FFN_UP_SHEXP: ( # Shared FFN
             "model.layers.{bid}.shared_mlp.up_proj",   # GraniteMoeHybrid
+            "model.layers.{bid}.shared_mlp.fc1",       # GraniteMoeHybrid (alternative if up_proj is combined)
+            "model.layers.{bid}.shared_mlp.w3",        # GraniteMoeHybrid (alternative)
         ),
-        MODEL_TENSOR.FFN_DOWN_SHEXP: (
+        MODEL_TENSOR.FFN_DOWN_SHEXP: ( # Shared FFN
             "model.layers.{bid}.shared_mlp.down_proj", # GraniteMoeHybrid
+            "model.layers.{bid}.shared_mlp.fc2",       # GraniteMoeHybrid (alternative)
+            "model.layers.{bid}.shared_mlp.w2",        # GraniteMoeHybrid (alternative)
         ),
 
         MODEL_TENSOR.FFN_EXP_PROBS_B: (
@@ -334,7 +346,8 @@ class TensorNameMap:
             "transformer.blocks.{bid}.ffn.experts.mlp.v1",    # dbrx
             "model.layers.{bid}.mlp.experts.up_proj",         # qwen2moe olmoe (merged)
             "model.layers.{bid}.block_sparse_moe.experts.w3", # phimoe (merged)
-            "model.layers.{bid}.block_sparse_moe.experts.fc_1", # granitemoe variant (up part)
+            "model.layers.{bid}.block_sparse_moe.experts.up_proj", # GraniteMoeHybrid MoE expert up
+            "model.layers.{bid}.block_sparse_moe.experts.fc_1", # granitemoe variant (up part), also GraniteMoeHybrid if combined gate/up
         ),
 
         MODEL_TENSOR.FFN_UP_SHEXP: (
@@ -368,7 +381,8 @@ class TensorNameMap:
             "transformer.blocks.{bid}.ffn.experts.mlp.w1",    # dbrx
             "model.layers.{bid}.mlp.experts.gate_proj",       # qwen2moe olmoe (merged)
             "model.layers.{bid}.block_sparse_moe.experts.w1", # phimoe (merged)
-            "model.layers.{bid}.block_sparse_moe.experts.fc_1", # granitemoe variant (gate part)
+            "model.layers.{bid}.block_sparse_moe.experts.gate_proj", # GraniteMoeHybrid MoE expert gate
+            "model.layers.{bid}.block_sparse_moe.experts.fc_1", # granitemoe variant (gate part), also GraniteMoeHybrid if combined gate/up
         ),
 
         MODEL_TENSOR.FFN_GATE_SHEXP: (
@@ -409,9 +423,10 @@ class TensorNameMap:
             "transformer.decoder_layer.{bid}.moe.linear_1",      # Grok (merged)
             "transformer.blocks.{bid}.ffn.experts.mlp.w2",       # dbrx
             "model.layers.{bid}.mlp.experts.down_proj",          # qwen2moe olmoe (merged)
-            "model.layers.{bid}.block_sparse_moe.output_linear", # granitemoe (expert down)
+            "model.layers.{bid}.block_sparse_moe.output_linear", # granitemoe (expert down) # Potentially GraniteMoeHybrid too
             "model.layers.{bid}.block_sparse_moe.experts.w2",    # phimoe (merged)
-            "model.layers.{bid}.block_sparse_moe.experts.fc_2",  # granitemoe variant (down part)
+            "model.layers.{bid}.block_sparse_moe.experts.down_proj", # GraniteMoeHybrid MoE expert down
+            "model.layers.{bid}.block_sparse_moe.experts.fc_2",  # granitemoe variant (down part), also GraniteMoeHybrid
         ),
 
         MODEL_TENSOR.FFN_DOWN_SHEXP: (
@@ -482,13 +497,28 @@ class TensorNameMap:
         MODEL_TENSOR.SSM_D: (
             "model.layers.{bid}.D",                  # mamba-qbert
             "backbone.layers.{bid}.mixer.D",         # mamba-hf (alternative)
-            "model.layers.{bid}.mixer.D",            # GraniteMoeHybrid mamba block
+            "model.layers.{bid}.mixer.D",            # GraniteMoeHybrid mamba block D
         ),
 
-        MODEL_TENSOR.SSM_OUT: (
-            "model.layers.{bid}.out_proj",           # mamba-qbert
-            "backbone.layers.{bid}.mixer.out_proj",  # mamba-hf (alternative)
-            "model.layers.{bid}.mixer.out_proj",     # GraniteMoeHybrid mamba block
+        # SSM_OUT is usually the final projection, not a specific tensor name like 'ssm_out'
+        # It's covered by SSM_OUT_PROJ for Mamba-style models.
+        # MODEL_TENSOR.SSM_OUT: (
+        # ),
+
+        MODEL_TENSOR.SSM_IN_PROJ: (
+            "model.layers.{bid}.mixer.in_proj",      # GraniteMoeHybrid Mamba in_proj
+        ),
+        MODEL_TENSOR.SSM_CONV1D_BIAS: (
+            "model.layers.{bid}.mixer.conv1d.bias",  # GraniteMoeHybrid Mamba conv1d bias
+        ),
+        MODEL_TENSOR.SSM_X_PROJ: (
+            "model.layers.{bid}.mixer.x_proj",       # GraniteMoeHybrid Mamba x_proj
+        ),
+        MODEL_TENSOR.SSM_DT_PROJ: (
+            "model.layers.{bid}.mixer.dt_proj",      # GraniteMoeHybrid Mamba dt_proj
+        ),
+        MODEL_TENSOR.SSM_OUT_PROJ: (
+            "model.layers.{bid}.mixer.out_proj",     # GraniteMoeHybrid Mamba out_proj
         ),
 
         MODEL_TENSOR.TIME_MIX_W0: (
