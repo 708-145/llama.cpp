@@ -17,6 +17,11 @@
 
 // Forward declaration for SmarterQuant dequantization function
 void ggml_get_rows_smarterquant(const struct ggml_tensor * tensor, const char * src_row_base, float * dst_row_final_target);
+static void ggml_unpermute_f32_inplace(struct ggml_tensor * tensor, const int32_t * permutation);
+
+// Define GGML_MAX_BLOCK_SIZE based on the largest quantization block structure
+// block_q8_K is often one of the largest.
+#define GGML_MAX_BLOCK_SIZE sizeof(block_q8_K)
 
 #if defined(_MSC_VER) || defined(__MINGW32__)
 #include <malloc.h> // using malloc.h with MSC/MINGW
@@ -8695,7 +8700,7 @@ static void ggml_compute_forward_mul_mat_one_chunk(
                     const float * src1_segment_f32_ptr = (const float *)(src1_row_ptr_base + col_segment_start_in_src0 * sizeof(float)); // nb10 for src1
 
                     void * src1_segment_prepared_data;
-                    char  src1_quantized_segment_buffer[GGML_MAX_TYPE_SIZE]; // Max possible size for a block
+                    char  src1_quantized_segment_buffer[GGML_MAX_BLOCK_SIZE]; // Max possible size for a block
 
                     if (src1->type == GGML_TYPE_F32) {
                         ggml_from_float_t const quantize_src1_segment = type_traits_cpu[vec_dot_type_for_src1].from_float;
@@ -8704,10 +8709,10 @@ static void ggml_compute_forward_mul_mat_one_chunk(
                         }
                         // For simplicity, using a fixed-size buffer. Ensure it's large enough.
                         // Size needed is ggml_row_size(vec_dot_type_for_src1, current_segment_ne)
-                        // GGML_MAX_TYPE_SIZE is for one block, so if current_segment_ne > block_size, this is an issue.
+                        // GGML_MAX_BLOCK_SIZE is for one block, so if current_segment_ne > block_size, this is an issue.
                         // Assuming current_segment_ne (256) is a multiple of block sizes of target types.
                         GGML_ASSERT(sizeof(src1_quantized_segment_buffer) >= ggml_row_size(vec_dot_type_for_src1, current_segment_ne));
-                        quantize_src1_segment(src1_segment_f32_ptr, src1_quantized_segment_buffer, current_segment_ne, NULL); // No imatrix for activations
+                        quantize_src1_segment(src1_segment_f32_ptr, src1_quantized_segment_buffer, current_segment_ne); // No imatrix for activations
                         src1_segment_prepared_data = src1_quantized_segment_buffer;
                     } else {
                         // If src1 is already quantized, it must match vec_dot_type_for_src1
@@ -8885,7 +8890,7 @@ UseGgmlGemm1:;
             }
         }
         ggml_barrier(params->threadpool); // Ensure all threads complete src1 quantization if it was parallel
-        src1_data_for_chunk = wdata_src1_quantized;
+src1_data_for_chunk = wdata;
     } else {
         // src1->type matches vec_dot_type, use src1->data directly
         src1_data_for_chunk = src1->data;
