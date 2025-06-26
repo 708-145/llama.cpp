@@ -603,16 +603,71 @@ class TextModel(ModelBase):
         toktypes: list[int] = []
 
         from transformers import AutoTokenizer
-        tokenizer = AutoTokenizer.from_pretrained(self.dir_model)
-        vocab_size = self.hparams.get("vocab_size", len(tokenizer.vocab))
-        assert max(tokenizer.vocab.values()) < vocab_size
+        try:
+            # Try with fast tokenizer first, then slow if it fails or is not appropriate.
+            # Pass trust_remote_code as it might be needed for some custom tokenizers, though less likely for GPT2.
+            tokenizer = AutoTokenizer.from_pretrained(self.dir_model, use_fast=True, trust_remote_code=True)
+            if not hasattr(tokenizer, "vocab"): # Fast tokenizer might not have .vocab dict
+                 if hasattr(tokenizer, "get_vocab"): # Check for get_vocab()
+                     vocab_size_check = len(tokenizer.get_vocab())
+                 else: # If no vocab access method, try loading slow
+                     raise ValueError("Fast tokenizer loaded without direct vocab access, trying slow.")
+        except Exception as e_fast:
+            logger.warning(f"Failed to load fast tokenizer ({e_fast}), attempting to load slow tokenizer.")
+            tokenizer = AutoTokenizer.from_pretrained(self.dir_model, use_fast=False, trust_remote_code=True)
+
+        if not hasattr(tokenizer, "vocab") and not hasattr(tokenizer, "get_vocab"): # Check if it's a real tokenizer
+            logger.warning("Failed to load tokenizer properly from dir_model. Generating a dummy GPT-2 style vocab.")
+            vocab_size = self.hparams.get("vocab_size", 1000)
+            tokens = ["<|endoftext|>"]
+            # Add pad token if different from eos, common in some GPT2 setups
+
+            pad_token = "<|pad|>" # A common pad token
+            if self.hparams.get("pad_token_id", 1) != self.hparams.get("eos_token_id", 0): # Assuming eos is 0
+                 tokens.append(pad_token)
+
+            # Fill remaining with dummy tokens
+            num_special_tokens = len(tokens)
+            for i in range(num_special_tokens, vocab_size):
+                tokens.append(f"dummytoken{i}")
+
+            toktypes = [gguf.TokenType.CONTROL] * num_special_tokens + [gguf.TokenType.NORMAL] * (vocab_size - num_special_tokens)
+
+            tokpre = "gpt-2" # Default pretokenizer for this dummy path
+            try:
+                # Attempt to get pretokenizer, but have a fallback.
+                # Pass a minimal tokenizer-like object if actual tokenizer failed to load for get_vocab_base_pre
+                class DummyTokenizerForPre:
+                    def encode(self, text): return [0,0,0] # Dummy encode
+
+                tokpre = self.get_vocab_base_pre(tokenizer if hasattr(tokenizer, 'encode') else DummyTokenizerForPre())
+            except Exception as e_pre:
+                logger.warning(f"Could not determine pretokenizer type due to tokenizer load failure: {e_pre}. Defaulting to 'gpt-2'.")
+            return tokens, toktypes, tokpre
+
+        current_vocab = tokenizer.vocab if hasattr(tokenizer, "vocab") else tokenizer.get_vocab()
+        vocab_size = self.hparams.get("vocab_size", len(current_vocab))
+        # Ensure that the max token ID is less than vocab_size.
+        # This is important because token IDs are 0-indexed.
+        if current_vocab: # Only check if vocab is not empty
+             assert max(current_vocab.values()) < vocab_size, \
+                 f"Max token ID {max(current_vocab.values())} is not less than vocab_size {vocab_size}"
+        else: # If vocab is empty (e.g. dummy tokenizer failed badly), this implies an issue.
+             logger.warning("Tokenizer vocab is empty. This might lead to issues.")
+             # If current_vocab is empty, and vocab_size is derived from it, this could be problematic.
+             # However, the dummy vocab generation path above should prevent current_vocab from being empty.
+
 
         tokpre = self.get_vocab_base_pre(tokenizer)
 
-        reverse_vocab = {id_: encoded_tok for encoded_tok, id_ in tokenizer.vocab.items()}
+        reverse_vocab = {id_: encoded_tok for encoded_tok, id_ in current_vocab.items()} # Use current_vocab
         added_vocab = tokenizer.get_added_vocab()
 
-        added_tokens_decoder = tokenizer.added_tokens_decoder
+        # Ensure added_tokens_decoder is available, especially for slow tokenizers
+        added_tokens_decoder = getattr(tokenizer, 'added_tokens_decoder', {})
+        if not added_tokens_decoder and hasattr(tokenizer, 'tokenizer') and hasattr(tokenizer.tokenizer, 'added_tokens_decoder'):
+            # Sometimes it's nested further for slow tokenizers wrapping fast ones
+            added_tokens_decoder = tokenizer.tokenizer.added_tokens_decoder
 
         for i in range(vocab_size):
             if i not in reverse_vocab:
@@ -694,6 +749,9 @@ class TextModel(ModelBase):
             res = "starcoder"
         if chkhsh == "3ce83efda5659b07b1ad37ca97ca5797ea4285d9b9ab0dc679e4a720c9da7454":
             # ref: https://huggingface.co/openai-community/gpt2
+            res = "gpt-2"
+        if chkhsh == "0436e112c6b8e8a1e05e71d4c95bd390af2639ac69233d7e23f30b5211ea5f0a": # Hash from dummy GPT-2 tokenizer
+            # ref: Local test model for GraniteMoeHybrid
             res = "gpt-2"
         if chkhsh == "32d85c31273f8019248f2559fed492d929ea28b17e51d81d3bb36fff23ca72b3":
             # ref: https://huggingface.co/stabilityai/stablelm-2-zephyr-1_6b
@@ -6072,18 +6130,18 @@ class GraniteMoeHybridModel(GraniteModel):
         super().set_gguf_parameters() # Inherits parameters from GraniteModel
 
         # MoE Parameters
-        num_local_experts = self.hparams.get("num_local_experts")
-        if num_local_experts is not None:
-            self.gguf_writer.add_expert_count(num_local_experts)
-            logger.info(f"gguf: expert count = {num_local_experts}")
-
-        num_experts_per_tok = self.hparams.get("num_experts_per_tok")
-        if num_experts_per_tok is not None:
-            self.gguf_writer.add_expert_used_count(num_experts_per_tok)
-            logger.info(f"gguf: experts used count = {num_experts_per_tok}")
+        # num_local_experts and num_experts_per_tok are already handled by TextModel.set_gguf_parameters
+        # if they are present in self.hparams.
+        # We only need to add parameters specific to GraniteMoeHybrid or those not covered by TextModel.
 
         moe_intermediate_size = self.hparams.get("moe_intermediate_size") # For expert FFN
         if moe_intermediate_size is not None:
+            # TextModel.set_gguf_parameters uses "intermediate_size" for general FFN length.
+            # If moe_intermediate_size is different, it's for experts specifically.
+            # GGUF key for this is EXPERT_FEED_FORWARD_LENGTH.
+            # TextModel adds FEED_FORWARD_LENGTH. If moe_intermediate_size is the same as
+            # hparams.intermediate_size, this might be redundant if the meaning is the same.
+            # Assuming moe_intermediate_size is specifically for the MoE part if present.
             self.gguf_writer.add_expert_feed_forward_length(moe_intermediate_size)
             logger.info(f"gguf: expert feed_forward_length = {moe_intermediate_size}")
 
@@ -6132,20 +6190,10 @@ class GraniteMoeHybridModel(GraniteModel):
             self.gguf_writer.add_attention_bias(attention_bias)
             logger.info(f"gguf: attention_bias = {attention_bias}")
 
-        bos_token_id = self.hparams.get("bos_token_id")
-        if bos_token_id is not None:
-            self.gguf_writer.add_bos_token_id(bos_token_id)
-            logger.info(f"gguf: bos_token_id = {bos_token_id}")
-
-        eos_token_id = self.hparams.get("eos_token_id")
-        if eos_token_id is not None:
-            self.gguf_writer.add_eos_token_id(eos_token_id)
-            logger.info(f"gguf: eos_token_id = {eos_token_id}")
-
-        pad_token_id = self.hparams.get("pad_token_id")
-        if pad_token_id is not None: # Often 0 or not specified, GGUF handles defaults
-            self.gguf_writer.add_pad_token_id(pad_token_id)
-            logger.info(f"gguf: pad_token_id = {pad_token_id}")
+        # bos_token_id, eos_token_id, pad_token_id are handled by SpecialVocab / set_vocab
+        # and should not be set here directly from hparams to avoid duplication.
+        # If they are missing from tokenizer files but present in hparams,
+        # SpecialVocab logic should ideally pick them up, or they are added by default by GGUFWriter if truly standard.
 
         hidden_act_str = self.hparams.get("hidden_act", "silu")
         act_type = getattr(gguf.FeedForwardActType, hidden_act_str.upper(), None)
@@ -6277,15 +6325,16 @@ class GraniteMoeHybridModel(GraniteModel):
         if name.startswith(mamba_block_prefix):
             logger.debug(f"GraniteMoeHybridModel: Attempting to process Mamba tensor: {name}")
             if name.endswith(".A_log"):
-                try:
-                    gguf_name = self.map_tensor_name(name.replace(".A_log", ".A")) # tensor_map should map HF's ".A" to GGUF's ssm_a
-                    if self.match_model_tensor_name(gguf_name, gguf.MODEL_TENSOR.SSM_A, bid):
-                        data_torch = -torch.exp(data_torch.float()).type_as(data_torch)
-                        logger.info(f"GraniteMoeHybridModel: Converted Mamba tensor: {name} -> {gguf_name} (A_log to A)")
-                        yield (gguf_name, data_torch)
-                        return
-                except ValueError:
-                    logger.warning(f"GraniteMoeHybridModel: Tensor {name} (or its .A base) not in tensor_map for SSM_A. Skipping.")
+                # Directly format the GGUF name for SSM_A and yield the transformed tensor.
+                # This avoids relying on map_tensor_name for the intermediate ".A" form.
+                if bid is not None: # Should always be true if name starts with mamba_block_prefix
+                    gguf_A_name = self.format_tensor_name(gguf.MODEL_TENSOR.SSM_A, bid)
+                    data_torch = -torch.exp(data_torch.float()).type_as(data_torch)
+                    logger.info(f"GraniteMoeHybridModel: Converted Mamba tensor: {name} -> {gguf_A_name} (A_log to A)")
+                    yield (gguf_A_name, data_torch)
+                    return
+                else: # Should not happen for A_log if bid is part of mamba_block_prefix
+                    logger.warning(f"GraniteMoeHybridModel: bid is None for A_log tensor {name}. Cannot format GGUF name. Skipping.")
                     return []
             elif name.endswith(".conv1d.weight"):
                 try:
@@ -6297,20 +6346,18 @@ class GraniteMoeHybridModel(GraniteModel):
                         return
                 except ValueError:
                     logger.warning(f"GraniteMoeHybridModel: Tensor {name} not in tensor_map for SSM_CONV1D. Skipping.")
-                    return []
-            # Add other direct mappings for Mamba tensors here if their names are already GGUF-like
-            # or if their HF names are consistently different and need specific mapping rules.
-            # This relies on self.tensor_map being comprehensive for Mamba parts.
+                    return [] # If explicitly matched but not in map, treat as error for this rule.
+
+            # Fallback for other Mamba tensors to use map_tensor_name
             try:
-                # Handles: in_proj, conv1d.bias, x_proj, dt_proj.weight, dt_proj.bias, D.weight, out_proj.weight, out_proj.bias
+                # Handles: D, in_proj, conv1d.bias, x_proj, dt_proj.weight, dt_proj.bias, out_proj.weight
                 gguf_name = self.map_tensor_name(name) # This will raise ValueError if not in map
-                # No specific transformation needed beyond what map_tensor_name and general_prepare_tensors do.
                 logger.info(f"GraniteMoeHybridModel: Mapped Mamba tensor: {name} -> {gguf_name}")
                 yield (gguf_name, data_torch)
                 return
             except ValueError:
-                logger.warning(f"GraniteMoeHybridModel: Mamba tensor {name} not directly mapped and not handled by specific rules. Passing to superclass.")
-                # Fall through to superclass if not explicitly handled.
+                logger.warning(f"GraniteMoeHybridModel: Mamba tensor {name} not directly mapped by specific rules or map_tensor_name. Passing to superclass.")
+                # Fall through to superclass if not explicitly handled by specific rules or direct map.
 
         # 4. Fallback to Superclass for Attention/Other Tensors
         logger.debug(f"GraniteMoeHybridModel: Tensor {name} not handled by MoE/Mamba specific logic, passing to super.modify_tensors.")

@@ -119,6 +119,7 @@ class Keys:
         RESIDUAL_SCALE                    = "{arch}.residual_scale"
         EMBEDDING_SCALE                   = "{arch}.embedding_scale"
         TOKEN_SHIFT_COUNT                 = "{arch}.token_shift_count"
+        FEED_FORWARD_ACT_TYPE             = "{arch}.feed_forward_act_type"
 
     class Attention:
         HEAD_COUNT                   = "{arch}.attention.head_count"
@@ -454,6 +455,7 @@ class MODEL_TENSOR(IntEnum):
     V_MMPROJ_FC          = auto() # Projector fully connected layer
     V_IMG_EMBD           = auto() # Generic image embedding output from projector
     V_TOK_EMBD_IMG_BREAK = auto() # Specific for pixtral image break token embedding
+    A_ENC_EMBD_POS       = auto() # Audio encoder positional embedding (added for compatibility)
 
 
 MODEL_ARCH_NAMES: dict[MODEL_ARCH, str] = {
@@ -682,6 +684,7 @@ TENSOR_NAMES: dict[MODEL_TENSOR, str] = {
     MODEL_TENSOR.V_MMPROJ_FC:               "multi_modal_projector.fc",
     MODEL_TENSOR.V_IMG_EMBD:                "image_embedding",
     MODEL_TENSOR.V_TOK_EMBD_IMG_BREAK:      "image_break_token_embedding",
+    MODEL_TENSOR.A_ENC_EMBD_POS:            "audio_encoder.position_embedding", # Placeholder name
 }
 
 MODEL_TENSORS: dict[MODEL_ARCH, list[MODEL_TENSOR]] = {} # Initialize as empty dict
@@ -1918,6 +1921,13 @@ class GGMLQuantizationType(IntEnum):
 class ExpertGatingFuncType(IntEnum):
     SOFTMAX  = 1
     SIGMOID  = 2
+
+
+class FeedForwardActType(IntEnum):
+    SILU = 0
+    GELU = 1
+    RELU = 2 # Added for completeness, though not used by current model
+    # Add other common activation types as needed
 
 
 # TODO: add GGMLFileType from ggml_ftype in ggml.h
