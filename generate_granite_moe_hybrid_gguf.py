@@ -4,7 +4,7 @@ import os
 # --- Configuration ---
 # IMPORTANT: User MUST change this to their actual model path or Hugging Face identifier.
 # This script is an EXAMPLE TEMPLATE and will not work without a valid model.
-MODEL_ID = "ibm/granite-moe-hybrid-example"
+MODEL_ID = "./test_hf_granite_moe_hybrid_model"  # Updated to local test model
 
 # Define the output GGUF filename for the example
 OUTPUT_GGUF_FILENAME = "granite_moe_hybrid_test.gguf"

@@ -833,6 +833,9 @@ class GGUFWriter:
     def add_ssm_dt_b_c_rms(self, value: bool) -> None:
         self.add_bool(Keys.SSM.DT_B_C_RMS.format(arch=self.arch), value)
 
+    def add_feed_forward_act_type(self, value: FeedForwardActType) -> None:
+        self.add_uint32(Keys.LLM.FEED_FORWARD_ACT_TYPE.format(arch=self.arch), value.value)
+
     def add_tokenizer_model(self, model: str) -> None:
         self.add_string(Keys.Tokenizer.MODEL, model)
 
@@ -921,6 +924,33 @@ class GGUFWriter:
 
     def add_eom_token_id(self, id: int) -> None:
         self.add_uint32(Keys.Tokenizer.EOM_ID, id)
+
+    def add_custom_metadata(self, key: str, value: Any) -> None:
+        # Determine GGUFValueType based on the type of value
+        # This is a simplified version; a more robust one would handle more types
+        # or expect the user to pass GGUFValueType.
+        value_type: GGUFValueType
+        if isinstance(value, (str, bytes, bytearray)):
+            value_type = GGUFValueType.STRING
+        elif isinstance(value, list):
+            value_type = GGUFValueType.ARRAY
+        elif isinstance(value, float):
+            value_type = GGUFValueType.FLOAT32
+        elif isinstance(value, bool):
+            value_type = GGUFValueType.BOOL
+        elif isinstance(value, int):
+            # Defaulting to INT32 for simplicity; could be other int types.
+            # For specific integer types, dedicated methods like add_uint32 should be used.
+            value_type = GGUFValueType.INT32
+        else:
+            raise ValueError(f"Unsupported value type for custom metadata: {type(value)} for key '{key}'")
+
+        # Custom keys are added to the first metadata dict (kv_data[0])
+        if key in self.kv_data[0]:
+            raise ValueError(f'Duplicated custom key name {key!r}')
+
+        self.kv_data[0][key] = GGUFValue(value=value, type=value_type)
+        logger.debug(f"Added custom metadata: {key} = {value} (type {value_type.name})")
 
     def _pack(self, fmt: str, value: Any, skip_pack_prefix: bool = False) -> bytes:
         pack_prefix = ''

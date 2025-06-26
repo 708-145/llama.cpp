@@ -473,7 +473,7 @@ class TensorNameMap:
         MODEL_TENSOR.SSM_CONV1D: (
             "model.layers.{bid}.conv1d",             # mamba-qbert
             "backbone.layers.{bid}.mixer.conv1d",    # mamba-hf (alternative)
-            "model.layers.{bid}.mixer.conv1d",       # GraniteMoeHybrid mamba block
+            "model.layers.{bid}.mamba.conv1d",       # GraniteMoeHybrid mamba block
         ),
 
         MODEL_TENSOR.SSM_X: (
@@ -489,15 +489,15 @@ class TensorNameMap:
         ),
 
         MODEL_TENSOR.SSM_A: (
-            "model.layers.{bid}.A_log",              # mamba-qbert
-            "backbone.layers.{bid}.mixer.A_log",     # mamba-hf (alternative)
-            "model.layers.{bid}.mixer.A_log",        # GraniteMoeHybrid mamba block
+            "model.layers.{bid}.A_log",              # mamba-qbert (raw A_log name)
+            "backbone.layers.{bid}.mixer.A_log",     # mamba-hf (alternative raw A_log name)
+            "model.layers.{bid}.mamba.A",            # GraniteMoeHybrid mamba block (logical .A after .A_log processing)
         ),
 
         MODEL_TENSOR.SSM_D: (
             "model.layers.{bid}.D",                  # mamba-qbert
             "backbone.layers.{bid}.mixer.D",         # mamba-hf (alternative)
-            "model.layers.{bid}.mixer.D",            # GraniteMoeHybrid mamba block D
+            "model.layers.{bid}.mamba.D",            # GraniteMoeHybrid mamba block D
         ),
 
         # SSM_OUT is usually the final projection, not a specific tensor name like 'ssm_out'
@@ -506,19 +506,19 @@ class TensorNameMap:
         # ),
 
         MODEL_TENSOR.SSM_IN_PROJ: (
-            "model.layers.{bid}.mixer.in_proj",      # GraniteMoeHybrid Mamba in_proj
+            "model.layers.{bid}.mamba.in_proj",      # GraniteMoeHybrid Mamba in_proj
         ),
         MODEL_TENSOR.SSM_CONV1D_BIAS: (
-            "model.layers.{bid}.mixer.conv1d.bias",  # GraniteMoeHybrid Mamba conv1d bias
+            "model.layers.{bid}.mamba.conv1d.bias",  # GraniteMoeHybrid Mamba conv1d bias
         ),
         MODEL_TENSOR.SSM_X_PROJ: (
-            "model.layers.{bid}.mixer.x_proj",       # GraniteMoeHybrid Mamba x_proj
+            "model.layers.{bid}.mamba.x_proj",       # GraniteMoeHybrid Mamba x_proj
         ),
         MODEL_TENSOR.SSM_DT_PROJ: (
-            "model.layers.{bid}.mixer.dt_proj",      # GraniteMoeHybrid Mamba dt_proj
+            "model.layers.{bid}.mamba.dt_proj",      # GraniteMoeHybrid Mamba dt_proj
         ),
         MODEL_TENSOR.SSM_OUT_PROJ: (
-            "model.layers.{bid}.mixer.out_proj",     # GraniteMoeHybrid Mamba out_proj
+            "model.layers.{bid}.mamba.out_proj",     # GraniteMoeHybrid Mamba out_proj
         ),
 
         MODEL_TENSOR.TIME_MIX_W0: (
