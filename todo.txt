@@ -66,7 +66,8 @@
     - [x] A simple wrapper script that calls `convert_hf_to_gguf.py` with the correct model ID and output filename.
     - [x] This script helps users convert their specific GraniteMoeHybrid models.
 - [ ] **Testing**:
-    - [ ] Convert a sample GraniteMoeHybrid model from Hugging Face to GGUF format using the new scripts.
+    - [ ] Write a generator to generate a small GraniteMoeHybrid test model in Hugging Face transformer format with 2 layers and small dimensions
+    - [ ] Convert that Hugging Face model to GGUF using convert_hf_to_gguf.py
     - [ ] Load the GGUF model in `llama.cpp`.
     - [ ] Run inference and verify:
         - [ ] Numerical consistency with the original Hugging Face model (if possible, e.g., by comparing logits for a few test prompts).
