@@ -37,30 +37,30 @@
         - [x] Shared FFN weights (gate, up, down if applicable).
         - [x] Mamba/SSM weights (A, B, C, D, conv1d_weight, conv1d_bias, dt_proj_weight, dt_proj_bias, in_proj_weight, out_proj_weight, etc.).
         - [x] Layer norms, token embeddings, output weights.
-- [ ] **Add C/C++ support in `llama.cpp`**:
-    - [ ] Define `enum llama_model_arch LLAMA_MODEL_ARCH_GRANITE_MOE_HYBRID`.
-    - [ ] Update `llama_model_arch_name` to return "granite_moe_hybrid" for the new enum.
-    - [ ] Add new model parameters to `llama_hparams` struct if needed (e.g., for `layer_types`, specific Mamba params not already there, shared FFN dim).
-    - [ ] Update `llama_model_load_internal` (or relevant loading functions):
-        - [ ] Read new GGUF metadata keys (e.g., `granite.layer_types`).
-        - [ ] Handle the new architecture type.
-        - [ ] Load Mamba/SSM weights correctly.
-        - [ ] Load MoE expert weights correctly.
-        - [ ] Load shared FFN weights if applicable.
-    - [ ] Update `struct llama_layer` to accommodate hybrid layers. This might involve:
-        - [ ] Flags or type indicators for Attention, MoE FFN, Dense FFN, Mamba/SSM.
-        - [ ] Pointers/storage for weights of different block types.
-    - [ ] Modify the core inference loop (`llama_decode`, `llama_eval`, etc.):
-        - [ ] Implement a dispatch mechanism based on `layer_types` for each layer.
-        - [ ] For Mamba/SSM layers:
-            - [ ] Implement the Mamba/SSM forward pass (selective scan, convolution, projections). This will be a significant C++ implementation effort.
-            - [ ] Ensure correct handling of Mamba state.
-        - [ ] For MoE FFN layers:
-            - [ ] Use existing MoE implementation (like Mixtral's) for gating and expert selection.
-            - [ ] Ensure shared FFN (if present) is correctly applied or bypassed.
-        - [ ] For standard Attention/Dense FFN layers:
-            - [ ] Reuse existing Llama attention and FFN logic.
-    - [ ] Update KV cache logic if Mamba layers interact with it differently (Mamba typically doesn't use a KV cache in the same way as attention).
+- [x] **Add C/C++ support in `llama.cpp`**:
+    - [x] Define `enum llama_model_arch LLAMA_MODEL_ARCH_GRANITE_MOE_HYBRID`.
+    - [x] Update `llama_model_arch_name` to return "granite_moe_hybrid" for the new enum.
+    - [x] Add new model parameters to `llama_hparams` struct if needed (e.g., for `layer_types`, specific Mamba params not already there, shared FFN dim).
+    - [x] Update `llama_model_load_internal` (or relevant loading functions):
+        - [x] Read new GGUF metadata keys (e.g., `granite.layer_types`).
+        - [x] Handle the new architecture type.
+        - [x] Load Mamba/SSM weights correctly.
+        - [x] Load MoE expert weights correctly.
+        - [x] Load shared FFN weights if applicable.
+    - [x] Update `struct llama_layer` to accommodate hybrid layers. This might involve:
+        - [x] Flags or type indicators for Attention, MoE FFN, Dense FFN, Mamba/SSM.
+        - [x] Pointers/storage for weights of different block types.
+    - [x] Modify the core inference loop (`llama_decode`, `llama_eval`, etc.):
+        - [x] Implement a dispatch mechanism based on `layer_types` for each layer.
+        - [x] For Mamba/SSM layers:
+            - [x] Implement the Mamba/SSM forward pass (selective scan, convolution, projections). This will be a significant C++ implementation effort.
+            - [x] Ensure correct handling of Mamba state.
+        - [x] For MoE FFN layers:
+            - [x] Use existing MoE implementation (like Mixtral's) for gating and expert selection.
+            - [x] Ensure shared FFN (if present) is correctly applied or bypassed.
+        - [x] For standard Attention/Dense FFN layers:
+            - [x] Reuse existing Llama attention and FFN logic.
+    - [x] Update KV cache logic if Mamba layers interact with it differently (Mamba typically doesn't use a KV cache in the same way as attention).
     - [ ] Update model quantization support for new tensor types if any.
 - [x] **Create `generate_granite_moe_hybrid_gguf.py`**:
     - [x] A simple wrapper script that calls `convert_hf_to_gguf.py` with the correct model ID and output filename.
