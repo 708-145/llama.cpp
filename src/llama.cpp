@@ -1,4 +1,5 @@
 #include "llama-impl.h"
+#include "llama-context.h" // Explicitly include for full definition
 
 #include "llama-chat.h"
 #include "llama-mmap.h"
@@ -356,3 +357,11 @@ const char * llama_print_system_info(void) {
     return s.c_str();
 }
 
+bool llama_model_has_moe(const struct llama_model * model) {
+    return model->hparams.n_expert > 0;
+}
+
+const std::map<int, int> & llama_get_expert_usage_counts(const struct llama_context * ctx) {
+    // expert_usage_counts is now a public member of llama_context
+    return ctx->expert_usage_counts;
+}

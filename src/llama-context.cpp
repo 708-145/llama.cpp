@@ -1,3 +1,5 @@
+#include "ggml.h"
+#include "ggml-backend.h" // For ggml_backend_tensor_get_buffer and ggml_backend_cpu_buffer_type
 #include "llama-context.h"
 
 #include "llama-impl.h"
@@ -1009,9 +1011,9 @@ int llama_context::decode(const llama_batch & batch_inp) {
         ggml_backend_sched_set_eval_callback(sched.get(), cparams.cb_eval, cparams.cb_eval_user_data);
 
         ggml_status status;
-        const auto res = process_ubatch(ubatch, LLM_GRAPH_TYPE_DECODER, mctx.get(), status);
+        auto graph_res = process_ubatch(ubatch, LLM_GRAPH_TYPE_DECODER, mctx.get(), status);
 
-        if (!res) {
+        if (!graph_res) {
             // the last ubatch failed or was aborted -> remove all positions of that ubatch from the KV cache
             llama_pos pos_min[LLAMA_MAX_SEQ];
             for (int s = 0; s < LLAMA_MAX_SEQ; ++s) {
@@ -1047,11 +1049,38 @@ int llama_context::decode(const llama_batch & batch_inp) {
         //    ggml_graph_dump_dot(gf, NULL, "llama.dot");
         //}
 
-        auto * t_logits = res->get_logits();
-        auto * t_embd   = cparams.embeddings ? res->get_embd() : nullptr;
+        // Update expert usage counts
+        if (graph_res->get_selected_experts() != nullptr) {
+            ggml_tensor * selected_experts = graph_res->get_selected_experts();
+            struct ggml_tensor * selected_experts_cpu = nullptr;
 
-        if (t_embd && res->get_embd_pooled()) {
-            t_embd = res->get_embd_pooled();
+            // Always create a CPU-side tensor to copy into.
+            // Ensure it's a new tensor within the current compute context, matching dimensions and type.
+            // selected_experts is I32 type.
+            selected_experts_cpu = ggml_dup_tensor(this->ctx_compute.get(), selected_experts);
+            ggml_set_name(selected_experts_cpu, "selected_experts_cpu_copy_for_read");
+
+            // Copy data from the potentially backend-specific tensor to the CPU tensor.
+            // This is a blocking call.
+            ggml_backend_tensor_get(selected_experts, selected_experts_cpu->data, 0, ggml_nbytes(selected_experts_cpu));
+
+            const int32_t * expert_indices_data = (const int32_t *)selected_experts_cpu->data;
+            const int n_elements = ggml_nelements(selected_experts_cpu);
+            for (int i = 0; i < n_elements; ++i) {
+                // Accessing expert_usage_counts directly if it's moved to llama_context
+                // Or via model().hparams if it stays there (but needs to be mutable)
+                // Assuming it will be moved to llama_context for mutable access:
+                this->expert_usage_counts[expert_indices_data[i]]++;
+            }
+
+            // selected_experts_cpu tensor duplicated with ggml_dup_tensor inside ctx_compute will be freed when ctx_compute is freed.
+        }
+
+        auto * t_logits = graph_res->get_logits();
+        auto * t_embd   = cparams.embeddings ? graph_res->get_embd() : nullptr;
+
+        if (t_embd && graph_res->get_embd_pooled()) {
+            t_embd = graph_res->get_embd_pooled();
         }
 
         // extract logits
@@ -1193,6 +1222,65 @@ int llama_context::decode(const llama_batch & batch_inp) {
     // Reset state for the next token before backend sync, to allow the CPU activities in the reset to
     // overlap with device computation.
     ggml_backend_sched_reset(sched.get());
+
+    // Update expert usage counts after all micro-batches are processed
+    // We need to aggregate results if selected_experts were part of each ubatch's graph_res.
+    // For simplicity, this example assumes the last graph_res (or a relevant one) holds the final selected_experts.
+    // This might need adjustment if selected_experts are processed per micro-batch.
+    // However, expert selection is typically done once for the full batch before splitting into ubatches,
+    // or the graph structure ensures selected_experts is consistently available.
+    // Let's assume `res` from the last `process_ubatch` call is what we need,
+    // or that `t_selected_experts` is populated in the context's main graph result if not micro-batch specific.
+    // This part requires careful handling of graph_res lifecycle if it's cleared or changed per ubatch.
+    // A robust way: collect selected_expert tensors from each ubatch if they differ, or use a final one.
+    // For now, let's assume the last `res` is sufficient or expert selection is global to the batch.
+    // This part of the code might need to be inside the loop if expert selection happens per ubatch
+    // and results need to be aggregated.
+    // However, given typical MoE, selection is often per token, aggregated across a batch.
+    // The current plan is to access it after the loop, implying graph_res is still valid
+    // and contains the final selected_experts tensor for the entire batch.
+
+    // Assuming `graph_res` is accessible here and pertains to the whole batch or relevant final state.
+    // This is a simplification. If `process_ubatch` returns a `res` that is specific to a micro-batch
+    // and `selected_experts` is part of that, this logic needs to be inside the loop,
+    // accumulating counts from each micro-batch's `selected_experts` tensor.
+    // For now, proceeding with the assumption that a final `selected_experts` tensor is available.
+    // This will likely require a final `graph_res` that isn't shown in the loop structure provided.
+    // Let's assume `mctx->get_final_graph_result()` or similar exists, or that the last `res` is it.
+    // Given the current structure, `res` from the loop is out of scope.
+    // This indicates a likely need to adjust where `graph_res` is obtained or how expert counts are collected.
+
+    // Correct approach: The expert selection happens within the graph.
+    // The `t_selected_experts` tensor should be part of the `llm_graph_result` (`res` object).
+    // We need to ensure `res` is valid here. The loop structure implies `res` might be from the last ubatch.
+    // If expert selection is done once for all tokens in the batch, `res->get_selected_experts()` after the loop is fine.
+
+    // Accessing the model's hparams directly: this->model.hparams.expert_usage_counts
+    // The `llama_context` has a `model` member.
+
+    // The variable `res` is not in scope here. The `res` from `process_ubatch` is local to the loop.
+    // This logic needs to be integrated where `res` (the result of graph computation) is available.
+    // This typically means it should be inside the loop if `res` is per-ubatch,
+    // or if there's a final `res` for the whole batch, it should be used here.
+    // Let's assume for now there's a way to get the final `graph_res` for the batch.
+    // This part of the implementation highlights a potential design challenge with the current plan.
+    // One common pattern is that `llama_decode` builds ONE graph for the entire batch,
+    // then `ggml_graph_compute` is called. If so, `res` would be available after that.
+    // The current loop structure with `process_ubatch` suggests micro-batching.
+
+    // Re-evaluating: The `selected_experts` tensor is created in `build_moe_ffn`, which is part of graph construction.
+    // This graph is then computed. The results are indeed in `res`.
+    // If `decode` processes the batch in one go (no micro-batching in `decode` itself, but `process_ubatch` might be internal detail),
+    // then `res` would be the result of that single processing.
+    // The `do...while(mctx->next())` loop in `llama_context::decode` strongly suggests micro-batching.
+    // In this case, `expert_usage_counts` should be updated *inside* the loop, using the `res` from each `process_ubatch`.
+
+    // Let's adjust to put it inside the loop, after `res = process_ubatch(...)`
+    // This was an oversight in my previous reasoning about where to place it.
+    // The plan step says "Modify llama_decode", and this is where `res` is available per ubatch.
+
+    // Corrected placement will be shown in the next diff for clarity, inside the loop.
+    // For now, this block will be empty, as the actual change will be inside the ubatch loop.
 
     return 0;
 }

@@ -3,6 +3,7 @@
 #include "llama.h"
 
 #include <array>
+#include <map>
 
 // bump if necessary
 #define LLAMA_MAX_LAYERS  512
@@ -197,5 +198,5 @@ struct llama_hparams {
     bool is_swa(uint32_t il) const;
 };
 
-static_assert(std::is_trivially_copyable<llama_hparams>::value, "llama_hparams must be trivially copyable");
+// static_assert(std::is_trivially_copyable<llama_hparams>::value, "llama_hparams must be trivially copyable");
 

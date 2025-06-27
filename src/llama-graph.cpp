@@ -9,6 +9,7 @@
 #include "llama-memory-hybrid.h"
 #include "llama-memory-recurrent.h"
 
+#include <ggml-backend.h>
 #include <cassert>
 #include <cmath>
 #include <cstring>
@@ -694,6 +695,7 @@ ggml_tensor * llm_graph_context::build_moe_ffn(
     ggml_tensor * selected_experts = ggml_top_k(ctx0, selection_probs, n_expert_used); // [n_expert_used, n_tokens]
     cb(selected_experts->src[0], "ffn_moe_argsort", il);
     cb(selected_experts, "ffn_moe_topk", il);
+    res->t_selected_experts = selected_experts;
 
     ggml_tensor * weights = ggml_get_rows(ctx0,
             ggml_reshape_3d(ctx0, probs, 1, n_expert, n_tokens), selected_experts); // [1, n_expert_used, n_tokens]

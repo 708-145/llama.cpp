@@ -294,4 +294,8 @@ private:
 
     mutable int32_t n_p_eval = 0; // number of tokens in eval calls for the prompt (with batch size > 1)
     mutable int32_t n_eval   = 0; // number of eval calls
+
+public:
+    // MoE expert usage counts
+    std::map<int, int> expert_usage_counts;
 };

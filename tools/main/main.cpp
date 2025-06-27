@@ -978,6 +978,17 @@ int main(int argc, char ** argv) {
     LOG("\n\n");
     common_perf_print(ctx, smpl);
 
+    // Print expert usage counts
+    if (llama_model_has_moe(model)) {
+        const auto & expert_counts = llama_get_expert_usage_counts(ctx);
+        if (!expert_counts.empty()) {
+            LOG_INF("\nExpert usage counts:\n");
+            for (const auto & pair : expert_counts) {
+                LOG_INF("Expert %d: %d\n", pair.first, pair.second);
+            }
+        }
+    }
+
     common_sampler_free(smpl);
 
     llama_backend_free();
