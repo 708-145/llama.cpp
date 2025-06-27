@@ -1,0 +1,61 @@
+## TODO List: MoE Expert Usage Counting Feature
+
+**Objective:** Modify `llama-cli` to output which expert has been used how often during MoE inference.
+
+**Tasks:**
+
+1.  **[DONE] Modify `llama_hparams` struct (`src/llama-hparams.h`)**
+    *   Initially added `expert_usage_counts` here.
+    *   Later removed it as `llama_hparams` is generally treated as immutable post-load, and mutable runtime stats are better placed elsewhere.
+    *   Commented out `static_assert` for trivial copyability temporarily due to `std::map` (though map was removed from here).
+
+2.  **[DONE] Modify `llama_context` struct (`src/llama-context.h`)**
+    *   Added `std::map<int, int> expert_usage_counts;` as a public member to store the expert usage counts. This is the current location for these runtime statistics.
+
+3.  **[DONE] Modify `llm_graph_context` struct (`src/llama-graph.h`, `src/llama-graph.cpp`)**
+    *   Initial plan was to add a reference to `expert_usage_counts` here.
+    *   This was reverted/removed as `expert_usage_counts` was moved to `llama_context`, making it accessible directly.
+
+4.  **[DONE] Modify `llm_graph_result` (`src/llama-graph.h`)**
+    *   Added `ggml_tensor * t_selected_experts;` to store the tensor containing the IDs of selected experts.
+    *   Added the corresponding getter method `get_selected_experts()`.
+
+5.  **[DONE] Update `build_moe_ffn` in `src/llama-graph.cpp`**
+    *   Assigned the `selected_experts` tensor (computed via `ggml_top_k`) to `res->t_selected_experts` in the `llm_graph_result` object.
+    *   Initial attempts to count directly here were reverted as graph computation happens later.
+
+6.  **[DONE] Modify `llama_context::decode` in `src/llama-context.cpp` (actual core logic location)**
+    *   After each micro-batch computation (`process_ubatch` call):
+        *   Retrieved the `selected_experts` tensor from the `graph_res` object.
+        *   Ensured the tensor data is available on the CPU by creating a CPU-side duplicate tensor (`selected_experts_cpu`) using `ggml_dup_tensor` within the context's `ctx_compute` and then copying data using `ggml_backend_tensor_get`.
+        *   Iterated through the selected expert indices from `selected_experts_cpu->data`.
+        *   Incremented the corresponding count in `this->expert_usage_counts`.
+    *   Added necessary includes like `"ggml-backend.h"` and corrected `ggml_context` usage (`ctx_compute` instead of `ctx_ggml`).
+
+7.  **[DONE] Define and Implement Helper API Functions (`llama.h`, `src/llama.cpp`)**
+    *   Declared `llama_model_has_moe(const struct llama_model * model)` in `llama.h`.
+    *   Implemented `llama_model_has_moe` in `src/llama.cpp` to check `model->hparams.n_expert > 0`.
+    *   Declared `const std::map<int, int> & llama_get_expert_usage_counts(const struct llama_context * ctx);` (initially `llama_get_model_expert_usage_counts`) in `llama.h` (within `#ifdef __cplusplus`).
+    *   Implemented `llama_get_expert_usage_counts` in `src/llama.cpp` to return `ctx->expert_usage_counts`.
+    *   Added `#include <map>` to `llama.h`.
+
+8.  **[DONE] Modify `main` function in `tools/main/main.cpp`**
+    *   After the main inference loop and performance printing:
+        *   Added a check using `llama_model_has_moe(model)`.
+        *   If true, calls `llama_get_expert_usage_counts(ctx)`.
+        *   Iterates through the returned map and prints the usage count for each expert ID using `LOG_INF`.
+
+9.  **[DONE] Build `llama-cli`**
+    *   Successfully configured CMake (disabling CURL).
+    *   Successfully compiled `llama-cli` after several iterations of fixing include issues, access errors, and incorrect assumptions about data structure locations.
+
+10. **[TODO] Runtime Testing and Verification**
+    *   Run the compiled `llama-cli` with a known Mixture-of-Experts (MoE) model.
+    *   Verify that the "Expert usage counts:" output appears correctly at the end of the inference.
+    *   Confirm that the counts accurately reflect the expert selection during the model's operation (this might require a very small MoE model or specific test cases if exact verification is needed, otherwise general plausibility).
+
+11. **[TODO - Optional/Follow-up] Review `static_assert` in `llama_hparams.h`**
+    *   The `static_assert(std::is_trivially_copyable<llama_hparams>::value...` was commented out because `std::map` (which was temporarily part of `llama_hparams`) is not trivially copyable.
+    *   Since `std::map` has been moved out of `llama_hparams`, this assert *could* potentially be restored if `llama_hparams` is indeed intended to be trivially copyable and all its current members satisfy this. A quick review of `llama_hparams.h` would be needed to confirm this. This is lower priority as the main functionality is unaffected by its current commented-out state.
+
+This list covers the main development steps and the current status. The critical next step is runtime testing.
