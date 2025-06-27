@@ -10,13 +10,12 @@ TODO for Quantization Statistics Tracking (Dynamic Inference-Time):
     *   **Action:** Insert `ggml_increment_compute_quant_stats_for_mul_mat(type0, type1);` (helper function already added to `ggml.c`) or directly `ggml_quant_stats_increment(type1);` (where `type1` is `src1->type`) just before the `switch (type1)` statement in this block.
     *   **Note:** Automated patching attempts for this specific spot have failed due to precise line matching issues. This will likely require manual insertion or a more robust patching strategy if automation is re-attempted. The helper `ggml_increment_compute_quant_stats_for_mul_mat` is defined but not yet called.
 
-3.  **Instrument CPU Low-Level Vector Dot Product Functions (`ggml-quants.h/.c`, `ggml-cpu/...`):**
+3.  **Validate that all locations where the  Low-Level Vector Dot Product Functions are called are corrextly counted.
+hint: it makes sense to count at the caller level since vecdot is called multiple times per matrix.**
     *   Many `ggml_vec_dot_qX_Y_qZ_W` functions perform the core quantized computations. These are often called by `mul_mat` but might also be used by other operations.
-    *   **Action:** Identify all relevant `ggml_vec_dot_` function definitions (likely in architecture-specific files under `ggml/src/ggml-cpu/` like `ggml-cpu/vec.cpp`, `ggml-cpu/ops.cpp` or within `ggml-quants.c` / `ggml-quants.h` for generic versions).
-    *   **Action:** For each such function `void ggml_vec_dot_qA_B_qC_D(..., const void *vx, const void *vy)`, add:
-        *   `ggml_quant_stats_increment(GGML_TYPE_qC_D);` // For the type of vy (weights)
+    *   for the actual counting use `ggml_quant_stats_increment(GGML_TYPE_qC_D);` // For the type of vy (weights)
         *   Optionally: `ggml_quant_stats_increment(GGML_TYPE_qA_B);` // For the type of vx (activations)
-    *   This is a comprehensive task due to the number of variants (Q2_K, Q3_K, Q4_0, Q4_K, Q5_0, Q5_K, Q6_K, Q8_0, IQ types etc.).
+    *   if possible, find a quant type independent code location.
     *   Care must be taken if these functions are heavily inlined or performance-critical.
 
 4.  **Backend-Specific Instrumentation (GPU/Accelerators):**
