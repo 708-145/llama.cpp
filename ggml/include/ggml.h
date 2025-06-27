@@ -2230,6 +2230,13 @@ GGML_API int64_t ggml_quant_stats_get_count(enum ggml_type type);
 // This will be called by instrumented ggml functions.
 void ggml_quant_stats_increment(enum ggml_type type); // Intentionally not GGML_API
 
+// Helper to increment quantization statistics specifically for matrix multiplication operations.
+// It's intended to be called from within the ggml_compute_forward_mul_mat function
+// or similar backend-specific matrix multiplication implementations.
+// type0: type of the activation tensor (src0)
+// type1: type of the weight tensor (src1)
+GGML_API void ggml_increment_compute_quant_stats_for_mul_mat(enum ggml_type type0, enum ggml_type type1);
+
 // --- End Quantization Statistics ---
 
 #ifdef  __cplusplus

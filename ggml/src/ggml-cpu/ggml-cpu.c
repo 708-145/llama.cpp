@@ -1223,6 +1223,10 @@ static void ggml_compute_forward_mul_mat(
     GGML_ASSERT(nb1 <= nb2);
     GGML_ASSERT(nb2 <= nb3);
 
+    if (src0->type == GGML_TYPE_F32 && ggml_is_quantized(src1->type)) {
+        ggml_increment_compute_quant_stats_for_mul_mat(src0->type, src1->type);
+    }
+
     // nb01 >= nb00 - src0 is not transposed
     //   compute by src0 rows
 

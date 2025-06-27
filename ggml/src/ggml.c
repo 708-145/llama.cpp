@@ -874,7 +874,7 @@ static const size_t GGML_OBJECT_SIZE = sizeof(struct ggml_object);
 //
 
 // Helper for quantization statistics
-static inline void ggml_increment_compute_quant_stats_for_mul_mat(enum ggml_type type0, enum ggml_type type1) {
+void ggml_increment_compute_quant_stats_for_mul_mat(enum ggml_type type0, enum ggml_type type1) {
     // type0 is src0 (activations), type1 is src1 (weights)
     // We are primarily interested in the type of the weights being used in computation.
     ggml_quant_stats_increment(type1);

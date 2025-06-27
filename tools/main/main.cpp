@@ -153,13 +153,15 @@ int main(int argc, char ** argv) {
         return 1;
     }
 
-    // Populate quant_type_counts
+    /*
+    // Populate quant_type_counts (Static model quantization counts - not used for dynamic stats)
     quant_type_counts.clear();
     const int n_tensors = llama_model_n_tensors(model);
     for (int i = 0; i < n_tensors; ++i) {
         enum ggml_type ttype = llama_model_tensor_get_type(model, i);
         quant_type_counts[ttype]++;
     }
+    */
 
     auto * mem = llama_get_memory(ctx);
 
