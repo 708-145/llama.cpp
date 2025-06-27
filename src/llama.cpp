@@ -356,3 +356,24 @@ const char * llama_print_system_info(void) {
     return s.c_str();
 }
 
+int llama_model_n_tensors(const struct llama_model *model) {
+    if (!model) return 0;
+    return model->tensors_by_name.size();
+}
+
+const char * llama_model_tensor_get_name(const struct llama_model *model, int i) {
+    if (!model || i < 0 || (size_t)i >= model->tensors_by_name.size()) {
+        return nullptr;
+    }
+    return model->tensors_by_name[i].first.c_str();
+}
+
+enum ggml_type llama_model_tensor_get_type(const struct llama_model *model, int i) {
+    if (!model || i < 0 || (size_t)i >= model->tensors_by_name.size()) {
+        return GGML_TYPE_COUNT; // Indicate error or out of bounds
+    }
+    if (!model->tensors_by_name[i].second) {
+        return GGML_TYPE_COUNT; // Tensor pointer is null
+    }
+    return model->tensors_by_name[i].second->type;
+}

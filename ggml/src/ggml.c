@@ -873,6 +873,16 @@ static const size_t GGML_OBJECT_SIZE = sizeof(struct ggml_object);
 // ggml context
 //
 
+// Helper for quantization statistics
+static inline void ggml_increment_compute_quant_stats_for_mul_mat(enum ggml_type type0, enum ggml_type type1) {
+    // type0 is src0 (activations), type1 is src1 (weights)
+    // We are primarily interested in the type of the weights being used in computation.
+    ggml_quant_stats_increment(type1);
+    // Optionally, count activation type usage as well:
+    // ggml_quant_stats_increment(type0);
+    GGML_UNUSED(type0); // If only type1 is counted
+}
+
 struct ggml_context {
     size_t mem_size;
     void * mem_buffer;
@@ -6588,3 +6598,37 @@ bool ggml_threadpool_params_match(const struct ggml_threadpool_params * p0, cons
     if (p0->strict_cpu     != p1->strict_cpu )    return false;
     return memcmp(p0->cpumask, p1->cpumask, GGML_MAX_N_THREADS) == 0;
 }
+
+// --- Quantization Statistics ---
+
+// Array to store counts for each ggml_type. Indexed by enum ggml_type.
+static int64_t g_quant_type_usage_counts[GGML_TYPE_COUNT];
+
+void ggml_quant_stats_reset(void) {
+    ggml_critical_section_start();
+    for (int i = 0; i < GGML_TYPE_COUNT; ++i) {
+        g_quant_type_usage_counts[i] = 0;
+    }
+    ggml_critical_section_end();
+    GGML_PRINT_DEBUG("%s: quantization stats reset\n", __func__);
+}
+
+int64_t ggml_quant_stats_get_count(enum ggml_type type) {
+    if (type >= GGML_TYPE_COUNT) {
+        return 0; // Invalid type
+    }
+    ggml_critical_section_start();
+    int64_t count = g_quant_type_usage_counts[type];
+    ggml_critical_section_end();
+    return count;
+}
+
+// Internal function to increment count
+void ggml_quant_stats_increment(enum ggml_type type) {
+    if (type < GGML_TYPE_COUNT) {
+        ggml_critical_section_start();
+        g_quant_type_usage_counts[type]++;
+        ggml_critical_section_end();
+    }
+}
+// --- End Quantization Statistics ---

@@ -510,6 +510,9 @@ extern "C" {
 
     LLAMA_API int32_t llama_model_n_ctx_train(const struct llama_model * model);
     LLAMA_API int32_t llama_model_n_embd     (const struct llama_model * model);
+    LLAMA_API int32_t llama_model_n_tensors  (const struct llama_model *model);
+    LLAMA_API const char * llama_model_tensor_get_name(const struct llama_model *model, int i);
+    LLAMA_API enum ggml_type llama_model_tensor_get_type(const struct llama_model *model, int i);
     LLAMA_API int32_t llama_model_n_layer    (const struct llama_model * model);
     LLAMA_API int32_t llama_model_n_head     (const struct llama_model * model);
     LLAMA_API int32_t llama_model_n_head_kv  (const struct llama_model * model);

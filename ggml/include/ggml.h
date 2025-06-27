@@ -2216,6 +2216,22 @@ extern "C" {
     GGML_API void                          ggml_threadpool_params_init   (struct ggml_threadpool_params * p, int n_threads);
     GGML_API bool                          ggml_threadpool_params_match  (const struct ggml_threadpool_params * p0, const struct ggml_threadpool_params * p1);
 
+// --- Quantization Statistics ---
+// For tracking usage of quantization types during inference operations.
+// Note: These are experimental and primarily for CPU backend for now.
+
+// Initializes or resets the quantization type usage counters.
+GGML_API void ggml_quant_stats_reset(void);
+
+// Retrieves the count for a specific quantization type.
+GGML_API int64_t ggml_quant_stats_get_count(enum ggml_type type);
+
+// Internal function to increment count for a type (not for public API directly)
+// This will be called by instrumented ggml functions.
+void ggml_quant_stats_increment(enum ggml_type type); // Intentionally not GGML_API
+
+// --- End Quantization Statistics ---
+
 #ifdef  __cplusplus
 }
 #endif

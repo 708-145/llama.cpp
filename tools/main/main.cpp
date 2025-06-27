@@ -6,11 +6,13 @@
 #include "llama.h"
 #include "chat.h"
 
+#include <cinttypes>
 #include <cstdio>
 #include <cstring>
 #include <ctime>
 #include <fstream>
 #include <iostream>
+#include <map>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -38,6 +40,7 @@ static common_params            * g_params;
 static std::vector<llama_token> * g_input_tokens;
 static std::ostringstream       * g_output_ss;
 static std::vector<llama_token> * g_output_tokens;
+// static std::map<ggml_type, int64_t> quant_type_counts; // No longer used for dynamic stats
 static bool is_interacting  = false;
 static bool need_insert_eot = false;
 
@@ -125,6 +128,9 @@ int main(int argc, char ** argv) {
     llama_backend_init();
     llama_numa_init(params.numa);
 
+    // Reset quantization statistics counters
+    ggml_quant_stats_reset();
+
     llama_model * model = nullptr;
     llama_context * ctx = nullptr;
     common_sampler * smpl = nullptr;
@@ -145,6 +151,14 @@ int main(int argc, char ** argv) {
     if (model == NULL) {
         LOG_ERR("%s: error: unable to load model\n", __func__);
         return 1;
+    }
+
+    // Populate quant_type_counts
+    quant_type_counts.clear();
+    const int n_tensors = llama_model_n_tensors(model);
+    for (int i = 0; i < n_tensors; ++i) {
+        enum ggml_type ttype = llama_model_tensor_get_type(model, i);
+        quant_type_counts[ttype]++;
     }
 
     auto * mem = llama_get_memory(ctx);
@@ -977,6 +991,21 @@ int main(int argc, char ** argv) {
 
     LOG("\n\n");
     common_perf_print(ctx, smpl);
+
+    // Report dynamic quantization type usage statistics from ggml
+    LOG("\ninference-time quantization type usage counts (from ggml):\n");
+    bool stats_found = false;
+    for (int i = 0; i < GGML_TYPE_COUNT; ++i) {
+        enum ggml_type current_type = (enum ggml_type)i;
+        int64_t count = ggml_quant_stats_get_count(current_type);
+        if (count > 0) {
+            stats_found = true;
+            LOG("  %s: %" PRId64 "\n", ggml_type_name(current_type), count);
+        }
+    }
+    if (!stats_found) {
+        LOG("  (no quantized operations detected or stats not collected)\n");
+    }
 
     common_sampler_free(smpl);
 
