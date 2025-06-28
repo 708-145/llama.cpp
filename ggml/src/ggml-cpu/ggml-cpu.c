@@ -1223,10 +1223,16 @@ static void ggml_compute_forward_mul_mat(
     GGML_ASSERT(nb1 <= nb2);
     GGML_ASSERT(nb2 <= nb3);
 
+    // DEBUG PRINT: Entered ggml_compute_forward_mul_mat
+    fprintf(stderr, "ggml_compute_forward_mul_mat entered. src0->type: %s, src1->type: %s, ggml_is_quantized(src1->type): %d\n",
+            ggml_type_name(src0->type), ggml_type_name(src1->type), ggml_is_quantized(src1->type));
+
     // If weights (src1) are quantized, increment their usage count.
     // The type of activations (src0) doesn't matter for this specific statistic.
     if (ggml_is_quantized(src1->type)) {
         ggml_quant_stats_increment(src1->type);
+        // DEBUG PRINT: Incremented count for src1->type
+        fprintf(stderr, "ggml_quant_stats_increment called for src1->type: %s\n", ggml_type_name(src1->type));
     }
 
     // nb01 >= nb00 - src0 is not transposed
