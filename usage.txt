@@ -9,6 +9,9 @@ cmake --build build --config Release -j8 --target llama-cli
 Test with Tiny-Moe.Q2_K.gguf
 wget https://huggingface.co/mradermacher/Tiny-Moe-GGUF/resolve/main/Tiny-Moe.Q2_K.gguf
 
+Inference:
+./llama-cli -p "What is 3+4?" -n 32 -m Tiny-Moe.Q2_K.gguf
+
 **Tasks:**
 1.  **[DONE] Modify `llama_hparams` struct (`src/llama-hparams.h`)**
     *   Initially added `expert_usage_counts` here.
