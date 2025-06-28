@@ -1052,28 +1052,24 @@ int llama_context::decode(const llama_batch & batch_inp) {
         // Update expert usage counts
         if (graph_res->get_selected_experts() != nullptr) {
             ggml_tensor * selected_experts = graph_res->get_selected_experts();
-            struct ggml_tensor * selected_experts_cpu = nullptr;
 
-            // Always create a CPU-side tensor to copy into.
-            // Ensure it's a new tensor within the current compute context, matching dimensions and type.
-            // selected_experts is I32 type.
-            selected_experts_cpu = ggml_dup_tensor(this->ctx_compute.get(), selected_experts);
-            ggml_set_name(selected_experts_cpu, "selected_experts_cpu_copy_for_read");
+            const int n_elements = ggml_nelements(selected_experts);
+            const size_t n_bytes = ggml_nbytes(selected_experts);
 
-            // Copy data from the potentially backend-specific tensor to the CPU tensor.
-            // This is a blocking call.
-            ggml_backend_tensor_get(selected_experts, selected_experts_cpu->data, 0, ggml_nbytes(selected_experts_cpu));
+            if (n_elements > 0) {
+                if (selected_experts->type != GGML_TYPE_I32) {
+                    // This should ideally not happen if graph construction is correct
+                    // Consider logging an error or throwing if type is unexpected.
+                    // For now, matching previous cautious behavior and skipping.
+                } else {
+                    std::vector<int32_t> expert_indices_cpu_buffer(n_elements);
+                    ggml_backend_tensor_get(selected_experts, expert_indices_cpu_buffer.data(), 0, n_bytes);
 
-            const int32_t * expert_indices_data = (const int32_t *)selected_experts_cpu->data;
-            const int n_elements = ggml_nelements(selected_experts_cpu);
-            for (int i = 0; i < n_elements; ++i) {
-                // Accessing expert_usage_counts directly if it's moved to llama_context
-                // Or via model().hparams if it stays there (but needs to be mutable)
-                // Assuming it will be moved to llama_context for mutable access:
-                this->expert_usage_counts[expert_indices_data[i]]++;
+                    for (int i = 0; i < n_elements; ++i) {
+                        this->expert_usage_counts[expert_indices_cpu_buffer[i]]++;
+                    }
+                }
             }
-
-            // selected_experts_cpu tensor duplicated with ggml_dup_tensor inside ctx_compute will be freed when ctx_compute is freed.
         }
 
         auto * t_logits = graph_res->get_logits();
