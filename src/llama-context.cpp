@@ -1050,26 +1050,43 @@ int llama_context::decode(const llama_batch & batch_inp) {
         //}
 
         // Update expert usage counts
+        fprintf(stderr, "[DEBUG] MoE: Checking for selected_experts tensor. graph_res: %p\n", (void*)graph_res.get());
         if (graph_res->get_selected_experts() != nullptr) {
             ggml_tensor * selected_experts = graph_res->get_selected_experts();
+            fprintf(stderr, "[DEBUG] MoE: selected_experts tensor found: %p, name: %s, type: %s, n_dims: %d, ne: [%lld, %lld, %lld, %lld], backend: %s\n",
+                (void*)selected_experts, selected_experts->name, ggml_type_name(selected_experts->type), ggml_n_dims(selected_experts),
+                (long long)selected_experts->ne[0], (long long)selected_experts->ne[1], (long long)selected_experts->ne[2], (long long)selected_experts->ne[3],
+                ggml_backend_name(ggml_backend_sched_get_tensor_backend(sched.get(), selected_experts)));
 
             const int n_elements = ggml_nelements(selected_experts);
             const size_t n_bytes = ggml_nbytes(selected_experts);
+            fprintf(stderr, "[DEBUG] MoE: n_elements in selected_experts: %d, n_bytes: %zu\n", n_elements, n_bytes);
 
             if (n_elements > 0) {
+                // Ensure the tensor type is I32 as expected for indices
                 if (selected_experts->type != GGML_TYPE_I32) {
-                    // This should ideally not happen if graph construction is correct
-                    // Consider logging an error or throwing if type is unexpected.
-                    // For now, matching previous cautious behavior and skipping.
+                    fprintf(stderr, "[DEBUG] MoE: ERROR - selected_experts tensor is not I32 type, but %s. Skipping expert counting.\n", ggml_type_name(selected_experts->type));
                 } else {
                     std::vector<int32_t> expert_indices_cpu_buffer(n_elements);
+
+                    fprintf(stderr, "[DEBUG] MoE: Attempting ggml_backend_tensor_get into std::vector buffer. Size: %zu bytes.\n", n_bytes);
                     ggml_backend_tensor_get(selected_experts, expert_indices_cpu_buffer.data(), 0, n_bytes);
+                    fprintf(stderr, "[DEBUG] MoE: ggml_backend_tensor_get completed.\n");
+
+                    for (int i = 0; i < std::min(n_elements, 10); ++i) { // Log first few elements
+                        fprintf(stderr, "[DEBUG] MoE: expert_indices_data[%d] = %d\n", i, expert_indices_cpu_buffer[i]);
+                    }
 
                     for (int i = 0; i < n_elements; ++i) {
                         this->expert_usage_counts[expert_indices_cpu_buffer[i]]++;
                     }
+                    fprintf(stderr, "[DEBUG] MoE: Expert counts updated.\n");
                 }
+            } else {
+                fprintf(stderr, "[DEBUG] MoE: selected_experts tensor has no elements.\n");
             }
+        } else {
+            fprintf(stderr, "[DEBUG] MoE: selected_experts tensor is nullptr.\n");
         }
 
         auto * t_logits = graph_res->get_logits();
