@@ -10,7 +10,10 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdbool.h>
+
+#ifdef __cplusplus
 #include <map> // Required for std::map
+#endif
 
 #ifdef LLAMA_SHARED
 #    if defined(_WIN32) && !defined(__MINGW32__)

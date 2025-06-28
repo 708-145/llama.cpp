@@ -47,12 +47,19 @@
 
 9.  **[DONE] Build `llama-cli`**
     *   Successfully configured CMake (disabling CURL).
-    *   Successfully compiled `llama-cli` after several iterations of fixing include issues, access errors, and incorrect assumptions about data structure locations.
+    *   Successfully compiled `llama-cli` after several iterations of fixing include issues (including C++ headers in C files) and build system navigation.
 
-10. **[TODO] Runtime Testing and Verification**
-    *   Run the compiled `llama-cli` with a known Mixture-of-Experts (MoE) model.
-    *   Verify that the "Expert usage counts:" output appears correctly at the end of the inference.
-    *   Confirm that the counts accurately reflect the expert selection during the model's operation (this might require a very small MoE model or specific test cases if exact verification is needed, otherwise general plausibility).
+10. **[IN PROGRESS] Runtime Testing and Verification**
+    *   Run the compiled `llama-cli` with `Tiny-Moe.Q2_K.gguf`.
+        *   Output for "Expert usage counts:" appears.
+        *   However, the expert IDs are incorrect (large garbage integer values instead of 0, 1).
+        *   This leads to many unique "experts" being counted, each with a count of 1.
+    *   **Current Issue**: The values in the `t_selected_experts` tensor (output of `ggml_top_k`) are incorrect. Suspected causes:
+        *   Problem with the input to `ggml_top_k` (e.g., router logits).
+        *   Potential bug in `ggml_top_k` CPU implementation for the specific way it's used.
+        *   Incorrect parameters passed to `ggml_top_k` during graph construction.
+    *   **Secondary Concern**: `t_selected_experts` is a 1D tensor with 2 elements. If the model has multiple MoE layers (Tiny-Moe has 12 layers, `n_expert_used_count=2`), this setup might only be capturing expert selections from the *last* MoE layer processed, leading to an undercount or misrepresentation of overall expert usage. This needs further investigation into how `llm_graph_result` and `build_moe_ffn` handle this for multi-layer MoE.
+    *   Next step is to investigate `ggml_top_k` inputs and usage in `src/llama-graph.cpp`.
 
 11. **[TODO - Optional/Follow-up] Review `static_assert` in `llama_hparams.h`**
     *   The `static_assert(std::is_trivially_copyable<llama_hparams>::value...` was commented out because `std::map` (which was temporarily part of `llama_hparams`) is not trivially copyable.

@@ -1067,20 +1067,37 @@ int llama_context::decode(const llama_batch & batch_inp) {
                 if (selected_experts->type != GGML_TYPE_I32) {
                     fprintf(stderr, "[DEBUG] MoE: ERROR - selected_experts tensor is not I32 type, but %s. Skipping expert counting.\n", ggml_type_name(selected_experts->type));
                 } else {
-                    std::vector<int32_t> expert_indices_cpu_buffer(n_elements);
-
-                    fprintf(stderr, "[DEBUG] MoE: Attempting ggml_backend_tensor_get into std::vector buffer. Size: %zu bytes.\n", n_bytes);
-                    ggml_backend_tensor_get(selected_experts, expert_indices_cpu_buffer.data(), 0, n_bytes);
-                    fprintf(stderr, "[DEBUG] MoE: ggml_backend_tensor_get completed.\n");
-
-                    for (int i = 0; i < std::min(n_elements, 10); ++i) { // Log first few elements
-                        fprintf(stderr, "[DEBUG] MoE: expert_indices_data[%d] = %d\n", i, expert_indices_cpu_buffer[i]);
+                    // Check if the tensor is on CPU backend
+                    ggml_backend_t tensor_backend = ggml_backend_sched_get_tensor_backend(sched.get(), selected_experts);
+                    ggml_backend_dev_t tensor_device = ggml_backend_get_device(tensor_backend);
+                    if (tensor_device != nullptr && ggml_backend_dev_type(tensor_device) == GGML_BACKEND_DEVICE_TYPE_CPU) {
+                        if (selected_experts->data != nullptr) {
+                            int32_t *expert_indices_data = (int32_t *)selected_experts->data;
+                            fprintf(stderr, "[DEBUG] MoE: Accessing data directly from CPU tensor.\n");
+                            for (int i = 0; i < std::min(n_elements, 10); ++i) {
+                                fprintf(stderr, "[DEBUG] MoE: expert_indices_data[%d] = %d (direct access)\n", i, expert_indices_data[i]);
+                            }
+                            for (int i = 0; i < n_elements; ++i) {
+                                this->expert_usage_counts[expert_indices_data[i]]++;
+                            }
+                            fprintf(stderr, "[DEBUG] MoE: Expert counts updated (direct access).\n");
+                        } else {
+                            fprintf(stderr, "[DEBUG] MoE: ERROR - selected_experts tensor is on CPU but data pointer is null. Skipping.\n");
+                        }
+                    } else {
+                        // Fallback to ggml_backend_tensor_get if not CPU
+                        fprintf(stderr, "[DEBUG] MoE: selected_experts tensor is not on CPU (%s), using ggml_backend_tensor_get.\n", ggml_backend_name(tensor_backend));
+                        std::vector<int32_t> expert_indices_cpu_buffer(n_elements);
+                        ggml_backend_tensor_get(selected_experts, expert_indices_cpu_buffer.data(), 0, n_bytes);
+                        fprintf(stderr, "[DEBUG] MoE: ggml_backend_tensor_get completed for non-CPU tensor.\n");
+                        for (int i = 0; i < std::min(n_elements, 10); ++i) { // Log first few elements
+                            fprintf(stderr, "[DEBUG] MoE: expert_indices_data[%d] = %d (buffer copy)\n", i, expert_indices_cpu_buffer[i]);
+                        }
+                        for (int i = 0; i < n_elements; ++i) {
+                            this->expert_usage_counts[expert_indices_cpu_buffer[i]]++;
+                        }
+                        fprintf(stderr, "[DEBUG] MoE: Expert counts updated (buffer copy).\n");
                     }
-
-                    for (int i = 0; i < n_elements; ++i) {
-                        this->expert_usage_counts[expert_indices_cpu_buffer[i]]++;
-                    }
-                    fprintf(stderr, "[DEBUG] MoE: Expert counts updated.\n");
                 }
             } else {
                 fprintf(stderr, "[DEBUG] MoE: selected_experts tensor has no elements.\n");
