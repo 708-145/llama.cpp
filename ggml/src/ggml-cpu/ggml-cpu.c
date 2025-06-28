@@ -1780,6 +1780,8 @@ static void ggml_compute_forward(struct ggml_compute_params * params, struct ggm
             } break;
         case GGML_OP_MUL_MAT:
             {
+                fprintf(stderr, "ggml_compute_forward: GGML_OP_MUL_MAT case entered. tensor: %s, src0: %s, src1: %s\n",
+                        ggml_type_name(tensor->type), ggml_type_name(tensor->src[0]->type), ggml_type_name(tensor->src[1]->type));
                 ggml_compute_forward_mul_mat(params, tensor);
             } break;
         case GGML_OP_MUL_MAT_ID:
