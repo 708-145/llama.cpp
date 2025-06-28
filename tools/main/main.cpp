@@ -997,12 +997,25 @@ int main(int argc, char ** argv) {
     // Report dynamic quantization type usage statistics from ggml
     LOG("\ninference-time quantization type usage counts (from ggml):\n");
     bool stats_found = false;
+    // n_past here should represent the total tokens processed (prompt + generation)
+    // It's the same variable used by common_perf_print.
+    const int64_t total_tokens_processed = n_past;
+
     for (int i = 0; i < GGML_TYPE_COUNT; ++i) {
         enum ggml_type current_type = (enum ggml_type)i;
         int64_t count = ggml_quant_stats_get_count(current_type);
         if (count > 0) {
             stats_found = true;
-            LOG("  %s: %" PRId64 "\n", ggml_type_name(current_type), count);
+            if (total_tokens_processed > 0) {
+                LOG("  %s: %" PRId64 " (%.2f per token)\n",
+                    ggml_type_name(current_type),
+                    count,
+                    (double)count / total_tokens_processed);
+            } else {
+                LOG("  %s: %" PRId64 " (N/A per token - 0 total tokens)\n",
+                    ggml_type_name(current_type),
+                    count);
+            }
         }
     }
     if (!stats_found) {
