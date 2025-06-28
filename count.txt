@@ -6,12 +6,12 @@
     *   The primary CPU path for `F32 * Q_WEIGHTS` matrix multiplication is within the `ggml_compute_forward` function, under the `GGML_OP_MUL_MAT` case, specifically within the `if (mul_mat_compute == NULL) { ... if (ggml_is_quantized(type1) && type0 == GGML_TYPE_F32) { ... } }` block.
     *   **Action:** Insert `ggml_increment_compute_quant_stats_for_mul_mat(type0, type1);` (helper function already added to `ggml.c`) or directly `ggml_quant_stats_increment(type1);` (where `type1` is `src1->type`) just before the `switch (type1)` statement in this block.
     *   **Note:** Automated patching attempts for this specific spot have failed due to precise line matching issues. This will likely require manual insertion or a more robust patching strategy if automation is re-attempted. The helper `ggml_increment_compute_quant_stats_for_mul_mat` is defined but not yet called. (Now called in `ggml/src/ggml-cpu/ggml-cpu.c`).
-- [ ] **Validate that all locations where the  Low-Level Vector Dot Product Functions are called are corrextly counted.
-hint: it makes sense to count at the caller level since vecdot is called multiple times per matrix.**
+- [x] **Validate that all locations where the Low-Level Vector Dot Product Functions are called are correctly counted. (CPU Path for `mul_mat` addressed)**
+    *   **Hint:** it makes sense to count at the caller level since vecdot is called multiple times per matrix.
     *   Many `ggml_vec_dot_qX_Y_qZ_W` functions perform the core quantized computations. These are often called by `mul_mat` but might also be used by other operations.
-    *   for the actual counting use `ggml_quant_stats_increment(GGML_TYPE_qC_D);` // For the type of vy (weights)
+    *   For the actual counting use `ggml_quant_stats_increment(GGML_TYPE_qC_D);` // For the type of vy (weights)
         *   Optionally: `ggml_quant_stats_increment(GGML_TYPE_qA_B);` // For the type of vx (activations)
-    *   if possible, find a quant type independent code location.
+    *   If possible, find a quant type independent code location. (Done for CPU `mul_mat` by checking `src1->type` in `ggml_compute_forward_mul_mat`).
     *   Care must be taken if these functions are heavily inlined or performance-critical.
 - [ ] **Backend-Specific Instrumentation (GPU/Accelerators):**
     *   This is crucial for models where significant portions are offloaded.
