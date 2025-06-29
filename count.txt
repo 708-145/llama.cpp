@@ -1,3 +1,27 @@
+Compile with 
+cmake -B build -DBUILD_SHARED_LIBS=OFF
+cmake --build build --config Release -j8 --target llama-cli
+
+Test with Tiny-Moe.Q5_K.gguf
+wget https://huggingface.co/mradermacher/Tiny-Moe-GGUF/resolve/main/Tiny-Moe.Q5_K.gguf
+
+Inference:
+./llama-cli -p "What is 3+4?" -n 32 -m Tiny-Moe.Q5_K.gguf
+
+static information:
+llama_model_loader: - type q5_K: 73 tensors
+llama_model_loader: - type q6_K: 13 tensors
+
+dynamic information with current code:
+inference-time quantization type usage counts (from ggml): 
+q5_K: 11088 (291.79 per token) 
+q6_K: 1848 (48.63 per token)
+
+bug observation:
+static and dynamic observation don't agree. The calculation assumes 38 tokens are processed. But it counts every matrix about 4 times.
+
+
+TODO list and completion status:
 - [x] **Finalize Statistics Storage Mechanism (`ggml.c`/`ggml.h`):**
     *   The current implementation uses `g_quant_type_usage_counts` (static array in `ggml.c`), and accessor functions `ggml_quant_stats_reset()`, `ggml_quant_stats_get_count()`, and internal `ggml_quant_stats_increment()` which use `ggml_critical_section_start/end()`.
     *   `ggml_critical_section_start/end()` provide a global lock. This should be sufficient for thread safety for the counters.
@@ -12,24 +36,13 @@
     *   For the actual counting use `ggml_quant_stats_increment(GGML_TYPE_qC_D);` // For the type of vy (weights). (Current implementation counts `src0` if quantized).
     *   If possible, find a quant type independent code location. (Done for CPU `mul_mat` by checking `src0->type` in `ggml_compute_forward_mul_mat`).
     *   Care must be taken if these functions are heavily inlined or performance-critical.
-- [ ] **Backend-Specific Instrumentation (GPU/Accelerators):**
-    *   This is crucial for models where significant portions are offloaded.
-    *   **Action:** For each relevant backend (CUDA, Metal, SYCL, OpenCL, Vulkan, etc.):
-        *   Locate the backend-specific implementations of `mul_mat` (e.g., `ggml_cuda_compute_forward_mul_mat` in `ggml-cuda.cu`) and equivalent low-level dot product kernels.
-        *   Instrument these functions similarly to the CPU versions, calling `ggml_quant_stats_increment()` with the types of the weight tensors (or relevant quantized input).
-        *   The global statistics counter in `ggml.c` should be usable if backend functions are called from host code.
-- [ ] **Review and Refine `ggml_quant_stats_increment` (Performance):**
-    *   The current implementation with `ggml_critical_section_start/end()` per increment is simple.
-    *   **TODO (Optional Optimization):** If profiling shows this to be a bottleneck (especially if called from very low-level, frequently executed dot product functions), consider per-thread counters aggregated less frequently, or atomic operations if widely available and suitable. For a CLI tool, the current approach is likely acceptable.
 - [x] **Expose Statistics to `llama-cli` (`tools/main/main.cpp`):**
     *   `ggml_quant_stats_reset()` is called in `main()` - Done.
     *   Loop from `type = 0` to `GGML_TYPE_COUNT - 1`, call `ggml_quant_stats_get_count((enum ggml_type)type)`, and display - Done.
 - [ ] **Testing and Validation:**
     *   **Action:** Compile with the full stats mechanism.
-    *   **Action:** Run `llama-cli` with a variety of models (F32, Q4_0, Q8_0, Q_K types, IQ types).
+    *   **Action:** Run `llama-cli` with a variety of models (Q5_K, Q2_K, IQ types).
     *   **Action:** Compare output statistics with expectations.
-    *   **Action:** If GPU backends are instrumented, test with offloading.
-    *   **Action:** Profile for performance degradation.
 - [x] **Update `llama-cli` Display:**
     *   The display logic in `tools/main/main.cpp` uses `ggml_quant_stats_get_count()` and labels output as "inference-time quantization type usage counts (from ggml):" - Done.
     *   Added "per token" metric to the display.
