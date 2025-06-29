@@ -297,5 +297,6 @@ private:
 
 public:
     // MoE expert usage counts
-    std::map<int, int> expert_usage_counts;
+    // std::map<int, int> expert_usage_counts; // Old version
+    std::vector<std::map<int, int>> expert_usage_counts_per_layer;
 };

@@ -361,7 +361,9 @@ bool llama_model_has_moe(const struct llama_model * model) {
     return model->hparams.n_expert > 0;
 }
 
-const std::map<int, int> & llama_get_expert_usage_counts(const struct llama_context * ctx) {
-    // expert_usage_counts is now a public member of llama_context
-    return ctx->expert_usage_counts;
+#ifdef __cplusplus
+const std::vector<std::map<int, int>> & llama_get_expert_usage_counts_per_layer(const struct llama_context * ctx) {
+    // expert_usage_counts_per_layer is now a public member of llama_context
+    return ctx->expert_usage_counts_per_layer;
 }
+#endif // __cplusplus

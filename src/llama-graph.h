@@ -348,7 +348,8 @@ public:
     virtual ggml_tensor * get_logits()      = 0;
     virtual ggml_tensor * get_embd()        = 0;
     virtual ggml_tensor * get_embd_pooled() = 0;
-    virtual ggml_tensor * get_selected_experts() = 0;
+    // virtual ggml_tensor * get_selected_experts() = 0; // Old version
+    virtual const std::vector<ggml_tensor *> & get_selected_experts_per_layer() const = 0; // New version
 
     virtual void set_inputs(const llama_ubatch * ubatch) = 0;
 };
@@ -364,7 +365,9 @@ public:
     ggml_tensor * get_logits()      override { return t_logits; }
     ggml_tensor * get_embd()        override { return t_embd; }
     ggml_tensor * get_embd_pooled() override { return t_embd_pooled; }
-    ggml_tensor * get_selected_experts() override { return t_selected_experts; }
+    const std::vector<ggml_tensor *> & get_selected_experts_per_layer() const { return t_selected_experts_per_layer; }
+    // Remove old getter for single tensor
+    // ggml_tensor * get_selected_experts() override { return t_selected_experts; }
 
     void set_inputs(const llama_ubatch * ubatch) override {
         for (auto & input : inputs) {
@@ -382,7 +385,8 @@ public:
     ggml_tensor * t_logits      = nullptr;
     ggml_tensor * t_embd        = nullptr;
     ggml_tensor * t_embd_pooled = nullptr;
-    ggml_tensor * t_selected_experts = nullptr;
+    // ggml_tensor * t_selected_experts = nullptr; // Replaced by vector below
+    std::vector<ggml_tensor *> t_selected_experts_per_layer;
 
     std::vector<llm_graph_input_ptr> inputs;
 };

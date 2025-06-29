@@ -980,11 +980,19 @@ int main(int argc, char ** argv) {
 
     // Print expert usage counts
     if (llama_model_has_moe(model)) {
-        const auto & expert_counts = llama_get_expert_usage_counts(ctx);
-        if (!expert_counts.empty()) {
-            LOG_INF("\nExpert usage counts:\n");
-            for (const auto & pair : expert_counts) {
-                LOG_INF("Expert %d: %d\n", pair.first, pair.second);
+        const auto & expert_counts_per_layer = llama_get_expert_usage_counts_per_layer(ctx);
+        if (!expert_counts_per_layer.empty()) {
+            LOG_INF("\nExpert usage counts per layer:\n");
+            for (size_t layer_idx = 0; layer_idx < expert_counts_per_layer.size(); ++layer_idx) {
+                const auto & expert_counts = expert_counts_per_layer[layer_idx];
+                if (!expert_counts.empty()) {
+                    LOG_INF(" Layer %zu:\n", layer_idx);
+                    for (const auto & pair : expert_counts) {
+                        LOG_INF("  Expert %d: %d\n", pair.first, pair.second);
+                    }
+                } else {
+                    LOG_INF(" Layer %zu: No experts used.\n", layer_idx);
+                }
             }
         }
     }

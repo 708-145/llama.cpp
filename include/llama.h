@@ -13,6 +13,7 @@
 
 #ifdef __cplusplus
 #include <map> // Required for std::map
+#include <vector> // Required for std::vector
 #endif
 
 #ifdef LLAMA_SHARED
@@ -532,7 +533,8 @@ extern "C" {
     // Given expert_usage_counts is std::map, a C-wrapper would be needed for pure C.
     // Let's assume C++ linkage for now for this specific function, which is common for llama.cpp
 #ifdef __cplusplus
-    LLAMA_API const std::map<int, int> & llama_get_expert_usage_counts(const struct llama_context * ctx);
+    // LLAMA_API const std::map<int, int> & llama_get_expert_usage_counts(const struct llama_context * ctx); // Old version
+    LLAMA_API const std::vector<std::map<int, int>> & llama_get_expert_usage_counts_per_layer(const struct llama_context * ctx);
 #endif // __cplusplus
 
 

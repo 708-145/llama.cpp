@@ -691,11 +691,60 @@ ggml_tensor * llm_graph_context::build_moe_ffn(
         selection_probs = logits;
     }
 
+    // Debug: Print selection_probs details
+    ggml_backend_t backend_selection_probs = ggml_backend_sched_get_tensor_backend(sched, selection_probs);
+    fprintf(stderr, "[DEBUG] MoE Graph: selection_probs tensor: %p, name: %s, type: %s, n_dims: %d, ne: [%lld, %lld, %lld, %lld], backend: %s\n",
+        (void*)selection_probs, selection_probs->name, ggml_type_name(selection_probs->type), ggml_n_dims(selection_probs),
+        (long long)selection_probs->ne[0], (long long)selection_probs->ne[1], (long long)selection_probs->ne[2], (long long)selection_probs->ne[3],
+        ggml_backend_name(backend_selection_probs));
+
+    if (ggml_nelements(selection_probs) > 0 && selection_probs->type == GGML_TYPE_F32) {
+        std::vector<float> probs_cpu_buffer(std::min(10, (int)ggml_nelements(selection_probs)));
+        bool data_printed = false;
+        if (backend_selection_probs != NULL) {
+            ggml_backend_dev_t tensor_device_probs = ggml_backend_get_device(backend_selection_probs);
+            if (tensor_device_probs != nullptr && ggml_backend_dev_type(tensor_device_probs) == GGML_BACKEND_DEVICE_TYPE_CPU) {
+                if (selection_probs->data != nullptr) {
+                    float *probs_data = (float *)selection_probs->data;
+                    fprintf(stderr, "[DEBUG] MoE Graph: selection_probs sample (first %zu, direct CPU access): ", probs_cpu_buffer.size());
+                    for (size_t k_debug = 0; k_debug < probs_cpu_buffer.size(); ++k_debug) {
+                        // Ensure we don't read out of bounds if nelements is smaller than buffer size
+                        if (k_debug < (size_t)ggml_nelements(selection_probs)) {
+                           probs_cpu_buffer[k_debug] = probs_data[k_debug]; // Copy for consistent printing loop
+                           fprintf(stderr, "%.4f ", probs_data[k_debug]);
+                        } else {
+                           fprintf(stderr, "OOB "); // Should not happen with std::min logic for buffer size
+                        }
+                    }
+                    fprintf(stderr, "\n");
+                    data_printed = true;
+                } else {
+                    fprintf(stderr, "[DEBUG] MoE Graph: selection_probs on CPU but data pointer is null.\n");
+                }
+            }
+        }
+
+        if (!data_printed && backend_selection_probs != NULL) { // If not printed via direct access and backend is not NULL
+            // Fallback to ggml_backend_tensor_get if not CPU or data ptr was null but backend exists
+            fprintf(stderr, "[DEBUG] MoE Graph: selection_probs trying ggml_backend_tensor_get (backend: %s).\n", ggml_backend_name(backend_selection_probs));
+            ggml_backend_tensor_get(selection_probs, probs_cpu_buffer.data(), 0, probs_cpu_buffer.size() * sizeof(float));
+            fprintf(stderr, "[DEBUG] MoE Graph: selection_probs sample (first %zu, copied to CPU via get): ", probs_cpu_buffer.size());
+            for (size_t k_debug = 0; k_debug < probs_cpu_buffer.size(); ++k_debug) {
+                fprintf(stderr, "%.4f ", probs_cpu_buffer[k_debug]);
+            }
+            fprintf(stderr, "\n");
+        } else if (!data_printed) {
+            fprintf(stderr, "[DEBUG] MoE Graph: selection_probs backend is NULL or data could not be accessed directly, cannot print sample.\n");
+        }
+    }
+
+
     // select experts
     ggml_tensor * selected_experts = ggml_top_k(ctx0, selection_probs, n_expert_used); // [n_expert_used, n_tokens]
     cb(selected_experts->src[0], "ffn_moe_argsort", il);
     cb(selected_experts, "ffn_moe_topk", il);
-    res->t_selected_experts = selected_experts;
+    // res->t_selected_experts = selected_experts; // Old assignment
+    res->t_selected_experts_per_layer.push_back(selected_experts); // New: append to vector
 
     ggml_tensor * weights = ggml_get_rows(ctx0,
             ggml_reshape_3d(ctx0, probs, 1, n_expert, n_tokens), selected_experts); // [1, n_expert_used, n_tokens]
