@@ -1223,9 +1223,9 @@ static void ggml_compute_forward_mul_mat(
     GGML_ASSERT(nb1 <= nb2);
     GGML_ASSERT(nb2 <= nb3);
 
-    // If src1 (typically weights) is quantized, increment its usage count.
-    if (ggml_is_quantized(src1->type)) {
-        ggml_quant_stats_increment(src1->type);
+    // If src0 (typically activations) is quantized, increment its usage count.
+    if (ggml_is_quantized(src0->type)) {
+        ggml_quant_stats_increment(src0->type);
     }
 
     // nb01 >= nb00 - src0 is not transposed
