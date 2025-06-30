@@ -1199,8 +1199,6 @@ static void ggml_compute_forward_mul_mat(
         const struct ggml_compute_params * params,
               struct ggml_tensor * dst) {
 
-    g_mul_mat_counter++;
-
     const struct ggml_tensor * src0 = dst->src[0];
     g_mul_mat_src0_type_counters[src0->type]++; // increment counter for current src0->type
     const struct ggml_tensor * src1 = dst->src[1];
@@ -3547,8 +3545,7 @@ void ggml_cpu_print_mul_mat_src0_type_stats(void) {
     for (int i = 0; i < GGML_TYPE_COUNT; ++i) {
         if (g_mul_mat_src0_type_counters[i] > 0) {
             fprintf(stderr, "  %s: %lu\n", ggml_type_name((enum ggml_type)i), g_mul_mat_src0_type_counters[i]);
-            // TODO: print per token counts
-            // TODO: print after llama_perf_context_print output
+            // TODO: don't print here, instead return g_mul_mat_src0_type_counters
         }
     }
 }

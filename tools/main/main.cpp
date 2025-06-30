@@ -977,9 +977,8 @@ int main(int argc, char ** argv) {
     }
 
     LOG("\n\n");
-    common_perf_print(ctx, smpl);
-    LOG_INF("mul_mat_counter: %lu\n", ggml_cpu_get_mul_mat_count());
-    ggml_cpu_print_mul_mat_src0_type_stats();
+    ggml_cpu_print_mul_mat_src0_type_stats(); // TODO: return cnts
+    common_perf_print(ctx, smpl); // also pass cnts and print after the other two statistics
 
     common_sampler_free(smpl);
 
