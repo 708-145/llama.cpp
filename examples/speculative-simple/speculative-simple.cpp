@@ -248,7 +248,7 @@ int main(int argc, char ** argv) {
 
     LOG_INF("\n");
     LOG_INF("target:\n\n");
-    common_perf_print(ctx_tgt, smpl);
+    common_perf_print(ctx_tgt, smpl, NULL);
 
     common_sampler_free(smpl);
     common_speculative_free(spec);

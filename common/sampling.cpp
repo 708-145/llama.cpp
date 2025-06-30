@@ -324,7 +324,7 @@ struct common_sampler * common_sampler_clone(common_sampler * gsmpl) {
     };
 }
 
-void common_perf_print(const struct llama_context * ctx, const struct common_sampler * gsmpl) {
+void common_perf_print(const struct llama_context * ctx, const struct common_sampler * gsmpl, const uint64_t* cnts) {
     // TODO: measure grammar performance
 
     if (gsmpl) {
@@ -332,6 +332,14 @@ void common_perf_print(const struct llama_context * ctx, const struct common_sam
     }
     if (ctx) {
         llama_perf_context_print(ctx);
+    }
+    if (cnts) {
+        fprintf(stderr, "mul_mat src0 type counts:\n");
+        for (int i = 0; i < GGML_TYPE_COUNT; ++i) {
+            if (cnts[i] > 0) {
+                fprintf(stderr, "  %s: %lu\n", ggml_type_name((enum ggml_type)i), cnts[i]);
+            }
+        }
     }
 }
 

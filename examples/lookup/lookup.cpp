@@ -228,7 +228,7 @@ int main(int argc, char ** argv){
     LOG_INF("accept       = %.3f%%\n", 100.0f * n_accept / n_drafted);
 
     LOG_INF("\ntarget:\n\n");
-    common_perf_print(ctx, smpl);
+    common_perf_print(ctx, smpl, NULL);
 
     common_sampler_free(smpl);
 

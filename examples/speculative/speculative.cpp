@@ -629,7 +629,7 @@ int main(int argc, char ** argv) {
 
     LOG_INF("\n");
     LOG_INF("target:\n\n");
-    common_perf_print(ctx_tgt, smpl);
+    common_perf_print(ctx_tgt, smpl, NULL);
 
     common_sampler_free(smpl);
     for (int s = 0; s < n_seq_dft; ++s) {

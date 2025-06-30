@@ -3540,12 +3540,6 @@ void ggml_cpu_init(void) {
     ggml_critical_section_end();
 }
 
-void ggml_cpu_print_mul_mat_src0_type_stats(void) {
-    fprintf(stderr, "mul_mat src0 type counts:\n");
-    for (int i = 0; i < GGML_TYPE_COUNT; ++i) {
-        if (g_mul_mat_src0_type_counters[i] > 0) {
-            fprintf(stderr, "  %s: %lu\n", ggml_type_name((enum ggml_type)i), g_mul_mat_src0_type_counters[i]);
-            // TODO: don't print here, instead return g_mul_mat_src0_type_counters
-        }
-    }
+uint64_t* ggml_cpu_print_mul_mat_src0_type_stats(void) {
+    return g_mul_mat_src0_type_counters;
 }

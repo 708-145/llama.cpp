@@ -72,7 +72,7 @@ static void sigint_handler(int signo) {
         } else {
             console::cleanup();
             LOG("\n");
-            common_perf_print(*g_ctx, *g_smpl);
+            common_perf_print(*g_ctx, *g_smpl, NULL);
 
             // make sure all logs are flushed
             LOG("Interrupted by user\n");
@@ -977,9 +977,9 @@ int main(int argc, char ** argv) {
     }
 
     LOG("\n\n");
-    ggml_cpu_print_mul_mat_src0_type_stats(); // TODO: return cnts
-    common_perf_print(ctx, smpl); // also pass cnts and print after the other two statistics
-
+    uint64_t* cnts = ggml_cpu_print_mul_mat_src0_type_stats();
+    common_perf_print(ctx, smpl, cnts);
+    
     common_sampler_free(smpl);
 
     llama_backend_free();

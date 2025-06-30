@@ -460,7 +460,7 @@ int main(int argc, char ** argv) {
     LOG_INF("n_accept  = %d\n", n_accept);
 
     LOG_INF("\n");
-    common_perf_print(ctx, smpl);
+    common_perf_print(ctx, smpl, NULL);
 
     common_sampler_free(smpl);
 
