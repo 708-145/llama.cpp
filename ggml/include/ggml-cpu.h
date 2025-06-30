@@ -159,6 +159,7 @@ extern "C" {
 // GGML_API void ggml_compute_forward_mul_mat_f16_16_row_amd_avx(const struct ggml_compute_params * params, struct ggml_tensor * dst);
 
 GGML_API uint64_t ggml_cpu_get_mul_mat_count(void);
+GGML_API void     ggml_cpu_print_mul_mat_src0_type_stats(void);
 
 #ifdef __cplusplus
 }

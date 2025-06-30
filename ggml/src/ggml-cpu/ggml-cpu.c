@@ -8,9 +8,11 @@
 #include "ggml-cpu.h"
 #include "ggml-impl.h"
 #include "quants.h"
+// #include "log.h" // LOG_INF is not available here, using fprintf(stderr,...)
 #include "ggml-threading.h"
 
 static uint64_t g_mul_mat_counter = 0;
+static uint64_t g_mul_mat_src0_type_counters[GGML_TYPE_COUNT] = {0};
 #include "unary-ops.h"
 #include "binary-ops.h"
 #include "vec.h"
@@ -1201,6 +1203,7 @@ static void ggml_compute_forward_mul_mat(
     g_mul_mat_counter++;
 
     const struct ggml_tensor * src0 = dst->src[0];
+    g_mul_mat_src0_type_counters[src0->type]++;
     const struct ggml_tensor * src1 = dst->src[1];
 
     GGML_TENSOR_BINARY_OP_LOCALS
@@ -3542,4 +3545,13 @@ void ggml_cpu_init(void) {
 
 uint64_t ggml_cpu_get_mul_mat_count(void) {
     return g_mul_mat_counter;
+}
+
+void ggml_cpu_print_mul_mat_src0_type_stats(void) {
+    fprintf(stderr, "mul_mat src0 type counts:\n");
+    for (int i = 0; i < GGML_TYPE_COUNT; ++i) {
+        if (g_mul_mat_src0_type_counters[i] > 0) {
+            fprintf(stderr, "  %s: %lu\n", ggml_type_name((enum ggml_type)i), g_mul_mat_src0_type_counters[i]);
+        }
+    }
 }
