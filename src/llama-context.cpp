@@ -2814,7 +2814,7 @@ void llama_perf_context_reset(llama_context * ctx) {
 }
 
 
-void llama_perf_counter_print(llama_context * ctx, const uint64_t* cnts) {
+void llama_perf_counter_print(const llama_context * ctx, const uint64_t* cnts) {
     const auto data = llama_perf_context(ctx);
     float tokens = data.n_p_eval + data.n_eval;
 
