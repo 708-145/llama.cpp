@@ -142,3 +142,24 @@ extern "C" {
 #ifdef __cplusplus
 }
 #endif
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+// GGML_API void ggml_compute_forward_mul_mat_f32_1_row_amd_avx (const struct ggml_compute_params * params, struct ggml_tensor * dst);
+// GGML_API void ggml_compute_forward_mul_mat_f32_2_row_amd_avx (const struct ggml_compute_params * params, struct ggml_tensor * dst);
+// GGML_API void ggml_compute_forward_mul_mat_f32_4_row_amd_avx (const struct ggml_compute_params * params, struct ggml_tensor * dst);
+// GGML_API void ggml_compute_forward_mul_mat_f32_8_row_amd_avx (const struct ggml_compute_params * params, struct ggml_tensor * dst);
+// GGML_API void ggml_compute_forward_mul_mat_f32_16_row_amd_avx(const struct ggml_compute_params * params, struct ggml_tensor * dst);
+
+// GGML_API void ggml_compute_forward_mul_mat_f16_1_row_amd_avx (const struct ggml_compute_params * params, struct ggml_tensor * dst);
+// GGML_API void ggml_compute_forward_mul_mat_f16_2_row_amd_avx (const struct ggml_compute_params * params, struct ggml_tensor * dst);
+// GGML_API void ggml_compute_forward_mul_mat_f16_4_row_amd_avx (const struct ggml_compute_params * params, struct ggml_tensor * dst);
+// GGML_API void ggml_compute_forward_mul_mat_f16_8_row_amd_avx (const struct ggml_compute_params * params, struct ggml_tensor * dst);
+// GGML_API void ggml_compute_forward_mul_mat_f16_16_row_amd_avx(const struct ggml_compute_params * params, struct ggml_tensor * dst);
+
+GGML_API uint64_t ggml_cpu_get_mul_mat_count(void);
+
+#ifdef __cplusplus
+}
+#endif

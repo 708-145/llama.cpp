@@ -5,6 +5,7 @@
 #include "sampling.h"
 #include "llama.h"
 #include "chat.h"
+#include "ggml-cpu.h"
 
 #include <cstdio>
 #include <cstring>
@@ -977,6 +978,7 @@ int main(int argc, char ** argv) {
 
     LOG("\n\n");
     common_perf_print(ctx, smpl);
+    LOG_INF("mul_mat_counter: %lu\n", ggml_cpu_get_mul_mat_count());
 
     common_sampler_free(smpl);
 

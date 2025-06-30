@@ -9,6 +9,8 @@
 #include "ggml-impl.h"
 #include "quants.h"
 #include "ggml-threading.h"
+
+static uint64_t g_mul_mat_counter = 0;
 #include "unary-ops.h"
 #include "binary-ops.h"
 #include "vec.h"
@@ -1195,6 +1197,8 @@ static void ggml_compute_forward_mul_mat_one_chunk(
 static void ggml_compute_forward_mul_mat(
         const struct ggml_compute_params * params,
               struct ggml_tensor * dst) {
+
+    g_mul_mat_counter++;
 
     const struct ggml_tensor * src0 = dst->src[0];
     const struct ggml_tensor * src1 = dst->src[1];
@@ -3534,4 +3538,8 @@ void ggml_cpu_init(void) {
     }
 
     ggml_critical_section_end();
+}
+
+uint64_t ggml_cpu_get_mul_mat_count(void) {
+    return g_mul_mat_counter;
 }
