@@ -334,12 +334,7 @@ void common_perf_print(const struct llama_context * ctx, const struct common_sam
         llama_perf_context_print(ctx);
     }
     if (cnts) {
-        fprintf(stderr, "mul_mat src0 type counts:\n");
-        for (int i = 0; i < GGML_TYPE_COUNT; ++i) {
-            if (cnts[i] > 0) {
-                fprintf(stderr, "  %s: %lu\n", ggml_type_name((enum ggml_type)i), cnts[i]);
-            }
-        }
+        llama_perf_counter_print(ctx, cnts);
     }
 }
 

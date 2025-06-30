@@ -2813,6 +2813,21 @@ void llama_perf_context_reset(llama_context * ctx) {
     ctx->perf_reset();
 }
 
+
+void llama_perf_counter_print(llama_context * ctx, const uint64_t* cnts) {
+    const auto data = llama_perf_context(ctx);
+    float tokens = data.n_p_eval + data.n_eval;
+
+    // LLAMA_LOG_INFO("%s:       total time = %10.2f ms / %5d tokens\n", __func__, (t_end_ms - data.t_start_ms), (data.n_p_eval + data.n_eval));
+    LLAMA_LOG_INFO("mul_mat src0 type counts:\n");
+    for (int i = 0; i < GGML_TYPE_COUNT; ++i) {
+        if (cnts[i] > 0) {
+            LLAMA_LOG_INFO("  %s: %lu (%.2f per token)\n", ggml_type_name((enum ggml_type)i), cnts[i], cnts[i] / tokens);
+        }
+    }
+}
+
+
 //
 // training
 //
