@@ -1204,6 +1204,16 @@ static void ggml_compute_forward_mul_mat(
     const int ith = params->ith;
     const int nth = params->nth;
 
+    // TODO: add instrumentation
+    // add (global?) data structure to count usage of each src0->type 
+    // if (src1->type == GGML_TYPE_F32) then
+    //   increment counter for current src0->type
+    // print summary on console for llama-cli after inference statistic (llama_perf_sampler_print) 
+    //   example: 
+    //   Q2_K:   154
+    //   Q4_0:    72
+    //   Q6_K:     8
+
     enum ggml_type           const vec_dot_type         = type_traits_cpu[src0->type].vec_dot_type;
     ggml_from_float_t        const from_float           = type_traits_cpu[vec_dot_type].from_float;
     int64_t                  const vec_dot_num_rows     = type_traits_cpu[src0->type].nrows;
