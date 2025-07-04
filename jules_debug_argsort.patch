@@ -1,0 +1,44 @@
+--- a/ggml/src/ggml.c
++++ b/ggml/src/ggml.c
+@@ -3327,6 +3327,19 @@
+         return;
+     }
+
++    // JULES DEBUG PRINT START (Function Entry)
++    // Note: nc and nr are defined later in this function, using src0->ne[0] and ggml_nrows(src0) directly for now.
++    fprintf(stderr, "[DEBUG] Jules ggml_compute_forward_argsort: Entry. src0 name: %s, type: %s, ne: [%lld, %lld, %lld, %lld]\n",
++            src0->name, ggml_type_name(src0->type),
++            (long long)src0->ne[0], (long long)src0->ne[1], (long long)src0->ne[2], (long long)src0->ne[3]);
++    if (src0->data == NULL) {
++        fprintf(stderr, "[DEBUG] Jules ggml_compute_forward_argsort: src0->data is NULL at function entry.\n");
++    } else if (src0->type != GGML_TYPE_F32) {
++        fprintf(stderr, "[DEBUG] Jules ggml_compute_forward_argsort: src0 type is %s (expected F32).\n", ggml_type_name(src0->type));
++    }
++    // JULES DEBUG PRINT END
++
+     const enum ggml_sort_order order = (enum ggml_sort_order) ggml_get_op_params_i32(dst, 0);
+
+     const int nc = src0->ne[0];
+@@ -3334,6 +3347,22 @@
+
+     // TODO: optimize
+     for (int r = 0; r < nr; ++r) {
++        // JULES DEBUG PRINT FOR ROW START
++        // Check nc and nr directly as they are now in scope
++        if (src0->type == GGML_TYPE_F32 && src0->data != NULL) {
++            const float * temp_src_row_for_debug = (const float *)((const char *)src0->data + r*src0->nb[1]);
++            fprintf(stderr, "[DEBUG] Jules ggml_compute_forward_argsort: Processing row %d. First few values of src_row (nc=%d): ", r, nc);
++            int print_n = (10 < nc) ? 10 : nc;
++            for (int i_debug = 0; i_debug < print_n; ++i_debug) { // Use i_debug to avoid conflict
++                fprintf(stderr, "%f ", temp_src_row_for_debug[i_debug]);
++            }
++            fprintf(stderr, "\n");
++        } else if (src0->data == NULL && r == 0) {
++             fprintf(stderr, "[DEBUG] Jules ggml_compute_forward_argsort: src_row check: src0->data is NULL in loop for row %d.\n", r);
++        } else if (src0->type != GGML_TYPE_F32 && r == 0) {
++             fprintf(stderr, "[DEBUG] Jules ggml_compute_forward_argsort: src_row check: src0 type is %s in loop for row %d.\n", ggml_type_name(src0->type), r);
++        }
++        // JULES DEBUG PRINT FOR ROW END
++
+         const float * src_row = (const float *)((const char *)src0->data + r*src0->nb[1]);
+               int32_t * dst_row =       (int32_t *)((char *)dst->data  + r*dst->nb[1]);

@@ -1,5 +1,7 @@
 #include "llama-graph.h"
 
+#include <algorithm> // For std::min
+#include "ggml-backend.h" // For ggml_backend_buffer and ggml_backend_name
 #include "llama-impl.h"
 #include "llama-batch.h"
 #include "llama-cparams.h"
@@ -692,6 +694,29 @@ ggml_tensor * llm_graph_context::build_moe_ffn(
     }
 
     // select experts
+    fprintf(stderr, "[DEBUG] MoE Graph: selection_probs tensor name: %s, type: %s, n_dims: %d, ne: [%lld, %lld, %lld, %lld]\n",
+            selection_probs->name, ggml_type_name(selection_probs->type), ggml_n_dims(selection_probs),
+            (long long)selection_probs->ne[0], (long long)selection_probs->ne[1], (long long)selection_probs->ne[2], (long long)selection_probs->ne[3]);
+
+    if (selection_probs->type == GGML_TYPE_F32) {
+        // Assuming selection_probs is on CPU or ggml_get_data_f32 handles it.
+        // This is risky if it's not on CPU and data is not readily available.
+        // For robust debugging, a CPU copy might be needed if not on CPU.
+        // However, graph construction phase implies data might not be filled yet, or might be on CPU.
+        float* probs_data = ggml_get_data_f32(selection_probs);
+        if (probs_data) {
+            fprintf(stderr, "[DEBUG] MoE Graph: First few selection_probs values: ");
+            for (int i = 0; i < std::min(10, (int)ggml_nelements(selection_probs)); ++i) {
+                fprintf(stderr, "%f ", probs_data[i]);
+            }
+            fprintf(stderr, "\n");
+        } else {
+            fprintf(stderr, "[DEBUG] MoE Graph: selection_probs->data is NULL for F32 tensor.\n");
+        }
+    } else {
+        fprintf(stderr, "[DEBUG] MoE Graph: selection_probs is not F32, it is %s. Cannot print values directly here without type handling.\n", ggml_type_name(selection_probs->type));
+    }
+
     ggml_tensor * selected_experts = ggml_top_k(ctx0, selection_probs, n_expert_used); // [n_expert_used, n_tokens]
     cb(selected_experts->src[0], "ffn_moe_argsort", il);
     cb(selected_experts, "ffn_moe_topk", il);
