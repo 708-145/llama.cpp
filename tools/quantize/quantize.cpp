@@ -11,7 +11,7 @@
 #include <cctype>
 #include <algorithm>
 #include <fstream>
-#include "../../common/json.hpp"
+#include "../../vendor/nlohmann/json.hpp"
 
 
 struct quant_option {
