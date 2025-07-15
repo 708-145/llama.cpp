@@ -859,51 +859,30 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
         ::zeros(fout, meta_size);
     };
 
-	// As workaround, read SmartQuant json here.
-	// Should be read where the imatrix data is read and configurable via parameter
-    FILE *fp;
-    char line[MAX_LINE_LENGTH];
-    WeightMap weight_map;
-
+	WeightMap weight_map;
     initWeightMap(&weight_map);
 
-    const char *filename = "default.smartquant.json";
-
-    fp = fopen(filename, "r");
-    if (fp == NULL) {
-        printf("Error opening SmartQuant JSON file\n");
-    } else {
-		while (fgets(line, sizeof(line), fp) != NULL) {
-			// Basic parsing logic (assuming the file format is consistent)
-			char *token = strtok(line, "{},:\"");
-			char key[MAX_KEY_LENGTH];
-			char value_str[16];
-
-			while (token != NULL) {
-				// The keys are usually the tokens at even positions after the first '{'
-				if (strstr(token, "blk.")) {
-					strncpy(key, token, MAX_KEY_LENGTH - 1);
-					key[MAX_KEY_LENGTH - 1] = '\0';
-
-					token = strtok(NULL, "{},:\""); // Move to the value
-					if (token != NULL) {
-						// The value should be the next token
-						strncpy(value_str, token, sizeof(value_str) - 1);
-						value_str[sizeof(value_str) - 1] = '\0';
-						int value = atoi(value_str);
-						if (value >= INT8_MIN && value <= INT8_MAX) {
-							addWeightEntry(&weight_map, key, (int8_t)value);
-						} else {
-							fprintf(stderr, "Warning: Value '%d' for key '%s' is out of int8_t range and will be skipped.\n", value, key);
-						}
-					}
-				}
-				token = strtok(NULL, "{},:\"");
-			}
-		}
-		fclose(fp);
-		printf("SmartQuant JSON has %ld entries\n", weight_map.count);
-	}
+    if (params->kv_overrides) {
+        const std::vector<llama_model_kv_override> & overrides = *(const std::vector<llama_model_kv_override> *)params->kv_overrides;
+        const std::string prefix = "ggml.quantization_override.";
+        for (const auto & o : overrides) {
+            if (o.key[0] == 0) break;
+            const std::string key(o.key);
+            if (key.rfind(prefix, 0) == 0) { // starts_with
+                if (o.tag == LLAMA_KV_OVERRIDE_TYPE_INT) {
+                    const std::string tensor_name = key.substr(prefix.length());
+                    int8_t value = o.val_i64;
+                    if (addWeightEntry(&weight_map, tensor_name.c_str(), value) != 0) {
+                        // Handle error if necessary, e.g., by logging
+                        LLAMA_LOG_WARN("Failed to add weight entry for %s\n", tensor_name.c_str());
+                    }
+                }
+            }
+        }
+        if (weight_map.count > 0) {
+            printf("SmartQuant JSON has %ld entries\n", weight_map.count);
+        }
+    }
 
     const auto tn = LLM_TN(model.arch);
     new_ofstream(0);
