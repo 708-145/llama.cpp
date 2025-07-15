@@ -13,6 +13,32 @@
 #include <thread>
 #include <unordered_map>
 
+// SmartQuant helper headers
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdint.h>
+#include <errno.h>
+
+#define MAX_LINE_LENGTH 512
+#define MAX_KEY_LENGTH 256
+
+typedef struct {
+    char key[MAX_KEY_LENGTH];
+    int8_t value;
+} WeightEntry;
+
+typedef struct {
+    WeightEntry *entries;
+    size_t count;
+    size_t capacity;
+} WeightMap;
+
+void initWeightMap(WeightMap *map);
+int addWeightEntry(WeightMap *map, const char *key, int8_t value);
+int8_t getWeightValue(const WeightMap *map, const char *key, int *found);
+void freeWeightMap(WeightMap *map);
+
 // Quantization types. Changes to this struct must be replicated in quantize.cpp
 struct tensor_quantization {
     std::string name;
@@ -859,7 +885,7 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
         ::zeros(fout, meta_size);
     };
 
-	WeightMap weight_map;
+  	WeightMap weight_map;
     initWeightMap(&weight_map);
 
     if (params->kv_overrides) {
@@ -883,6 +909,7 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
             printf("SmartQuant JSON has %ld entries\n", weight_map.count);
         }
     }
+
 
     const auto tn = LLM_TN(model.arch);
     new_ofstream(0);
