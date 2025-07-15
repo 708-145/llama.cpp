@@ -45,32 +45,6 @@ struct tensor_quantization {
     ggml_type quant = GGML_TYPE_COUNT;
 };
 
-// SmartQuant helper headers
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <stdint.h>
-#include <errno.h>
-
-#define MAX_LINE_LENGTH 512
-#define MAX_KEY_LENGTH 256
-
-typedef struct {
-    char key[MAX_KEY_LENGTH];
-    int8_t value;
-} WeightEntry;
-
-typedef struct {
-    WeightEntry *entries;
-    size_t count;
-    size_t capacity;
-} WeightMap;
-
-void initWeightMap(WeightMap *map);
-int addWeightEntry(WeightMap *map, const char *key, int8_t value);
-int8_t getWeightValue(const WeightMap *map, const char *key, int *found);
-void freeWeightMap(WeightMap *map);
-
 static void zeros(std::ofstream & file, size_t n) {
     char zero = 0;
     for (size_t i = 0; i < n; ++i) {
