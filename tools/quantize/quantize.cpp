@@ -10,6 +10,9 @@
 #include <cmath>
 #include <cctype>
 #include <algorithm>
+#include <fstream>
+#include "../../vendor/nlohmann/json.hpp"
+
 
 struct quant_option {
     std::string name;
@@ -110,7 +113,7 @@ static bool try_parse_ftype(const std::string & ftype_str_in, llama_ftype & ftyp
 [[noreturn]]
 static void usage(const char * executable) {
     printf("usage: %s [--help] [--allow-requantize] [--leave-output-tensor] [--pure] [--imatrix] [--include-weights]\n", executable);
-    printf("       [--exclude-weights] [--output-tensor-type] [--token-embedding-type] [--tensor-type] [--prune-layers] [--keep-split] [--override-kv]\n");
+    printf("       [--exclude-weights] [--output-tensor-type] [--token-embedding-type] [--tensor-type] [--prune-layers] [--keep-split] [--override-kv] [--params-json]\n");
     printf("       model-f32.gguf [model-quant.gguf] type [nthreads]\n\n");
     printf("  --allow-requantize: Allows requantizing tensors that have already been quantized. Warning: This can severely reduce quality compared to quantizing from 16bit or 32bit\n");
     printf("  --leave-output-tensor: Will leave output.weight un(re)quantized. Increases model size but may also increase quality, especially when requantizing\n");
@@ -127,6 +130,7 @@ static void usage(const char * executable) {
     printf("  --keep-split: will generate quantized model in the same shards as input\n");
     printf("  --override-kv KEY=TYPE:VALUE\n");
     printf("      Advanced option to override model metadata by key in the quantized model. May be specified multiple times.\n");
+    printf("  --params-json file_name: path to a JSON file with quantization parameters\n");
     printf("Note: --include-weights and --exclude-weights cannot be used together\n");
     printf("\nAllowed quantization types:\n");
     for (auto & it : QUANT_OPTIONS) {
@@ -254,6 +258,28 @@ static ggml_type parse_ggml_type(const char * arg) {
     return GGML_TYPE_COUNT;
 }
 
+static void parse_json_params(const std::string & json_file, std::vector<llama_model_kv_override> & kv_overrides) {
+    std::ifstream f(json_file);
+    if (!f.is_open()) {
+        fprintf(stderr, "Could not open file %s\n", json_file.c_str());
+        exit(1);
+    }
+    nlohmann::json j;
+    f >> j;
+
+    if (j.is_object()) {
+        for (auto& item : j.items()) {
+            llama_model_kv_override kvo;
+            std::string key = "ggml.quantization_override." + item.key();
+            strncpy(kvo.key, key.c_str(), sizeof(kvo.key) - 1);
+            kvo.key[sizeof(kvo.key) - 1] = '\0';
+            kvo.tag = LLAMA_KV_OVERRIDE_TYPE_INT;
+            kvo.val_i64 = item.value().get<int64_t>();
+            kv_overrides.push_back(kvo);
+        }
+    }
+}
+
 static bool parse_tensor_type(const char * data, std::vector<tensor_quantization> & tensor_type) {
     const char * sep = strchr(data, '=');
     if (sep == nullptr) {
@@ -310,6 +336,7 @@ static bool parse_layer_prune(const char * data, std::vector<int> & prune_layers
     sort(prune_layers.begin(), prune_layers.end());
     prune_layers.erase(std::unique(prune_layers.begin(), prune_layers.end()), prune_layers.end());
     return true;
+
 }
 
 int main(int argc, char ** argv) {
@@ -323,11 +350,18 @@ int main(int argc, char ** argv) {
     std::string imatrix_file;
     std::vector<std::string> included_weights, excluded_weights;
     std::vector<llama_model_kv_override> kv_overrides;
+    std::string json_params_file;
     std::vector<tensor_quantization> tensor_types;
     std::vector<int> prune_layers;
 
     for (; arg_idx < argc && strncmp(argv[arg_idx], "--", 2) == 0; arg_idx++) {
-        if (strcmp(argv[arg_idx], "--leave-output-tensor") == 0) {
+        if (strcmp(argv[arg_idx], "--params-json") == 0) {
+            if (arg_idx < argc - 1) {
+                json_params_file = argv[++arg_idx];
+            } else {
+                usage(argv[0]);
+            }
+        } else if (strcmp(argv[arg_idx], "--leave-output-tensor") == 0) {
             params.quantize_output_tensor = false;
         } else if (strcmp(argv[arg_idx], "--output-tensor-type") == 0) {
             if (arg_idx < argc-1) {
@@ -386,6 +420,10 @@ int main(int argc, char ** argv) {
         } else {
             usage(argv[0]);
         }
+    }
+
+    if (!json_params_file.empty()) {
+        parse_json_params(json_params_file, kv_overrides);
     }
 
     if (argc - arg_idx < 2) {
