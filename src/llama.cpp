@@ -25,6 +25,27 @@
 // interface implementation
 //
 
+struct llama_model_quantize_params llama_model_quantize_default_params(void) {
+    struct llama_model_quantize_params result = {
+        /*.nthread                =*/ 0, // 0 = use std::thread::hardware_concurrency()
+        /*.ftype                  =*/ LLAMA_FTYPE_MOSTLY_Q8_0,
+        /*.output_tensor_type     =*/ GGML_TYPE_COUNT, // inherit from ftype
+        /*.token_embedding_type   =*/ GGML_TYPE_COUNT, // inherit from ftype
+        /*.smarter_quant_json_path =*/ nullptr,
+        /*.allow_requantize       =*/ false,
+        /*.quantize_output_tensor =*/ true,
+        /*.only_copy              =*/ false,
+        /*.pure                   =*/ false,
+        /*.keep_split             =*/ false,
+        /*.imatrix                =*/ nullptr,
+        /*.kv_overrides           =*/ nullptr,
+        /*.tensor_types           =*/ nullptr,
+        /*.prune_layers           =*/ nullptr,
+    };
+
+    return result;
+}
+
 struct llama_sampler_chain_params llama_sampler_chain_default_params() {
     struct llama_sampler_chain_params result = {
         /*.no_perf                     =*/ true,

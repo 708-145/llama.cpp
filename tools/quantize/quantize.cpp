@@ -355,7 +355,14 @@ int main(int argc, char ** argv) {
     std::vector<int> prune_layers;
 
     for (; arg_idx < argc && strncmp(argv[arg_idx], "--", 2) == 0; arg_idx++) {
-        if (strcmp(argv[arg_idx], "--smartquant") == 0) {
+        if (strcmp(argv[arg_idx], "--smarterquant") == 0) {
+            if (arg_idx < argc - 1) {
+                params.smarter_quant_json_path = argv[++arg_idx];
+            } else {
+                usage(argv[0]);
+            }
+        }
+        else if (strcmp(argv[arg_idx], "--smartquant") == 0) {
             if (arg_idx < argc - 1) {
                 json_params_file = argv[++arg_idx];
             } else {
@@ -424,6 +431,11 @@ int main(int argc, char ** argv) {
 
     if (!json_params_file.empty()) {
         parse_json_params(json_params_file, kv_overrides);
+    }
+
+    if (params.smarter_quant_json_path != nullptr && !json_params_file.empty()) {
+        fprintf(stderr, "Error: --smartquant and --smarterquant cannot be used at the same time.\n");
+        usage(argv[0]);
     }
 
     if (argc - arg_idx < 2) {

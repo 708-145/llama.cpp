@@ -557,6 +557,10 @@ void llama_model::load_hparams(llama_model_loader & ml) {
     uint32_t n_vocab = 0;
     ml.get_key(LLM_KV_VOCAB_SIZE, n_vocab, false) || ml.get_arr_n(LLM_KV_TOKENIZER_LIST, n_vocab, false);
 
+    // SmarterQuant metadata
+    ml.get_arr(LLM_KV_SMARTQUANT_COLUMN_PERMUTATION, hparams.smarter_quant_permutation, false);
+    ml.get_arr(LLM_KV_SMARTQUANT_COMPRESSION_TYPES, hparams.smarter_quant_types, false);
+
     // for classifier models
     ml.get_arr(LLM_KV_CLASSIFIER_OUTPUT_LABELS, classifier_labels, false);
     if (!classifier_labels.empty()) {
@@ -1929,6 +1933,27 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
                     if (output == NULL) {
                         output = create_tensor(tn(LLM_TENSOR_TOKEN_EMBD, "weight"), {n_embd, n_vocab}, TENSOR_DUPLICATED);
                     }
+
+            if (hparams.smarter_quant_permutation.size() > 0) {
+                // SmarterQuant: Load permutation and compression types from metadata
+                for (int i = 0; i < ml.n_tensors; ++i) {
+                    struct ggml_tensor * cur = ml.get_tensor_meta(i);
+                    if (cur->type == GGML_TYPE_S8) {
+                        cur->sq_info = (SmarterQuantTensorInfo *)malloc(sizeof(SmarterQuantTensorInfo));
+                        if (!cur->sq_info) {
+                            throw std::runtime_error("failed to allocate memory for SmarterQuantTensorInfo");
+                        }
+                        cur->sq_info->enabled = true;
+                        cur->sq_info->n_cols_for_permutation = hparams.smarter_quant_permutation.size();
+                        cur->sq_info->column_permutation = (int32_t *)malloc(cur->sq_info->n_cols_for_permutation * sizeof(int32_t));
+                        if (!cur->sq_info->column_permutation) {
+                             throw std::runtime_error("failed to allocate memory for SmarterQuant column_permutation");
+                        }
+                        memcpy(cur->sq_info->column_permutation, hparams.smarter_quant_permutation.data(), cur->sq_info->n_cols_for_permutation * sizeof(int32_t));
+                        memcpy(cur->sq_info->compression_types, hparams.smarter_quant_types.data(), sizeof(hparams.smarter_quant_types));
+                    }
+                }
+            }
 
                     for (int i = 0; i < n_layer; ++i) {
                         auto & layer = layers[i];

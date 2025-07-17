@@ -354,6 +354,12 @@ extern "C" {
     struct ggml_context;
     struct ggml_cgraph;
 
+    // Forward declare SmarterQuantTensorInfo
+    // Actual definition is in llama-quant.h, which is not included here to keep ggml.h independent.
+    // ggml_tensor will store a void pointer to be cast to SmarterQuantTensorInfo * when needed.
+    // #include "llama-quant.h" // No longer needed here, definition moved or forward declared
+#include "ggml-smarterquant-types.h" // Contains definition for SmarterQuantTensorInfo
+
     // NOTE: always add types at the end of the enum to keep backward compatibility
     enum ggml_type {
         GGML_TYPE_F32     = 0,
@@ -380,22 +386,23 @@ extern "C" {
         GGML_TYPE_IQ3_S   = 21,
         GGML_TYPE_IQ2_S   = 22,
         GGML_TYPE_IQ4_XS  = 23,
-        GGML_TYPE_I8      = 24,
-        GGML_TYPE_I16     = 25,
-        GGML_TYPE_I32     = 26,
-        GGML_TYPE_I64     = 27,
-        GGML_TYPE_F64     = 28,
-        GGML_TYPE_IQ1_M   = 29,
-        GGML_TYPE_BF16    = 30,
-        // GGML_TYPE_Q4_0_4_4 = 31, support has been removed from gguf files
-        // GGML_TYPE_Q4_0_4_8 = 32,
-        // GGML_TYPE_Q4_0_8_8 = 33,
-        GGML_TYPE_TQ1_0   = 34,
-        GGML_TYPE_TQ2_0   = 35,
-        // GGML_TYPE_IQ4_NL_4_4 = 36,
-        // GGML_TYPE_IQ4_NL_4_8 = 37,
-        // GGML_TYPE_IQ4_NL_8_8 = 38,
-        GGML_TYPE_COUNT   = 39,
+        GGML_TYPE_S8, // SmarterQuant mixed-type placeholder, must be #24
+        GGML_TYPE_I8      = 25,
+        GGML_TYPE_I16     = 26,
+        GGML_TYPE_I32     = 27,
+        GGML_TYPE_I64     = 28,
+        GGML_TYPE_F64     = 29,
+        GGML_TYPE_IQ1_M   = 30,
+        GGML_TYPE_BF16    = 31,
+        // GGML_TYPE_Q4_0_4_4 = 32, support has been removed from gguf files
+        // GGML_TYPE_Q4_0_4_8 = 33,
+        // GGML_TYPE_Q4_0_8_8 = 34,
+        GGML_TYPE_TQ1_0   = 35,
+        GGML_TYPE_TQ2_0   = 36,
+        // GGML_TYPE_IQ4_NL_4_4 = 37,
+        // GGML_TYPE_IQ4_NL_4_8 = 38,
+        // GGML_TYPE_IQ4_NL_8_8 = 39,
+        GGML_TYPE_COUNT   = 40,
     };
 
     // precision
@@ -624,8 +631,9 @@ extern "C" {
         char name[GGML_MAX_NAME];
 
         void * extra; // extra things e.g. for ggml-cuda.cu
+        struct SmarterQuantTensorInfo * sq_info; // For SmarterQuant per-block quantization info
 
-        char padding[8];
+        char padding[16]; // Adjusted padding for alignment
     };
 
     static const size_t GGML_TENSOR_SIZE = sizeof(struct ggml_tensor);
