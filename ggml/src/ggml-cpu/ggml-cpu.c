@@ -1403,6 +1403,7 @@ static void ggml_compute_forward_mul_mat_one_chunk(
         }
     }
 }
+}
 
 void ggml_compute_forward_mul_mat(
         const struct ggml_compute_params * params,

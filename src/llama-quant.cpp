@@ -13,6 +13,7 @@
 #include <string>      // Moved standard includes up
 #include <vector>
 #include <unordered_map>
+#include <regex>
 #include <stdexcept>
 #include <cstddef>     // For size_t
 #include <cstdint>     // For int32_t, uint8_t, uint16_t, int64_t
@@ -29,6 +30,21 @@
 #include <iomanip>     // For std::setw, std::fixed (if used by logging)
 #include <sstream>     // For std::ostringstream (if used by logging)
 #include <cinttypes>   // For PRId64
+
+#define MAX_KEY_LENGTH 256
+
+struct WeightEntry {
+    char key[MAX_KEY_LENGTH];
+    int8_t value;
+};
+
+struct WeightMap {
+    WeightEntry *entries;
+    size_t count;
+    size_t capacity;
+};
+
+using SmarterQuantConfig = std::unordered_map<std::string, SmarterQuantTensorInfo>;
 
 // Definition for function declared in llama-quant.h
 SmarterQuantConfig load_smarter_quant_config(const std::string & fname) {
