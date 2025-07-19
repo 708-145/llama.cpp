@@ -881,6 +881,7 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
         }
         if (weight_map.count > 0) {
             printf("SmartQuant JSON has %ld entries\n", weight_map.count);
+            LLAMA_LOG_INFO("SmartQuant parsing: %ld entries\n", weight_map.count);
         }
     }
 
@@ -1024,7 +1025,7 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
 						if (found) {
 							printf("SmartQuant .. ");
 							new_type = static_cast<ggml_type>(retrieved_value);
-						} else printf("SmartQuant Key '%s' not found.\n", search_key);
+						} else { /* SmartQuant Key not found, do nothing */ }
 
                     } else {
                         LLAMA_LOG_INFO("\n====== %s: imatrix size %d is different from tensor size %d for %s\n", __func__,
