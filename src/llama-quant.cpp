@@ -14,6 +14,8 @@
 #include <thread>
 #include <unordered_map>
 
+#include <nlohmann/json.hpp> // Added for nlohmann::json
+
 // No longer needed here as it's defined in llama-quant.h
 // struct tensor_quantization;
 
@@ -24,6 +26,137 @@ size_t llama_tensor_quantize_smarter_blocks(
     const SmarterQuantTensorInfo & sq_info,
     const float * imatrix_data,
     int nthread);
+
+size_t llama_tensor_quantize_smarter_blocks(
+    const float * src_data,
+    void * dst_data,
+    const int64_t * ne,
+    const SmarterQuantTensorInfo & sq_info,
+    const float * imatrix_data,
+    int nthread) {
+
+    const int64_t n_rows = ne[1];
+    const int64_t n_cols = ne[0];
+
+    size_t total_bytes_written = 0;
+
+    std::vector<std::thread> workers;
+    workers.reserve(nthread);
+
+    std::mutex mutex;
+    int64_t current_col_segment_idx = 0;
+
+    auto quantize_segment = [&] {
+        while (true) {
+            int64_t col_idx;
+            {
+                std::unique_lock<std::mutex> lock(mutex);
+                col_idx = current_col_segment_idx * 256;
+                if (col_idx >= n_cols) {
+                    break;
+                }
+                current_col_segment_idx++;
+            }
+
+            const int64_t current_n_cols = std::min((int64_t)256, n_cols - col_idx);
+
+            // Determine the ggml_type for this segment
+            ggml_type segment_type;
+            if (col_idx < 256) {
+                segment_type = (ggml_type)sq_info.compression_types[0];
+            } else if (col_idx < 512) {
+                segment_type = (ggml_type)sq_info.compression_types[1];
+            } else if (col_idx < 768) {
+                segment_type = (ggml_type)sq_info.compression_types[2];
+            } else {
+                segment_type = (ggml_type)sq_info.compression_types[3];
+            }
+
+            // Prepare source data for the current segment
+            std::vector<float> segment_src_data(n_rows * current_n_cols);
+            for (int64_t r = 0; r < n_rows; ++r) {
+                for (int64_t c = 0; c < current_n_cols; ++c) {
+                    segment_src_data[r * current_n_cols + c] = src_data[r * n_cols + col_idx + c];
+                }
+            }
+
+            // Prepare imatrix data for the current segment
+            const float * segment_imatrix_data = nullptr;
+            std::vector<float> temp_imatrix_data;
+            if (imatrix_data) {
+                temp_imatrix_data.resize(current_n_cols);
+                for (int64_t c = 0; c < current_n_cols; ++c) {
+                    temp_imatrix_data[c] = imatrix_data[col_idx + c];
+                }
+                segment_imatrix_data = temp_imatrix_data.data();
+            }
+
+            // Calculate destination pointer offset
+            void * segment_dst_data = (char *)dst_data + total_bytes_written;
+
+            // Quantize the segment
+            size_t bytes_written = ggml_quantize_chunk(segment_type, segment_src_data.data(), segment_dst_data, 0, n_rows, current_n_cols, segment_imatrix_data);
+            
+            {
+                std::unique_lock<std::mutex> lock(mutex);
+                total_bytes_written += bytes_written;
+            }
+        }
+    };
+
+    for (int i = 0; i < nthread; ++i) {
+        workers.emplace_back(quantize_segment);
+    }
+
+    for (auto &w : workers) {
+        w.join();
+    }
+
+    return total_bytes_written;
+}
+
+SmarterQuantConfig load_smarter_quant_config(const std::string & fname) {
+    SmarterQuantConfig config;
+    std::ifstream f(fname);
+    if (!f.is_open()) {
+        throw std::runtime_error(format("failed to open smarterquant config file %s", fname.c_str()));
+    }
+    nlohmann::json data = nlohmann::json::parse(f);
+
+    for (auto& el : data.items()) {
+        SmarterQuantTensorInfo info;
+        info.enabled = el.value().value("enabled", false);
+        if (el.value().contains("column_permutation")) {
+            std::vector<int32_t> perm = el.value()["column_permutation"].get<std::vector<int32_t>>();
+            info.column_permutation = new int32_t[perm.size()];
+            std::copy(perm.begin(), perm.end(), info.column_permutation);
+            info.n_cols_for_permutation = perm.size();
+        }
+        if (el.value().contains("compression_types")) {
+            std::vector<int8_t> types = el.value()["compression_types"].get<std::vector<int8_t>>();
+            if (types.size() != 4) {
+                throw std::runtime_error(format("compression_types must have 4 elements for tensor %s", el.key().c_str()));
+            }
+            std::copy(types.begin(), types.end(), info.compression_types);
+        }
+        config[el.key()] = info;
+    }
+    return config;
+}
+
+SmartQuantConfig load_smart_quant_config(const std::string & fname) {
+    SmartQuantConfig config;
+    std::ifstream f(fname);
+    if (!f.is_open()) {
+        throw std::runtime_error(format("failed to open smartquant config file %s", fname.c_str()));
+    }
+    nlohmann::json data = nlohmann::json::parse(f);
+
+    for (auto& el : data.items()) {
+        config[el.key()] = (ggml_type)el.value().get<int>();
+    }
+    return config;
+}
 
 static void zeros(std::ofstream & file, size_t n) {
     char zero = 0;
@@ -89,14 +222,14 @@ struct quantize_state_impl {
     int n_attention_wv = 0;
     int n_ffn_down     = 0;
     int n_ffn_gate     = 0;
-    int n_ffn_up       = 0;
+    int n_ffn_up        = 0;
     int i_attention_wv = 0;
     int i_ffn_down     = 0;
     int i_ffn_gate     = 0;
-    int i_ffn_up       = 0;
+    int i_ffn_up        = 0;
 
     int n_k_quantized = 0;
-    int n_fallback    = 0;
+    int n_fallback     = 0;
 
     bool has_imatrix = false;
 
@@ -877,24 +1010,26 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
         ggml_type new_type;
         void * new_data;
         size_t new_size;
+        const SmarterQuantTensorInfo * sq_info = nullptr;
 
         if (quantize) {
             new_type = default_type;
 
             // SmartQuant override
             if (params->smart_quant_config) {
-                auto it = params->smart_quant_config->find(name);
-                if (it != params->smart_quant_config->end()) {
+                const auto & smart_quant_config = *static_cast<const std::map<std::string, ggml_type>*>(params->smart_quant_config);
+                auto it = smart_quant_config.find(name);
+                if (it != smart_quant_config.end()) {
                     LLAMA_LOG_DEBUG("(SmartQuant override %s -> %s) ", ggml_type_name(new_type), ggml_type_name(it->second));
                     new_type = it->second;
                 }
             }
 
             // SmarterQuant override
-            const SmarterQuantTensorInfo * sq_info = nullptr;
             if (params->smarter_quant_config) {
-                auto it = params->smarter_quant_config->find(name);
-                if (it != params->smarter_quant_config->end() && it->second.enabled) {
+                const auto & smarter_quant_config = *static_cast<const std::map<std::string, SmarterQuantTensorInfo>*>(params->smarter_quant_config);
+                auto it = smarter_quant_config.find(name);
+                if (it != smarter_quant_config.end() && it->second.enabled) {
                     LLAMA_LOG_DEBUG("(SmarterQuant override) ");
                     sq_info = &it->second;
                     // For SmarterQuant, the main type of the tensor will be the last block's type
@@ -1093,21 +1228,21 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
 
 llama_model_quantize_params llama_model_quantize_default_params() {
     llama_model_quantize_params result = {
-        /*.ftype                       =*/ LLAMA_FTYPE_MOSTLY_Q5_1,
         /*.nthread                     =*/ 0,
-        /*.allow_requantize            =*/ false,
-        /*.quantize_output_tensor      =*/ true,
-        /*.pure                        =*/ false,
-        /*.only_copy                   =*/ false,
-        /*.keep_split                  =*/ false,
+        /*.ftype                       =*/ LLAMA_FTYPE_MOSTLY_Q5_1,
         /*.output_tensor_type          =*/ GGML_TYPE_COUNT,
         /*.token_embedding_type        =*/ GGML_TYPE_COUNT,
+        /*.allow_requantize            =*/ false,
+        /*.quantize_output_tensor      =*/ true,
+        /*.only_copy                   =*/ false,
+        /*.pure                        =*/ false,
+        /*.keep_split                  =*/ false,
         /*.imatrix                     =*/ nullptr,
+        /*.smarter_quant_config        =*/ nullptr,
+        /*.smart_quant_config          =*/ nullptr,
         /*.kv_overrides                =*/ nullptr,
         /*.tensor_types                =*/ nullptr,
         /*.prune_layers                =*/ nullptr,
-        /*.smarter_quant_config        =*/ nullptr, // Initialize new members
-        /*.smart_quant_config          =*/ nullptr  // Initialize new members
     };
 
     return result;
@@ -1127,42 +1262,3 @@ uint32_t llama_model_quantize(
     return 0;
 }
 
-//
-// interface implementation
-//
-
-llama_model_quantize_params llama_model_quantize_default_params() {
-    llama_model_quantize_params result = {
-        /*.ftype                       =*/ LLAMA_FTYPE_MOSTLY_Q5_1,
-        /*.nthread                     =*/ 0,
-        /*.allow_requantize            =*/ false,
-        /*.quantize_output_tensor      =*/ true,
-        /*.pure                        =*/ false,
-        /*.only_copy                   =*/ false,
-        /*.keep_split                  =*/ false,
-        /*.output_tensor_type          =*/ GGML_TYPE_COUNT,
-        /*.token_embedding_type        =*/ GGML_TYPE_COUNT,
-        /*.imatrix                     =*/ nullptr,
-        /*.kv_overrides                =*/ nullptr,
-        /*.tensor_types                =*/ nullptr,
-        /*.prune_layers                =*/ nullptr,
-        /*.smarter_quant_config        =*/ nullptr, // Initialize new members
-        /*.smart_quant_config          =*/ nullptr  // Initialize new members
-    };
-
-    return result;
-}
-
-uint32_t llama_model_quantize(
-        const char * fname_inp,
-        const char * fname_out,
-        const llama_model_quantize_params * params) {
-    try {
-        llama_model_quantize_impl(fname_inp, fname_out, params);
-    } catch (const std::exception & err) {
-        LLAMA_LOG_ERROR("%s: failed to quantize: %s\n", __func__, err.what());
-        return 1;
-    }
-
-    return 0;
-}

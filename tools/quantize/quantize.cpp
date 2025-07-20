@@ -63,10 +63,7 @@ static const std::vector<quant_option> QUANT_OPTIONS = {
 };
 
 // Quantization types. Changes to this struct must be replicated in llama-quantize.cpp
-struct tensor_quantization {
-    std::string name;
-    ggml_type quant = GGML_TYPE_COUNT;
-};
+
 
 static const char * const LLM_KV_QUANTIZE_IMATRIX_FILE       = "quantize.imatrix.file";
 static const char * const LLM_KV_QUANTIZE_IMATRIX_DATASET    = "quantize.imatrix.dataset";
