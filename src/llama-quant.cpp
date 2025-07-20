@@ -885,7 +885,6 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
         }
     }
 
-
     const auto tn = LLM_TN(model.arch);
     new_ofstream(0);
     for (const auto * it : tensors) {
@@ -1135,6 +1134,7 @@ llama_model_quantize_params llama_model_quantize_default_params() {
         /*.pure                        =*/ false,
         /*.keep_split                  =*/ false,
         /*.imatrix                     =*/ nullptr,
+        /*.smarter_quant               =*/ nullptr,
         /*.kv_overrides                =*/ nullptr,
         /*.tensor_type                 =*/ nullptr,
         /*.prune_layers                =*/ nullptr
