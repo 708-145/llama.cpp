@@ -1,5 +1,6 @@
 #include "common.h"
 #include "llama.h"
+#include "llama-quant.h" // Include for SmarterQuantConfig and SmartQuantConfig
 
 #include <cstdio>
 #include <cstring>
@@ -11,6 +12,7 @@
 #include <cctype>
 #include <algorithm>
 #include <fstream>
+#include <memory> // For std::unique_ptr
 #include "../../vendor/nlohmann/json.hpp"
 
 
@@ -430,12 +432,16 @@ int main(int argc, char ** argv) {
         }
     }
 
+    std::unique_ptr<SmarterQuantConfig> smarter_quant_config_ptr;
     if (!smarterquant_file.empty()) {
-        params.smarter_quant = &smarterquant_file;
+        smarter_quant_config_ptr = std::make_unique<SmarterQuantConfig>(load_smarter_quant_config(smarterquant_file));
+        params.smarter_quant_config = smarter_quant_config_ptr.get();
     }
 
+    std::unique_ptr<SmartQuantConfig> smart_quant_config_ptr;
     if (!smartquant_file.empty()) {
-        parse_json_params(smartquant_file, kv_overrides);
+        smart_quant_config_ptr = std::make_unique<SmartQuantConfig>(load_smart_quant_config(smartquant_file));
+        params.smart_quant_config = smart_quant_config_ptr.get();
     }
 
     if (argc - arg_idx < 2) {

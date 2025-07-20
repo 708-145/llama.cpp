@@ -389,7 +389,8 @@ extern "C" {
         bool pure;                            // quantize all tensors to the default type
         bool keep_split;                      // quantize to the same number of shards
         void * imatrix;                       // pointer to importance matrix data
-        void * smarter_quant;                 // pointer to smarter quant json file
+        void * smarter_quant_config;         // pointer to smarter quant config (map<string, SmarterQuantTensorInfo>)
+        void * smart_quant_config;           // pointer to smart quant config (map<string, ggml_type>)
         void * kv_overrides;                  // pointer to vector containing overrides
         void * tensor_types;                  // pointer to vector containing tensor types
         void * prune_layers;                  // pointer to vector containing layer indices to prune

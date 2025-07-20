@@ -1,3 +1,4 @@
+#include "llama.h" // Must be first to define LLAMA_API and other core types
 #include "llama-quant.h"
 #include "llama-impl.h"
 #include "llama-model.h"
@@ -13,37 +14,16 @@
 #include <thread>
 #include <unordered_map>
 
-// SmartQuant helper headers
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <stdint.h>
-#include <errno.h>
+// No longer needed here as it's defined in llama-quant.h
+// struct tensor_quantization;
 
-#define MAX_LINE_LENGTH 512
-#define MAX_KEY_LENGTH 256
-
-typedef struct {
-    char key[MAX_KEY_LENGTH];
-    int8_t value;
-} WeightEntry;
-
-typedef struct {
-    WeightEntry *entries;
-    size_t count;
-    size_t capacity;
-} WeightMap;
-
-void initWeightMap(WeightMap *map);
-int addWeightEntry(WeightMap *map, const char *key, int8_t value);
-int8_t getWeightValue(const WeightMap *map, const char *key, int *found);
-void freeWeightMap(WeightMap *map);
-
-// Quantization types. Changes to this struct must be replicated in quantize.cpp
-struct tensor_quantization {
-    std::string name;
-    ggml_type quant = GGML_TYPE_COUNT;
-};
+size_t llama_tensor_quantize_smarter_blocks(
+    const float * src_data,
+    void * dst_data,
+    const int64_t * ne,
+    const SmarterQuantTensorInfo & sq_info,
+    const float * imatrix_data,
+    int nthread);
 
 static void zeros(std::ofstream & file, size_t n) {
     char zero = 0;
@@ -545,50 +525,7 @@ static size_t llama_tensor_quantize_impl(enum ggml_type new_type, const float * 
     return new_size;
 }
 
-// SmartQuant map handlers
-// Initializes the WeightMap
-void initWeightMap(WeightMap *map) {
-    map->entries = NULL;
-    map->count = 0;
-    map->capacity = 0;
-}
 
-// Adds a new entry to the WeightMap
-int addWeightEntry(WeightMap *map, const char *key, int8_t value) {
-    if (map->count >= map->capacity) {
-        size_t new_capacity = (map->capacity == 0) ? 16 : map->capacity * 2;
-		WeightEntry *new_entries = static_cast<WeightEntry*>(realloc(map->entries, new_capacity * sizeof(WeightEntry)));
-        if (new_entries == NULL) {
-            perror("realloc failed");
-            return -1; // Indicate failure
-        }
-        map->entries = new_entries;
-        map->capacity = new_capacity;
-    }
-    strncpy(map->entries[map->count].key, key, MAX_KEY_LENGTH - 1);
-    map->entries[map->count].key[MAX_KEY_LENGTH - 1] = '\0'; // Ensure null termination
-    map->entries[map->count].value = value;
-    map->count++;
-    return 0; // Indicate success
-}
-
-// Retrieves the int8_t value associated with a key
-int8_t getWeightValue(const WeightMap *map, const char *key, int *found) {
-    for (size_t i = 0; i < map->count; ++i) {
-        if (strcmp(map->entries[i].key, key) == 0) {
-            *found = 1;
-            return map->entries[i].value;
-        }
-    }
-    *found = 0;
-    return 0; // Default value if not found
-}
-
-// Frees the memory allocated for the WeightMap
-void freeWeightMap(WeightMap *map) {
-    free(map->entries);
-    initWeightMap(map); // Reset the map
-}
 
 static void llama_model_quantize_impl(const std::string & fname_inp, const std::string & fname_out, const llama_model_quantize_params * params) {
     ggml_type default_type;
@@ -859,41 +796,8 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
         ::zeros(fout, meta_size);
     };
 
-  	WeightMap weight_map;
-    initWeightMap(&weight_map);
-
-    if (params->kv_overrides) {
-        const std::vector<llama_model_kv_override> & overrides = *(const std::vector<llama_model_kv_override> *)params->kv_overrides;
-        const std::string prefix = "ggml.quantization_override.";
-        for (const auto & o : overrides) {
-            if (o.key[0] == 0) break;
-            const std::string key(o.key);
-            if (key.rfind(prefix, 0) == 0) { // starts_with
-                if (o.tag == LLAMA_KV_OVERRIDE_TYPE_INT) {
-                    const std::string tensor_name = key.substr(prefix.length());
-                    int8_t value = o.val_i64;
-                    if (addWeightEntry(&weight_map, tensor_name.c_str(), value) != 0) {
-                        // Handle error if necessary, e.g., by logging
-                        LLAMA_LOG_WARN("Failed to add weight entry for %s\n", tensor_name.c_str());
-                    }
-                }
-            }
-        }
-        if (weight_map.count > 0) {
-            printf("SmartQuant JSON has %ld entries\n", weight_map.count);
-            LLAMA_LOG_INFO("SmartQuant parsing: %ld entries\n", weight_map.count);
-        }
-    }
-
     const auto tn = LLM_TN(model.arch);
     new_ofstream(0);
-
-    if (params->smarter_quant) {
-        const std::string & fname = *(const std::string *)params->smarter_quant;
-        if (!fname.empty()) {
-            LLAMA_LOG_INFO("SmarterQuant JSON has been parsed from %s\n", fname.c_str());
-        }
-    }
 
     for (const auto * it : tensors) {
         const auto & weight = *it;
@@ -977,18 +881,39 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
         if (quantize) {
             new_type = default_type;
 
+            // SmartQuant override
+            if (params->smart_quant_config) {
+                auto it = params->smart_quant_config->find(name);
+                if (it != params->smart_quant_config->end()) {
+                    LLAMA_LOG_DEBUG("(SmartQuant override %s -> %s) ", ggml_type_name(new_type), ggml_type_name(it->second));
+                    new_type = it->second;
+                }
+            }
+
+            // SmarterQuant override
+            const SmarterQuantTensorInfo * sq_info = nullptr;
+            if (params->smarter_quant_config) {
+                auto it = params->smarter_quant_config->find(name);
+                if (it != params->smarter_quant_config->end() && it->second.enabled) {
+                    LLAMA_LOG_DEBUG("(SmarterQuant override) ");
+                    sq_info = &it->second;
+                    // For SmarterQuant, the main type of the tensor will be the last block's type
+                    new_type = (ggml_type)sq_info->compression_types[3];
+                }
+            }
+
             // get more optimal quantization type based on the tensor shape, layer, etc.
-            if (!params->pure && ggml_is_quantized(default_type)) {
+            if (!params->pure && ggml_is_quantized(default_type) && sq_info == nullptr) { // Only apply default logic if no SmarterQuant
                 new_type = llama_tensor_get_type(qs, new_type, tensor, ftype);
                 // unless the user specifies a type
                 if (params->tensor_types) {
                     const std::vector<tensor_quantization> & tensor_types = *static_cast<const std::vector<tensor_quantization> *>(params->tensor_types);
                     const std::string tensor_name(tensor->name);
-                    for (const auto & [tname, qtype] : tensor_types) {
-                        if (std::regex pattern(tname); std::regex_search(tensor_name, pattern)) {
-                            if  (qtype != new_type) {
-                                LLAMA_LOG_DEBUG("(overriding %s) ", ggml_type_name(new_type));
-                                new_type = qtype;
+                    for (const auto & t_override : tensor_types) {
+                        if (std::regex pattern(t_override.name); std::regex_search(tensor_name, pattern)) {
+                            if  (t_override.quant != new_type) {
+                                LLAMA_LOG_DEBUG("(CLI --tensor-type override %s -> %s) ", ggml_type_name(new_type), ggml_type_name(t_override.quant));
+                                new_type = t_override.quant;
                                 break; // if two or more types are specified for the tensor, first match wins
                             }
                         }
@@ -1005,7 +930,7 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
 
             // If we've decided to quantize to the same type the tensor is already
             // in then there's nothing to do.
-            quantize = tensor->type != new_type;
+            quantize = tensor->type != new_type || (sq_info != nullptr); // Re-quantize if SmarterQuant is active
         }
 
         if (!quantize) {
@@ -1024,16 +949,6 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
                 } else {
                     if (it->second.size() == (size_t)tensor->ne[0]*tensor->ne[2]) {
                         imatrix = it->second.data();
-						
-						// if SmartQuant json data is available for tensor->name then set new_type
-						int found = 0;
-						char *search_key = tensor->name;
-						int8_t retrieved_value = getWeightValue(&weight_map, search_key, &found);
-						if (found) {
-							printf("SmartQuant .. ");
-							new_type = static_cast<ggml_type>(retrieved_value);
-						} else { /* SmartQuant Key not found, do nothing */ }
-
                     } else {
                         LLAMA_LOG_INFO("\n====== %s: imatrix size %d is different from tensor size %d for %s\n", __func__,
                                 int(it->second.size()), int(tensor->ne[0]*tensor->ne[2]), tensor->name);
@@ -1084,21 +999,67 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
             const int64_t n_per_row = tensor->ne[0];
             const int64_t nrows = tensor->ne[1];
 
-            static const int64_t min_chunk_size = 32 * 512;
-            const int64_t chunk_size = (n_per_row >= min_chunk_size ? n_per_row : n_per_row * ((min_chunk_size + n_per_row - 1)/n_per_row));
+            // Handle SmarterQuant
+            if (sq_info) {
+                // If permutation is defined, apply it to f32_data and imatrix
+                std::vector<float> permuted_f32_data;
+                std::vector<float> permuted_imatrix_data;
 
-            const int64_t nelements_matrix = tensor->ne[0] * tensor->ne[1];
-            const int64_t nchunk = (nelements_matrix + chunk_size - 1)/chunk_size;
-            const int64_t nthread_use = nthread > 1 ? std::max((int64_t)1, std::min((int64_t)nthread, nchunk)) : 1;
+                if (sq_info->column_permutation != nullptr && sq_info->n_cols_for_permutation > 0) {
+                    if (sq_info->n_cols_for_permutation != n_per_row) {
+                        throw std::runtime_error(format("SmarterQuant: Permutation array size (%lld) does not match tensor columns (%lld) for tensor %s",
+                                (long long)sq_info->n_cols_for_permutation, (long long)n_per_row, name.c_str()));
+                    }
+                    permuted_f32_data.resize(nelements);
+                    for (int64_t r = 0; r < nrows; ++r) {
+                        for (int64_t c = 0; c < n_per_row; ++c) {
+                            permuted_f32_data[r * n_per_row + c] = f32_data[r * n_per_row + sq_info->column_permutation[c]];
+                        }
+                    }
+                    f32_data = permuted_f32_data.data();
 
-            // quantize each expert separately since they have different importance matrices
-            new_size = 0;
-            for (int64_t i03 = 0; i03 < tensor->ne[2]; ++i03) {
-                const float * f32_data_03 = f32_data + i03 * nelements_matrix;
-                void * new_data_03 = (char *)new_data + ggml_row_size(new_type, n_per_row) * i03 * nrows;
-                const float * imatrix_03 = imatrix ? imatrix + i03 * n_per_row : nullptr;
+                    if (imatrix) {
+                        permuted_imatrix_data.resize(n_per_row);
+                        for (int64_t c = 0; c < n_per_row; ++c) {
+                            permuted_imatrix_data[c] = imatrix[sq_info->column_permutation[c]];
+                        }
+                        imatrix = permuted_imatrix_data.data();
+                    }
+                }
+                new_size = llama_tensor_quantize_smarter_blocks(f32_data, new_data, tensor->ne, *sq_info, imatrix, nthread);
 
-                new_size += llama_tensor_quantize_impl(new_type, f32_data_03, new_data_03, chunk_size, nrows, n_per_row, imatrix_03, workers, nthread_use);
+                // Store SmarterQuant metadata in GGUF
+                gguf_set_val_bool(ctx_outs[cur_split].get(), (name + ".smarterquant.enabled").c_str(), true);
+                if (sq_info->column_permutation != nullptr && sq_info->n_cols_for_permutation > 0) {
+                    nlohmann::json perm_json = nlohmann::json::array();
+                    for (int64_t i = 0; i < sq_info->n_cols_for_permutation; ++i) {
+                        perm_json.push_back(sq_info->column_permutation[i]);
+                    }
+                    gguf_set_val_str(ctx_outs[cur_split].get(), (name + ".smarterquant.permutation").c_str(), perm_json.dump().c_str());
+                }
+                nlohmann::json block_types_json = nlohmann::json::array();
+                for (int i = 0; i < 4; ++i) {
+                    block_types_json.push_back(sq_info->compression_types[i]);
+                }
+                gguf_set_val_str(ctx_outs[cur_split].get(), (name + ".smarterquant.block_types").c_str(), block_types_json.dump().c_str());
+
+            } else { // Not SmarterQuant, use regular quantization
+                static const int64_t min_chunk_size = 32 * 512;
+                const int64_t chunk_size = (n_per_row >= min_chunk_size ? n_per_row : n_per_row * ((min_chunk_size + n_per_row - 1)/n_per_row));
+
+                const int64_t nelements_matrix = tensor->ne[0] * tensor->ne[1];
+                const int64_t nchunk = (nelements_matrix + chunk_size - 1)/chunk_size;
+                const int64_t nthread_use = nthread > 1 ? std::max((int64_t)1, std::min((int64_t)nthread, nchunk)) : 1;
+
+                // quantize each expert separately since they have different importance matrices
+                new_size = 0;
+                for (int64_t i03 = 0; i03 < tensor->ne[2]; ++i03) {
+                    const float * f32_data_03 = f32_data + i03 * nelements_matrix;
+                    void * new_data_03 = (char *)new_data + ggml_row_size(new_type, n_per_row) * i03 * nrows;
+                    const float * imatrix_03 = imatrix ? imatrix + i03 * n_per_row : nullptr;
+
+                    new_size += llama_tensor_quantize_impl(new_type, f32_data_03, new_data_03, chunk_size, nrows, n_per_row, imatrix_03, workers, nthread_use);
+                }
             }
             LLAMA_LOG_INFO("size = %8.2f MiB -> %8.2f MiB\n", ggml_nbytes(tensor)/1024.0/1024.0, new_size/1024.0/1024.0);
         }
@@ -1115,8 +1076,8 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
         zeros(fout, GGML_PAD(new_size, align) - new_size);
     }
     close_ofstream();
-	freeWeightMap(&weight_map); // free SmartQuant map
-		
+    // No need to free WeightMap, as it's replaced by SmartQuantConfig which is std::map
+
     LLAMA_LOG_INFO("%s: model size  = %8.2f MB\n", __func__, total_size_org/1024.0/1024.0);
     LLAMA_LOG_INFO("%s: quant size  = %8.2f MB\n", __func__, total_size_new/1024.0/1024.0);
 
@@ -1132,20 +1093,61 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
 
 llama_model_quantize_params llama_model_quantize_default_params() {
     llama_model_quantize_params result = {
-        /*.nthread                     =*/ 0,
         /*.ftype                       =*/ LLAMA_FTYPE_MOSTLY_Q5_1,
-        /*.output_tensor_type          =*/ GGML_TYPE_COUNT,
-        /*.token_embedding_type        =*/ GGML_TYPE_COUNT,
+        /*.nthread                     =*/ 0,
         /*.allow_requantize            =*/ false,
         /*.quantize_output_tensor      =*/ true,
-        /*.only_copy                   =*/ false,
         /*.pure                        =*/ false,
+        /*.only_copy                   =*/ false,
         /*.keep_split                  =*/ false,
+        /*.output_tensor_type          =*/ GGML_TYPE_COUNT,
+        /*.token_embedding_type        =*/ GGML_TYPE_COUNT,
         /*.imatrix                     =*/ nullptr,
-        /*.smarter_quant               =*/ nullptr,
         /*.kv_overrides                =*/ nullptr,
-        /*.tensor_type                 =*/ nullptr,
-        /*.prune_layers                =*/ nullptr
+        /*.tensor_types                =*/ nullptr,
+        /*.prune_layers                =*/ nullptr,
+        /*.smarter_quant_config        =*/ nullptr, // Initialize new members
+        /*.smart_quant_config          =*/ nullptr  // Initialize new members
+    };
+
+    return result;
+}
+
+uint32_t llama_model_quantize(
+        const char * fname_inp,
+        const char * fname_out,
+        const llama_model_quantize_params * params) {
+    try {
+        llama_model_quantize_impl(fname_inp, fname_out, params);
+    } catch (const std::exception & err) {
+        LLAMA_LOG_ERROR("%s: failed to quantize: %s\n", __func__, err.what());
+        return 1;
+    }
+
+    return 0;
+}
+
+//
+// interface implementation
+//
+
+llama_model_quantize_params llama_model_quantize_default_params() {
+    llama_model_quantize_params result = {
+        /*.ftype                       =*/ LLAMA_FTYPE_MOSTLY_Q5_1,
+        /*.nthread                     =*/ 0,
+        /*.allow_requantize            =*/ false,
+        /*.quantize_output_tensor      =*/ true,
+        /*.pure                        =*/ false,
+        /*.only_copy                   =*/ false,
+        /*.keep_split                  =*/ false,
+        /*.output_tensor_type          =*/ GGML_TYPE_COUNT,
+        /*.token_embedding_type        =*/ GGML_TYPE_COUNT,
+        /*.imatrix                     =*/ nullptr,
+        /*.kv_overrides                =*/ nullptr,
+        /*.tensor_types                =*/ nullptr,
+        /*.prune_layers                =*/ nullptr,
+        /*.smarter_quant_config        =*/ nullptr, // Initialize new members
+        /*.smart_quant_config          =*/ nullptr  // Initialize new members
     };
 
     return result;
