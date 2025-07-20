@@ -887,6 +887,14 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
 
     const auto tn = LLM_TN(model.arch);
     new_ofstream(0);
+
+    if (params->smarter_quant) {
+        const std::string & fname = *(const std::string *)params->smarter_quant;
+        if (!fname.empty()) {
+            LLAMA_LOG_INFO("SmarterQuant JSON has been parsed from %s\n", fname.c_str());
+        }
+    }
+
     for (const auto * it : tensors) {
         const auto & weight = *it;
         ggml_tensor * tensor = weight.tensor;
