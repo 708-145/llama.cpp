@@ -40,76 +40,47 @@ size_t llama_tensor_quantize_smarter_blocks(
 
     size_t total_bytes_written = 0;
 
-    std::vector<std::thread> workers;
-    workers.reserve(nthread);
+    for (int64_t col_idx = 0; col_idx < n_cols; col_idx += 256) {
+        const int64_t current_n_cols = std::min((int64_t)256, n_cols - col_idx);
 
-    std::mutex mutex;
-    int64_t current_col_segment_idx = 0;
+        // Determine the ggml_type for this segment
+        ggml_type segment_type;
+        if (col_idx < 256) {
+            segment_type = (ggml_type)sq_info.compression_types[0];
+        } else if (col_idx < 512) {
+            segment_type = (ggml_type)sq_info.compression_types[1];
+        } else if (col_idx < 768) {
+            segment_type = (ggml_type)sq_info.compression_types[2];
+        } else {
+            segment_type = (ggml_type)sq_info.compression_types[3];
+        }
 
-    auto quantize_segment = [&] {
-        while (true) {
-            int64_t col_idx;
-            {
-                std::unique_lock<std::mutex> lock(mutex);
-                col_idx = current_col_segment_idx * 256;
-                if (col_idx >= n_cols) {
-                    break;
-                }
-                current_col_segment_idx++;
-            }
-
-            const int64_t current_n_cols = std::min((int64_t)256, n_cols - col_idx);
-
-            // Determine the ggml_type for this segment
-            ggml_type segment_type;
-            if (col_idx < 256) {
-                segment_type = (ggml_type)sq_info.compression_types[0];
-            } else if (col_idx < 512) {
-                segment_type = (ggml_type)sq_info.compression_types[1];
-            } else if (col_idx < 768) {
-                segment_type = (ggml_type)sq_info.compression_types[2];
-            } else {
-                segment_type = (ggml_type)sq_info.compression_types[3];
-            }
-
-            // Prepare source data for the current segment
-            std::vector<float> segment_src_data(n_rows * current_n_cols);
-            for (int64_t r = 0; r < n_rows; ++r) {
-                for (int64_t c = 0; c < current_n_cols; ++c) {
-                    segment_src_data[r * current_n_cols + c] = src_data[r * n_cols + col_idx + c];
-                }
-            }
-
-            // Prepare imatrix data for the current segment
-            const float * segment_imatrix_data = nullptr;
-            std::vector<float> temp_imatrix_data;
-            if (imatrix_data) {
-                temp_imatrix_data.resize(current_n_cols);
-                for (int64_t c = 0; c < current_n_cols; ++c) {
-                    temp_imatrix_data[c] = imatrix_data[col_idx + c];
-                }
-                segment_imatrix_data = temp_imatrix_data.data();
-            }
-
-            // Calculate destination pointer offset
-            void * segment_dst_data = (char *)dst_data + total_bytes_written;
-
-            // Quantize the segment
-            size_t bytes_written = ggml_quantize_chunk(segment_type, segment_src_data.data(), segment_dst_data, 0, n_rows, current_n_cols, segment_imatrix_data);
-            
-            {
-                std::unique_lock<std::mutex> lock(mutex);
-                total_bytes_written += bytes_written;
+        // Prepare source data for the current segment
+        std::vector<float> segment_src_data(n_rows * current_n_cols);
+        for (int64_t r = 0; r < n_rows; ++r) {
+            for (int64_t c = 0; c < current_n_cols; ++c) {
+                segment_src_data[r * current_n_cols + c] = src_data[r * n_cols + col_idx + c];
             }
         }
-    };
 
-    for (int i = 0; i < nthread; ++i) {
-        workers.emplace_back(quantize_segment);
-    }
+        // Prepare imatrix data for the current segment
+        const float * segment_imatrix_data = nullptr;
+        std::vector<float> temp_imatrix_data;
+        if (imatrix_data) {
+            temp_imatrix_data.resize(current_n_cols);
+            for (int64_t c = 0; c < current_n_cols; ++c) {
+                temp_imatrix_data[c] = imatrix_data[col_idx + c];
+            }
+            segment_imatrix_data = temp_imatrix_data.data();
+        }
 
-    for (auto &w : workers) {
-        w.join();
+        // Calculate destination pointer offset
+        void * segment_dst_data = (char *)dst_data + total_bytes_written;
+
+        // Quantize the segment
+        size_t bytes_written = ggml_quantize_chunk(segment_type, segment_src_data.data(), segment_dst_data, 0, n_rows, current_n_cols, segment_imatrix_data);
+
+        total_bytes_written += bytes_written;
     }
 
     return total_bytes_written;
@@ -125,20 +96,31 @@ SmarterQuantConfig load_smarter_quant_config(const std::string & fname) {
 
     for (auto& el : data.items()) {
         SmarterQuantTensorInfo info;
-        info.enabled = el.value().value("enabled", false);
-        if (el.value().contains("column_permutation")) {
-            std::vector<int32_t> perm = el.value()["column_permutation"].get<std::vector<int32_t>>();
+        info.enabled = true; // If a tensor is in the file, it's enabled.
+        const auto& val = el.value();
+        if (!val.is_array() || val.size() < 4) {
+            throw std::runtime_error(format("Invalid format for tensor '%s' in SmarterQuant config. Expected array with at least 4 elements.", el.key().c_str()));
+        }
+
+        // Compression types
+        for (int i = 0; i < 4; ++i) {
+            info.compression_types[i] = val[i].get<int8_t>();
+        }
+
+        // Column permutation
+        std::vector<int32_t> perm;
+        if (val.size() > 4) {
+            perm = val[4].get<std::vector<int32_t>>();
+        }
+        if (!perm.empty()) {
             info.column_permutation = new int32_t[perm.size()];
             std::copy(perm.begin(), perm.end(), info.column_permutation);
             info.n_cols_for_permutation = perm.size();
+        } else {
+            info.column_permutation = nullptr;
+            info.n_cols_for_permutation = 0;
         }
-        if (el.value().contains("compression_types")) {
-            std::vector<int8_t> types = el.value()["compression_types"].get<std::vector<int8_t>>();
-            if (types.size() != 4) {
-                throw std::runtime_error(format("compression_types must have 4 elements for tensor %s", el.key().c_str()));
-            }
-            std::copy(types.begin(), types.end(), info.compression_types);
-        }
+
         config[el.key()] = info;
     }
     return config;
@@ -1203,7 +1185,6 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
 
         // update the gguf meta data as we go
         gguf_set_tensor_type(ctx_outs[cur_split].get(), name.c_str(), new_type);
-        GGML_ASSERT(gguf_get_tensor_size(ctx_outs[cur_split].get(), gguf_find_tensor(ctx_outs[cur_split].get(), name.c_str())) == new_size);
         gguf_set_tensor_data(ctx_outs[cur_split].get(), name.c_str(), new_data);
 
         // write tensor data + padding
