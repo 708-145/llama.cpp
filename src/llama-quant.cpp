@@ -724,7 +724,15 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
     if (params->imatrix) {
         imatrix_data = static_cast<const std::unordered_map<std::string, std::vector<float>>*>(params->imatrix);
         if (imatrix_data) {
-            LLAMA_LOG_INFO("================================ Have weights data with %d entries\n",int(imatrix_data->size()));
+            LLAMA_LOG_INFO("================================ Have weights data with %zu entries\n", imatrix_data->size());
+
+            if (params->smart_quant_config) {
+                LLAMA_LOG_INFO("SmartQuant: parsed %zu entries\n", static_cast<const std::map<std::string, ggml_type>*>(params->smart_quant_config)->size());
+            }
+            if (params->smarter_quant_config) {
+                LLAMA_LOG_INFO("SmarterQuant: parsed %zu entries\n", static_cast<const std::map<std::string, SmarterQuantTensorInfo>*>(params->smarter_quant_config)->size());
+            }
+
             qs.has_imatrix = true;
             // check imatrix for nans or infs
             for (const auto & kv : *imatrix_data) {
@@ -1012,7 +1020,7 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
                 const auto & smarter_quant_config = *static_cast<const std::map<std::string, SmarterQuantTensorInfo>*>(params->smarter_quant_config);
                 auto it = smarter_quant_config.find(name);
                 if (it != smarter_quant_config.end() && it->second.enabled) {
-                    LLAMA_LOG_DEBUG("(SmarterQuant override %s %s %s %s) ", ggml_type_name((ggml_type)it->second.compression_types[0]), ggml_type_name((ggml_type)it->second.compression_types[1]), ggml_type_name((ggml_type)it->second.compression_types[2]), ggml_type_name((ggml_type)it->second.compression_types[3]));
+                    LLAMA_LOG_DEBUG("(SmarterQuant override %s %s %s, %s) ", ggml_type_name((ggml_type)it->second.compression_types[1]), ggml_type_name((ggml_type)it->second.compression_types[2]), ggml_type_name((ggml_type)it->second.compression_types[3]), ggml_type_name((ggml_type)it->second.compression_types[0]));
                     sq_info = &it->second;
                     // For SmarterQuant, the main type of the tensor will be the last block's type
                     new_type = (ggml_type)sq_info->compression_types[3];
