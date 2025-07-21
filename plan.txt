@@ -1,5 +1,12 @@
 Detailed Plan for SmarterQuant and SmartQuant Implementation in llama.cpp
 
+The order of compression types in the JSON is:
+  dtype0 = get_good_dtype(max_stripe0) # first 256 weights
+  dtype1 = get_good_dtype(max_stripe1) # second
+  dtype2 = get_good_dtype(max_stripe2) # third
+  dtype  = get_good_dtype(max_rest)    # rest
+  smarterquant_config[key] = (dtype, dtype0, dtype1, dtype2, permutation_vector)
+
 **Goal:** Implement the remaining parts of the SmarterQuant algorithm and introduce a new SmartQuant option, ensuring both can override default quantization and their configurations are correctly read and written to GGUF metadata.
 
 **Current Status (based on pr17.txt and docs/smarterquant.md):**

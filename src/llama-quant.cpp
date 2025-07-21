@@ -46,13 +46,13 @@ size_t llama_tensor_quantize_smarter_blocks(
         // Determine the ggml_type for this segment
         ggml_type segment_type;
         if (col_idx < 256) {
-            segment_type = (ggml_type)sq_info.compression_types[0];
+            segment_type = (ggml_type)sq_info.compression_types[1]; // dtype0: first 256 weights
         } else if (col_idx < 512) {
-            segment_type = (ggml_type)sq_info.compression_types[1];
+            segment_type = (ggml_type)sq_info.compression_types[2]; // dtype1: second 256 weights
         } else if (col_idx < 768) {
-            segment_type = (ggml_type)sq_info.compression_types[2];
+            segment_type = (ggml_type)sq_info.compression_types[3]; // dtype2: third 256 weights
         } else {
-            segment_type = (ggml_type)sq_info.compression_types[3];
+            segment_type = (ggml_type)sq_info.compression_types[0]; // dtype: rest of the weights
         }
 
         // Prepare source data for the current segment
