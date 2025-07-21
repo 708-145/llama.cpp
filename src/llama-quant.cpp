@@ -1012,7 +1012,7 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
                 const auto & smarter_quant_config = *static_cast<const std::map<std::string, SmarterQuantTensorInfo>*>(params->smarter_quant_config);
                 auto it = smarter_quant_config.find(name);
                 if (it != smarter_quant_config.end() && it->second.enabled) {
-                    LLAMA_LOG_DEBUG("(SmarterQuant override) ");
+                    LLAMA_LOG_DEBUG("(SmarterQuant override %s %s %s %s) ", ggml_type_name((ggml_type)it->second.compression_types[0]), ggml_type_name((ggml_type)it->second.compression_types[1]), ggml_type_name((ggml_type)it->second.compression_types[2]), ggml_type_name((ggml_type)it->second.compression_types[3]));
                     sq_info = &it->second;
                     // For SmarterQuant, the main type of the tensor will be the last block's type
                     new_type = (ggml_type)sq_info->compression_types[3];
