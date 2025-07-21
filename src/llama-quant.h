@@ -2,6 +2,7 @@
 
 #include "ggml.h" // For ggml_type
 #include "ggml-smarterquant-types.h" // For SmarterQuantTensorInfo
+#include "llama.h"
 
 #include <string>
 #include <vector>
@@ -16,6 +17,14 @@ struct tensor_quantization {
     std::string name;
     ggml_type quant = GGML_TYPE_COUNT;
 };
+
+LLAMA_API size_t llama_tensor_quantize_smarter_blocks(
+    const float * src_data,
+    void * dst_data,
+    const int64_t * ne,
+    const SmarterQuantTensorInfo & sq_info,
+    const float * imatrix_data,
+    int nthread);
 
 // SmarterQuant configuration map: tensor name -> SmarterQuantTensorInfo
 using SmarterQuantConfig = std::map<std::string, SmarterQuantTensorInfo>;

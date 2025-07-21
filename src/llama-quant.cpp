@@ -38,50 +38,103 @@ size_t llama_tensor_quantize_smarter_blocks(
     const int64_t n_rows = ne[1];
     const int64_t n_cols = ne[0];
 
+    std::mutex mutex;
+    int64_t col_idx_counter = 0;
     size_t total_bytes_written = 0;
 
-    for (int64_t col_idx = 0; col_idx < n_cols; col_idx += 256) {
-        const int64_t current_n_cols = std::min((int64_t)256, n_cols - col_idx);
-
-        // Determine the ggml_type for this segment
-        ggml_type segment_type;
-        if (col_idx < 256) {
-            segment_type = (ggml_type)sq_info.compression_types[1]; // dtype0: first 256 weights
-        } else if (col_idx < 512) {
-            segment_type = (ggml_type)sq_info.compression_types[2]; // dtype1: second 256 weights
-        } else if (col_idx < 768) {
-            segment_type = (ggml_type)sq_info.compression_types[3]; // dtype2: third 256 weights
-        } else {
-            segment_type = (ggml_type)sq_info.compression_types[0]; // dtype: rest of the weights
-        }
-
-        // Prepare source data for the current segment
-        std::vector<float> segment_src_data(n_rows * current_n_cols);
-        for (int64_t r = 0; r < n_rows; ++r) {
-            for (int64_t c = 0; c < current_n_cols; ++c) {
-                segment_src_data[r * current_n_cols + c] = src_data[r * n_cols + col_idx + c];
+    auto compute = [&]() {
+        size_t local_bytes_written = 0;
+        while (true) {
+            std::unique_lock<std::mutex> lock(mutex);
+            int64_t col_idx = col_idx_counter;
+            col_idx_counter += 256;
+            if (col_idx >= n_cols) {
+                if (local_bytes_written > 0) {
+                    total_bytes_written += local_bytes_written;
+                }
+                break;
             }
-        }
+            lock.unlock();
 
-        // Prepare imatrix data for the current segment
-        const float * segment_imatrix_data = nullptr;
-        std::vector<float> temp_imatrix_data;
-        if (imatrix_data) {
-            temp_imatrix_data.resize(current_n_cols);
-            for (int64_t c = 0; c < current_n_cols; ++c) {
-                temp_imatrix_data[c] = imatrix_data[col_idx + c];
+            const int64_t current_n_cols = std::min((int64_t)256, n_cols - col_idx);
+
+            // Determine the ggml_type for this segment
+            ggml_type segment_type;
+            if (col_idx < 256) {
+                segment_type = (ggml_type)sq_info.compression_types[1]; // dtype0: first 256 weights
+            } else if (col_idx < 512) {
+                segment_type = (ggml_type)sq_info.compression_types[2]; // dtype1: second 256 weights
+            } else if (col_idx < 768) {
+                segment_type = (ggml_type)sq_info.compression_types[3]; // dtype2: third 256 weights
+            } else {
+                segment_type = (ggml_type)sq_info.compression_types[0]; // dtype: rest of the weights
             }
-            segment_imatrix_data = temp_imatrix_data.data();
+
+            // Prepare source data for the current segment
+            std::vector<float> segment_src_data(n_rows * current_n_cols);
+            for (int64_t r = 0; r < n_rows; ++r) {
+                for (int64_t c = 0; c < current_n_cols; ++c) {
+                    segment_src_data[r * current_n_cols + c] = src_data[r * n_cols + col_idx + c];
+                }
+            }
+
+            // Prepare imatrix data for the current segment
+            const float * segment_imatrix_data = nullptr;
+            std::vector<float> temp_imatrix_data;
+            if (imatrix_data) {
+                temp_imatrix_data.resize(current_n_cols);
+                for (int64_t c = 0; c < current_n_cols; ++c) {
+                    temp_imatrix_data[c] = imatrix_data[col_idx + c];
+                }
+                segment_imatrix_data = temp_imatrix_data.data();
+            }
+
+            // Calculate destination pointer offset
+            // The destination buffer is pre-allocated, so we can write to it directly
+            // The offset is calculated based on the column index.
+            size_t offset = 0;
+            for (int64_t i = 0; i < col_idx; i += 256) {
+                ggml_type type;
+                if (i < 256) type = (ggml_type)sq_info.compression_types[1];
+                else if (i < 512) type = (ggml_type)sq_info.compression_types[2];
+                else if (i < 768) type = (ggml_type)sq_info.compression_types[3];
+                else type = (ggml_type)sq_info.compression_types[0];
+                offset += ggml_type_size(type) * n_rows * std::min((int64_t)256, n_cols - i) / ggml_blck_size(type);
+            }
+
+            void * segment_dst_data = (char *)dst_data + offset;
+
+            // Quantize the segment
+            size_t bytes_written = ggml_quantize_chunk(segment_type, segment_src_data.data(), segment_dst_data, 0, n_rows, current_n_cols, segment_imatrix_data);
+            local_bytes_written += bytes_written;
         }
+    };
 
-        // Calculate destination pointer offset
-        void * segment_dst_data = (char *)dst_data + total_bytes_written;
-
-        // Quantize the segment
-        size_t bytes_written = ggml_quantize_chunk(segment_type, segment_src_data.data(), segment_dst_data, 0, n_rows, current_n_cols, segment_imatrix_data);
-
-        total_bytes_written += bytes_written;
+    if (nthread > 1) {
+        std::vector<std::thread> workers;
+        workers.reserve(nthread - 1);
+        for (int i = 0; i < nthread - 1; ++i) {
+            workers.emplace_back(compute);
+        }
+        compute();
+        for (auto & w : workers) {
+            w.join();
+        }
+    } else {
+        compute();
     }
+
+    // Recalculate total_bytes_written after all threads are done.
+    total_bytes_written = 0;
+    for (int64_t i = 0; i < n_cols; i += 256) {
+        ggml_type type;
+        if (i < 256) type = (ggml_type)sq_info.compression_types[1];
+        else if (i < 512) type = (ggml_type)sq_info.compression_types[2];
+        else if (i < 768) type = (ggml_type)sq_info.compression_types[3];
+        else type = (ggml_type)sq_info.compression_types[0];
+        total_bytes_written += ggml_type_size(type) * n_rows * std::min((int64_t)256, n_cols - i) / ggml_blck_size(type);
+    }
+
 
     return total_bytes_written;
 }
