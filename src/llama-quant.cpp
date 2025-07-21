@@ -14,7 +14,7 @@
 #include <thread>
 #include <unordered_map>
 
-#include <nlohmann/json.hpp> // Added for nlohmann::json
+#include "../vendor/nlohmann/json.hpp" // Added for nlohmann::json
 
 // No longer needed here as it's defined in llama-quant.h
 // struct tensor_quantization;
