@@ -1,6 +1,4 @@
-extern "C" {
-void ggml_parallelize(int n_segments, std::function<void(int)> fn, int nthread);
-}
+#include <functional>
 
 #include "llama.h" // Must be first to define LLAMA_API and other core types
 #include "llama-quant.h"
@@ -44,7 +42,7 @@ size_t llama_tensor_quantize_smarter_blocks(
 
     const int n_segments = (n_cols + 255) / 256;
 
-    ggml_parallelize(n_segments, [&](const int i) {
+    for (int i = 0; i < n_segments; ++i) {
         const int64_t col_idx = i * 256;
         const int64_t current_n_cols = std::min((int64_t)256, n_cols - col_idx);
 
@@ -96,7 +94,7 @@ size_t llama_tensor_quantize_smarter_blocks(
 
         // Quantize the segment
         ggml_quantize_chunk(segment_type, segment_src_data.data(), segment_dst_data, 0, n_rows, current_n_cols, segment_imatrix_data);
-    }, nthread);
+    }
 
     // Recalculate total_bytes_written after all threads are done.
     size_t total_bytes_written = 0;
