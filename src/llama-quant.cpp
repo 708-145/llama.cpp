@@ -1,7 +1,10 @@
+extern "C" {
+void ggml_parallelize(int n_segments, std::function<void(int)> fn, int nthread);
+}
+
 #include "llama.h" // Must be first to define LLAMA_API and other core types
 #include "llama-quant.h"
 #include "llama-impl.h"
-#include "ggml-threading.h"
 #include "llama-model.h"
 #include "llama-model-loader.h"
 
