@@ -3,6 +3,7 @@
 #include "llama.h"
 
 #include "llama-impl.h"
+#include "llama-quant.h"
 #include "llama-arch.h"
 #include "llama-mmap.h"
 
@@ -78,6 +79,7 @@ struct llama_model_loader {
     llama_mmaps mappings;
 
     std::map<std::string, llama_tensor_weight, weight_name_comparer> weights_map;
+    std::map<std::string, SmarterQuantTensorInfo> smarter_quant_info;
     std::unordered_map<std::string, llama_model_kv_override> kv_overrides;
     const llama_model_tensor_buft_override * tensor_buft_overrides;
 

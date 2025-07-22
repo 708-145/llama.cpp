@@ -1,6 +1,7 @@
 #include "llama-model-loader.h"
 
 #include "ggml.h"
+#include "../vendor/nlohmann/json.hpp"
 
 #include <array>
 #include <cinttypes>
@@ -515,6 +516,51 @@ llama_model_loader::llama_model_loader(
         n_elements += ggml_nelements(cur);
         n_bytes    += ggml_nbytes(cur);
         weights_map.emplace(tensor_name, llama_tensor_weight(files.back().get(), 0, meta.get(), cur));
+
+        // Check for and load SmarterQuant metadata
+        bool sq_enabled = false;
+        get_key(tensor_name + ".smarterquant.enabled", sq_enabled, false);
+        if (sq_enabled) {
+            SmarterQuantTensorInfo sq_info;
+            sq_info.enabled = true;
+
+            std::string perm_str;
+            if (get_key(tensor_name + ".smarterquant.permutation", perm_str, true)) {
+                auto perm_json = nlohmann::json::parse(perm_str);
+                std::vector<int32_t> perm = perm_json.get<std::vector<int32_t>>();
+                if (!perm.empty()) {
+                    sq_info.column_permutation = new int32_t[perm.size()];
+                    std::copy(perm.begin(), perm.end(), sq_info.column_permutation);
+                    sq_info.n_cols_for_permutation = perm.size();
+                }
+            }
+
+            std::string block_types_str;
+            if (get_key(tensor_name + ".smarterquant.block_types", block_types_str, true)) {
+                auto block_types_json = nlohmann::json::parse(block_types_str);
+                std::vector<int8_t> block_types = block_types_json.get<std::vector<int8_t>>();
+                GGML_ASSERT(block_types.size() == 4);
+                std::copy(block_types.begin(), block_types.end(), sq_info.compression_types);
+            }
+
+            // Validate tensor size against block types
+            size_t expected_size = 0;
+            const int64_t n_rows = cur->ne[1];
+            const int64_t n_cols = cur->ne[0];
+            for (int64_t i = 0; i < n_cols; i += 256) {
+                ggml_type type;
+                if (i < 256) type = (ggml_type)sq_info.compression_types[1];
+                else if (i < 512) type = (ggml_type)sq_info.compression_types[2];
+                else if (i < 768) type = (ggml_type)sq_info.compression_types[3];
+                else type = (ggml_type)sq_info.compression_types[0];
+                expected_size += ggml_type_size(type) * n_rows * std::min((int64_t)256, n_cols - i) / ggml_blck_size(type);
+            }
+            if (ggml_nbytes(cur) != expected_size) {
+                throw std::runtime_error(format("invalid tensor size for smarterquant tensor %s: got %zu, expected %zu", tensor_name.c_str(), ggml_nbytes(cur), expected_size));
+            }
+
+            smarter_quant_info[tensor_name] = sq_info;
+        }
     }
     uint16_t n_split = 0;
     get_key(llm_kv(LLM_KV_SPLIT_COUNT), n_split, false);
