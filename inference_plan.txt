@@ -4,6 +4,7 @@
         *   `tensor_name.smarterquant.permutation` (string)
         *   `tensor_name.smarterquant.block_types` (string)
     *   If `smarterquant.enabled` is true, parse the `permutation` and `block_types` strings (which are JSON arrays) and store them in the `SmarterQuantTensorInfo` struct for that tensor. This information should be stored in the `llama_model` object.
+        * make sure the matrix length check takes the block_types into account to check for correct encoded size
 
 2.  **Modify `ggml-cpu/ggml-cpu.c` to use the SmarterQuant metadata during dequantization.**
     *   In `ggml_compute_forward_get_rows`, check if the tensor has SmarterQuant info.
@@ -11,6 +12,9 @@
     *   `ggml_get_rows_smarterquant` will:
         *   De-quantize each 256-element block of the row using the corresponding `ggml_type` from the `compression_types` array.
         *   Apply the inverse of the column permutation to the de-quantized row.
+    *   For the inference make use of existing vecdot and matmul functions as much as possible
+        *   permute the input vectors, apply regular matmul function of the right compression_type, un-permute result vector
+        *   if possible avoid de-quantization for the inference path
 
 3.  **Add a test case to `tests/test-smarterquant.cpp` to verify the GGUF metadata reading and dequantization.**
     *   The test case should:
@@ -18,6 +22,7 @@
         *   Load the GGUF file using `llama_load_model_from_file`.
         *   Verify that the SmarterQuant metadata has been correctly loaded into the `llama_model` object.
         *   Perform a dequantization and verify that the output is correct.
+        *   Perform example inference and verify that the output is correct. 
 
 4.  **Submit the changes.**
     *   Once all tests pass, I will submit the change with a descriptive commit message.
