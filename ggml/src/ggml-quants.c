@@ -59,51 +59,6 @@ void quantize_row_q4_0_ref(const float * GGML_RESTRICT x, block_q4_0 * GGML_REST
     }
 }
 
-void dequantize_row_nf4_xs(const block_nf4_xs * GGML_RESTRICT x, float * GGML_RESTRICT y, int64_t k) {
-    assert(k % QK_K == 0);
-    const int64_t nb = k / QK_K;
-
-    for (int i = 0; i < nb; i++) {
-
-        const uint8_t * qs = x[i].qs;
-
-        const float d = GGML_FP16_TO_FP32(x[i].d);
-
-        for (int ib = 0; ib < QK_K/32; ++ib) {
-            const int ls = ((x[i].scales_l[ib/2] >> 4*(ib%2)) & 0xf) | (((x[i].scales_h >> 2*ib) & 3) << 4);
-            const float dl = d * (ls - 32);
-            for (int j = 0; j < 16; ++j) {
-                y[j+ 0] = dl * kvalues_nf4[qs[j] & 0xf];
-                y[j+16] = dl * kvalues_nf4[qs[j] >>  4];
-            }
-            y  += 32;
-            qs += 16;
-        }
-    }
-}
-
-void dequantize_row_fp4_xs(const block_fp4_xs * GGML_RESTRICT x, float * GGML_RESTRICT y, int64_t k) {
-    assert(k % QK_K == 0);
-    const int64_t nb = k / QK_K;
-
-    for (int i = 0; i < nb; i++) {
-
-        const uint8_t * qs = x[i].qs;
-
-        const float d = GGML_FP16_TO_FP32(x[i].d);
-
-        for (int ib = 0; ib < QK_K/32; ++ib) {
-            const int ls = ((x[i].scales_l[ib/2] >> 4*(ib%2)) & 0xf) | (((x[i].scales_h >> 2*ib) & 3) << 4);
-            const float dl = d * (ls - 32);
-            for (int j = 0; j < 16; ++j) {
-                y[j+ 0] = dl * kvalues_fp4e1[qs[j] & 0xf];
-                y[j+16] = dl * kvalues_fp4e1[qs[j] >>  4];
-            }
-            y  += 32;
-            qs += 16;
-        }
-    }
-}
 
 void quantize_row_q4_1_ref(const float * GGML_RESTRICT x, block_q4_1 * GGML_RESTRICT y, int64_t k) {
     const int qk = QK4_1;
