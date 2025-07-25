@@ -380,22 +380,24 @@ extern "C" {
         GGML_TYPE_IQ3_S   = 21,
         GGML_TYPE_IQ2_S   = 22,
         GGML_TYPE_IQ4_XS  = 23,
-        GGML_TYPE_I8      = 24,
-        GGML_TYPE_I16     = 25,
-        GGML_TYPE_I32     = 26,
-        GGML_TYPE_I64     = 27,
-        GGML_TYPE_F64     = 28,
-        GGML_TYPE_IQ1_M   = 29,
-        GGML_TYPE_BF16    = 30,
-        // GGML_TYPE_Q4_0_4_4 = 31, support has been removed from gguf files
-        // GGML_TYPE_Q4_0_4_8 = 32,
-        // GGML_TYPE_Q4_0_8_8 = 33,
-        GGML_TYPE_TQ1_0   = 34,
-        GGML_TYPE_TQ2_0   = 35,
-        // GGML_TYPE_IQ4_NL_4_4 = 36,
-        // GGML_TYPE_IQ4_NL_4_8 = 37,
-        // GGML_TYPE_IQ4_NL_8_8 = 38,
-        GGML_TYPE_COUNT   = 39,
+        GGML_TYPE_NF4_XS  = 24,
+        GGML_TYPE_FP4_XS  = 25,
+        GGML_TYPE_I8      = 26,
+        GGML_TYPE_I16     = 27,
+        GGML_TYPE_I32     = 28,
+        GGML_TYPE_I64     = 29,
+        GGML_TYPE_F64     = 30,
+        GGML_TYPE_IQ1_M   = 31,
+        GGML_TYPE_BF16    = 32,
+        // GGML_TYPE_Q4_0_4_4 = 33, support has been removed from gguf files
+        // GGML_TYPE_Q4_0_4_8 = 34,
+        // GGML_TYPE_Q4_0_8_8 = 35,
+        GGML_TYPE_TQ1_0   = 36,
+        GGML_TYPE_TQ2_0   = 37,
+        // GGML_TYPE_IQ4_NL_4_4 = 38,
+        // GGML_TYPE_IQ4_NL_4_8 = 39,
+        // GGML_TYPE_IQ4_NL_8_8 = 40,
+        GGML_TYPE_COUNT   = 41,
     };
 
     // precision
@@ -430,6 +432,8 @@ extern "C" {
         GGML_FTYPE_MOSTLY_IQ4_XS  = 22, // except 1d tensors
         GGML_FTYPE_MOSTLY_IQ1_M   = 23, // except 1d tensors
         GGML_FTYPE_MOSTLY_BF16    = 24, // except 1d tensors
+        GGML_FTYPE_MOSTLY_NF4_XS  = 25, // except 1d tensors
+        GGML_FTYPE_MOSTLY_FP4_XS  = 26, // except 1d tensors
     };
 
     // available tensor operations:
