@@ -2440,6 +2440,8 @@ class GGMLQuantizationType(IntEnum):
     F64     = 28
     IQ1_M   = 29
     BF16    = 30
+    NF4_XS  = 31 
+    FP4_XS  = 32
     TQ1_0   = 34
     TQ2_0   = 35
 
@@ -2572,6 +2574,8 @@ GGML_QUANT_SIZES: dict[GGMLQuantizationType, tuple[int, int]] = {
     GGMLQuantizationType.IQ3_S:   (256, 2 + QK_K // 4 + QK_K // 8 + QK_K // 32 + 4),
     GGMLQuantizationType.IQ2_S:   (256, 2 + QK_K // 4 + QK_K // 16),
     GGMLQuantizationType.IQ4_XS:  (256, 2 + 2 + QK_K // 2 + QK_K // 64),
+    GGMLQuantizationType.NF4_XS:  (256, 2 + 2 + QK_K // 2 + QK_K // 64),
+    GGMLQuantizationType.FP4_XS:  (256, 2 + 2 + QK_K // 2 + QK_K // 64),
     GGMLQuantizationType.I8:      (1, 1),
     GGMLQuantizationType.I16:     (1, 2),
     GGMLQuantizationType.I32:     (1, 4),
