@@ -6,17 +6,19 @@
     *   If `smarterquant.enabled` is true, parse the `permutation` and `block_types` strings (which are JSON arrays) and store them in the `SmarterQuantTensorInfo` struct for that tensor. This information should be stored in the `llama_model` object.
         * make sure the matrix length check takes the block_types into account to check for correct encoded size
 
-2. [ ] **Modify `ggml-cpu/ggml-cpu.c` to use the SmarterQuant metadata during dequantization.**
+2. [ ] Inference: **Use SmarterQuant metadata during inference.**
+    *   For the inference make use of existing vecdot and matmul functions as much as possible
+        *   do not use dequantization, instead use matmul functions for compressed tensor types (compression_type)
+        *   permute the input vectors, apply regular matmul function of the right compression_type, un-permute result vector
+
+3. [ ] Dequant: **Use SmarterQuant metadata during dequantization.**
     *   In `ggml_compute_forward_get_rows`, check if the tensor has SmarterQuant info.
     *   If it does, call a new function, `ggml_get_rows_smarterquant`, which will handle the custom dequantization.
     *   `ggml_get_rows_smarterquant` will:
         *   De-quantize each 256-element block of the row using the corresponding `ggml_type` from the `compression_types` array.
         *   Apply the inverse of the column permutation to the de-quantized row.
-    *   For the inference make use of existing vecdot and matmul functions as much as possible
-        *   permute the input vectors, apply regular matmul function of the right compression_type, un-permute result vector
-        *   if possible avoid de-quantization for the inference path
 
-3. [ ] **Add a test case to `tests/test-smarterquant.cpp` to verify the GGUF metadata reading and dequantization.**
+4. [ ] **Add a test case to `tests/test-smarterquant.cpp` to verify the GGUF metadata reading and dequantization.**
     *   The test case should:
         *   Create a dummy GGUF file with a SmarterQuant-processed tensor.
         *   Load the GGUF file using `llama_load_model_from_file`.
@@ -24,5 +26,5 @@
         *   Perform a dequantization and verify that the output is correct.
         *   Perform example inference and verify that the output is correct. 
 
-4. [ ] **Submit the changes.**
+5. [ ] **Submit the changes.**
     *   Once all tests pass, I will submit the change with a descriptive commit message.
