@@ -1218,16 +1218,16 @@ void ggml_vec_dot_fp4_xs_q8_K_generic(int n, float * GGML_RESTRICT s, size_t bs,
             const float d2 = d4d8*(ls2 - 32);
             int sumi1 = 0, sumi2 = 0;
             for (int j = 0; j < 16; ++j) {
-                sumi1 += q8[j+ 0] * kvalues_fp4e1[qs[j] & 0xf];
-                sumi2 += q8[j+16] * kvalues_fp4e1[qs[j] >>  4];
+                sumi1 += q8[j+ 0] * kvalues_fp4[qs[j] & 0xf];
+                sumi2 += q8[j+16] * kvalues_fp4[qs[j] >>  4];
             }
             sumf += d1 * (sumi1 + sumi2);
             qs += 16;
             q8 += 32;
             sumi1 = sumi2 = 0;
             for (int j = 0; j < 16; ++j) {
-                sumi1 += q8[j+ 0] * kvalues_fp4e1[qs[j] & 0xf];
-                sumi2 += q8[j+16] * kvalues_fp4e1[qs[j] >>  4];
+                sumi1 += q8[j+ 0] * kvalues_fp4[qs[j] & 0xf];
+                sumi2 += q8[j+16] * kvalues_fp4[qs[j] >>  4];
             }
             sumf += d2 * (sumi1 + sumi2);
             qs += 16;

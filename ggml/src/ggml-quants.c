@@ -2481,8 +2481,8 @@ void dequantize_row_nf4_xs(const block_nf4_xs * GGML_RESTRICT x, float * GGML_RE
             const int ls = ((x[i].scales_l[ib/2] >> 4*(ib%2)) & 0xf) | (((x[i].scales_h >> 2*ib) & 3) << 4);
             const float dl = d * (ls - 32);
             for (int j = 0; j < 16; ++j) {
-                y[j+ 0] = dl * kvalues_nf4nl[qs[j] & 0xf];
-                y[j+16] = dl * kvalues_nf4nl[qs[j] >>  4];
+                y[j+ 0] = dl * kvalues_nf4[qs[j] & 0xf];
+                y[j+16] = dl * kvalues_nf4[qs[j] >>  4];
             }
             y  += 32;
             qs += 16;
@@ -2504,8 +2504,8 @@ void dequantize_row_fp4_xs(const block_fp4_xs * GGML_RESTRICT x, float * GGML_RE
             const int ls = ((x[i].scales_l[ib/2] >> 4*(ib%2)) & 0xf) | (((x[i].scales_h >> 2*ib) & 3) << 4);
             const float dl = d * (ls - 32);
             for (int j = 0; j < 16; ++j) {
-                y[j+ 0] = dl * kvalues_fp4nl[qs[j] & 0xf];
-                y[j+16] = dl * kvalues_fp4nl[qs[j] >>  4];
+                y[j+ 0] = dl * kvalues_fp4[qs[j] & 0xf];
+                y[j+16] = dl * kvalues_fp4[qs[j] >>  4];
             }
             y  += 32;
             qs += 16;
@@ -4810,7 +4810,7 @@ size_t quantize_fp4_xs(const float * GGML_RESTRICT src, void * GGML_RESTRICT dst
         for (int ibl = 0; ibl < nblock; ++ibl) {
             const float * qw = quant_weights ? quant_weights + QK_K*ibl : NULL;
             quantize_row_iq4_nl_impl(QK_K, 32, src + QK_K*ibl, &fp4[ibl].d, fp4[ibl].qs, &fp4[ibl].scales_h, fp4[ibl].scales_l,
-                    scales, weight, L, kvalues_fp4e1, qw, 7);
+                    scales, weight, L, kvalues_fp4, qw, 7);
         }
         src += n_per_row;
         qrow += nblock*sizeof(block_fp4_xs);

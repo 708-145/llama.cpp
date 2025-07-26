@@ -4457,7 +4457,7 @@ void ggml_vec_dot_fp4_xs_q8_K(int n, float * GGML_RESTRICT s, size_t bs, const v
 
 #if defined __AVX2__
 
-    const __m128i values128 = _mm_loadu_si128((const __m128i*)kvalues_fp4e1);
+    const __m128i values128 = _mm_loadu_si128((const __m128i*)kvalues_fp4);
     const __m128i m4b  = _mm_set1_epi8(0x0f);
 
     __m256 accum = _mm256_setzero_ps();
@@ -4493,7 +4493,7 @@ void ggml_vec_dot_fp4_xs_q8_K(int n, float * GGML_RESTRICT s, size_t bs, const v
     *s = hsum_float_8(accum);
 
 #elif defined __AVX__
-    const __m128i values128 = _mm_loadu_si128((const __m128i*)kvalues_fp4e1);
+    const __m128i values128 = _mm_loadu_si128((const __m128i*)kvalues_fp4);
     const __m128i m4b  = _mm_set1_epi8(0x0f);
 
     __m256 accum = _mm256_setzero_ps();
@@ -4555,16 +4555,16 @@ void ggml_vec_dot_fp4_xs_q8_K(int n, float * GGML_RESTRICT s, size_t bs, const v
             const float d2 = d4d8*(ls2 - 32);
             int sumi1 = 0, sumi2 = 0;
             for (int j = 0; j < 16; ++j) {
-                sumi1 += q8[j+ 0] * kvalues_fp4e1[qs[j] & 0xf];
-                sumi2 += q8[j+16] * kvalues_fp4e1[qs[j] >>  4];
+                sumi1 += q8[j+ 0] * kvalues_fp4[qs[j] & 0xf];
+                sumi2 += q8[j+16] * kvalues_fp4[qs[j] >>  4];
             }
             sumf += d1 * (sumi1 + sumi2);
             qs += 16;
             q8 += 32;
             sumi1 = sumi2 = 0;
             for (int j = 0; j < 16; ++j) {
-                sumi1 += q8[j+ 0] * kvalues_fp4e1[qs[j] & 0xf];
-                sumi2 += q8[j+16] * kvalues_fp4e1[qs[j] >>  4];
+                sumi1 += q8[j+ 0] * kvalues_fp4[qs[j] & 0xf];
+                sumi2 += q8[j+16] * kvalues_fp4[qs[j] >>  4];
             }
             sumf += d2 * (sumi1 + sumi2);
             qs += 16;
