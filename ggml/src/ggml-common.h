@@ -1094,6 +1094,15 @@ GGML_TABLE_BEGIN(int8_t, kvalues_iq4nl, 16)
     -127, -104, -83, -65, -49, -35, -22, -10, 1, 13, 25, 38, 53, 69, 89, 113,
 GGML_TABLE_END()
 
+GGML_TABLE_BEGIN(int8_t, kvalues_nf4, 16)
+    -128, -89,  -67, -51, -37, -24, -12,  0, 10, 20, 31, 43, 56, 71, 92, 127,
+GGML_TABLE_END()
+
+GGML_TABLE_BEGIN(int8_t, kvalues_fp4, 16)
+    -126,-108,  -90, -72, -63, -54, -45,-36, 36, 45, 54, 63, 72, 90,108, 126,
+GGML_TABLE_END()
+
+
 #define NGRID_IQ1S 2048
 #define IQ1S_DELTA 0.125f
 #define IQ1M_DELTA 0.125f
