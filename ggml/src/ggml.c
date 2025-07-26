@@ -832,18 +832,6 @@ static const struct ggml_type_traits type_traits[GGML_TYPE_COUNT] = {
         .to_float                 = (ggml_to_float_t) ggml_bf16_to_fp32_row,
         .from_float_ref           = (ggml_from_float_t) ggml_fp32_to_bf16_row_ref,
     },
-    [31] = { // GGML_TYPE_Q4_0_4_4
-        .type_name                = "TYPE_Q4_0_4_4 REMOVED, use Q4_0 with runtime repacking",
-        .blck_size                = 0,
-        .type_size                = 0,
-        .is_quantized             = false,
-    },
-    [32] = { // GGML_TYPE_Q4_0_4_8
-        .type_name                = "TYPE_Q4_0_4_8 REMOVED, use Q4_0 with runtime repacking",
-        .blck_size                = 0,
-        .type_size                = 0,
-        .is_quantized             = false,
-    },
     [33] = { // GGML_TYPE_Q4_0_8_8
         .type_name                = "TYPE_Q4_0_8_8 REMOVED, use Q4_0 with runtime repacking",
         .blck_size                = 0,
