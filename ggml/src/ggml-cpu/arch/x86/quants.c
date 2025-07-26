@@ -4324,7 +4324,7 @@ void ggml_vec_dot_nf4_xs_q8_K(int n, float * GGML_RESTRICT s, size_t bs, const v
 
 #if defined __AVX2__
 
-    const __m128i values128 = _mm_loadu_si128((const __m128i*)kvalues_iq4nl);
+    const __m128i values128 = _mm_loadu_si128((const __m128i*)kvalues_nf4);
     const __m128i m4b  = _mm_set1_epi8(0x0f);
 
     __m256 accum = _mm256_setzero_ps();
@@ -4360,7 +4360,7 @@ void ggml_vec_dot_nf4_xs_q8_K(int n, float * GGML_RESTRICT s, size_t bs, const v
     *s = hsum_float_8(accum);
 
 #elif defined __AVX__
-    const __m128i values128 = _mm_loadu_si128((const __m128i*)kvalues_iq4nl);
+    const __m128i values128 = _mm_loadu_si128((const __m128i*)kvalues_nf4);
     const __m128i m4b  = _mm_set1_epi8(0x0f);
 
     __m256 accum = _mm256_setzero_ps();
@@ -4457,7 +4457,7 @@ void ggml_vec_dot_fp4_xs_q8_K(int n, float * GGML_RESTRICT s, size_t bs, const v
 
 #if defined __AVX2__
 
-    const __m128i values128 = _mm_loadu_si128((const __m128i*)kvalues_iq4nl);
+    const __m128i values128 = _mm_loadu_si128((const __m128i*)kvalues_fp4e1);
     const __m128i m4b  = _mm_set1_epi8(0x0f);
 
     __m256 accum = _mm256_setzero_ps();
@@ -4493,7 +4493,7 @@ void ggml_vec_dot_fp4_xs_q8_K(int n, float * GGML_RESTRICT s, size_t bs, const v
     *s = hsum_float_8(accum);
 
 #elif defined __AVX__
-    const __m128i values128 = _mm_loadu_si128((const __m128i*)kvalues_iq4nl);
+    const __m128i values128 = _mm_loadu_si128((const __m128i*)kvalues_fp4e1);
     const __m128i m4b  = _mm_set1_epi8(0x0f);
 
     __m256 accum = _mm256_setzero_ps();
