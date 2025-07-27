@@ -546,7 +546,10 @@ llama_model_loader::llama_model_loader(
             }
 
             // Validate tensor size against block types
-            size_t expected_size = 0;
+            size_t expected_size_from_metadata = 0;
+            bool has_actual_size_metadata = get_key(tensor_name + ".smarterquant.actual_size", expected_size_from_metadata, false);
+
+            size_t calculated_expected_size = 0;
             const int64_t n_rows = cur->ne[1];
             const int64_t n_cols = cur->ne[0];
             for (int64_t i = 0; i < n_cols; i += 256) {
@@ -555,13 +558,18 @@ llama_model_loader::llama_model_loader(
                 else if (i < 512) type = (ggml_type)sq_info.compression_types[2];
                 else if (i < 768) type = (ggml_type)sq_info.compression_types[3];
                 else type = (ggml_type)sq_info.compression_types[0];
-                expected_size += ggml_type_size(type) * n_rows * std::min((int64_t)256, n_cols - i) / ggml_blck_size(type);
+                calculated_expected_size += ggml_type_size(type) * n_rows * std::min((int64_t)256, n_cols - i) / ggml_blck_size(type);
             }
-            if (ggml_nbytes(cur) != expected_size) {
+
+            size_t final_expected_size = has_actual_size_metadata ? expected_size_from_metadata : calculated_expected_size;
+
+            if (ggml_nbytes(cur) != final_expected_size) {
                 if (sq_enabled) {
-                    LLAMA_LOG_WARN("smarterquant tensor %s has different size than expected: got %zu, expected %zu", tensor_name.c_str(), ggml_nbytes(cur), expected_size);
+                    LLAMA_LOG_WARN("smarterquant tensor %s has different size than expected: got %zu, expected %zu (from %s)",
+                                   tensor_name.c_str(), ggml_nbytes(cur), final_expected_size,
+                                   has_actual_size_metadata ? "metadata" : "calculation");
                 } else {
-                    throw std::runtime_error(format("invalid tensor size for tensor %s: got %zu, expected %zu", tensor_name.c_str(), ggml_nbytes(cur), expected_size));
+                    throw std::runtime_error(format("invalid tensor size for tensor %s: got %zu, expected %zu", tensor_name.c_str(), ggml_nbytes(cur), final_expected_size));
                 }
             }
 

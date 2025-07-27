@@ -1052,8 +1052,8 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
                 if (it != smarter_quant_config.end() && it->second.enabled) {
                     LLAMA_LOG_DEBUG("(SmarterQuant override %s %s %s, %s) ", ggml_type_name((ggml_type)it->second.compression_types[1]), ggml_type_name((ggml_type)it->second.compression_types[2]), ggml_type_name((ggml_type)it->second.compression_types[3]), ggml_type_name((ggml_type)it->second.compression_types[0]));
                     sq_info = &it->second;
-                    // For SmarterQuant, the main type of the tensor will be the last block's type
-                    new_type = (ggml_type)sq_info->compression_types[0];
+                    // For SmarterQuant, the main type of the tensor will be the first block's type
+                    new_type = (ggml_type)sq_info->compression_types[1];
                 }
             }
 
@@ -1197,6 +1197,7 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
                     block_types_json.push_back(sq_info->compression_types[i]);
                 }
                 gguf_set_val_str(ctx_outs[cur_split].get(), (name + ".smarterquant.block_types").c_str(), block_types_json.dump().c_str());
+                gguf_set_val_u64(ctx_outs[cur_split].get(), (name + ".smarterquant.actual_size").c_str(), new_size);
 
                 // Calculate and print average bpw for SmarterQuant
                 const int64_t n_cols = tensor->ne[0];
