@@ -15,9 +15,7 @@
 #include "ops.h"
 #include "ggml.h"
 
-#if defined(GGML_USE_SMARTERQUANT)
 #include "ggml-smarterquant-types.h"
-#endif
 
 #if defined(_MSC_VER) || defined(__MINGW32__)
 #include <malloc.h> // using malloc.h with MSC/MINGW
@@ -1209,7 +1207,6 @@ static void ggml_compute_forward_mul_mat_one_chunk(
     }
 }
 
-#if defined(GGML_USE_SMARTERQUANT)
 static void ggml_compute_forward_mul_mat_smarterquant(
     const struct ggml_compute_params* params,
     struct ggml_tensor* dst) {
@@ -1265,7 +1262,6 @@ static void ggml_compute_forward_mul_mat_smarterquant(
         }
     }
 }
-#endif
 void ggml_compute_forward_mul_mat(
         const struct ggml_compute_params * params,
               struct ggml_tensor * dst) {
@@ -1273,12 +1269,10 @@ void ggml_compute_forward_mul_mat(
     const struct ggml_tensor * src0 = dst->src[0];
     const struct ggml_tensor * src1 = dst->src[1];
 
-#if defined(GGML_USE_SMARTERQUANT)
     if (src0->extra != NULL) {
         ggml_compute_forward_mul_mat_smarterquant(params, dst);
         return;
     }
-#endif
 
     GGML_TENSOR_BINARY_OP_LOCALS
 
