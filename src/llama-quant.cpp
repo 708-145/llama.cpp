@@ -43,6 +43,8 @@ size_t llama_tensor_quantize_smarter_blocks(
 
     const int n_segments = (n_cols + 255) / 256;
 
+    std::vector<size_t> segment_sizes(n_segments);
+
     parallel_for(n_segments, [&](const int begin, const int end) {
         for (int i = begin; i < end; ++i) {
         const int64_t col_idx = i * 256;
@@ -61,6 +63,7 @@ size_t llama_tensor_quantize_smarter_blocks(
         }
 
         // Prepare source data for the current segment
+        // TB: is it permuted?
         std::vector<float> segment_src_data(n_rows * current_n_cols);
         for (int64_t r = 0; r < n_rows; ++r) {
             for (int64_t c = 0; c < current_n_cols; ++c) {
@@ -69,6 +72,7 @@ size_t llama_tensor_quantize_smarter_blocks(
         }
 
         // Prepare imatrix data for the current segment
+        // TB: is it permuted?
         const float * segment_imatrix_data = nullptr;
         std::vector<float> temp_imatrix_data;
         if (imatrix_data) {
@@ -95,19 +99,14 @@ size_t llama_tensor_quantize_smarter_blocks(
         void * segment_dst_data = (char *)dst_data + offset;
 
         // Quantize the segment
-        ggml_quantize_chunk(segment_type, segment_src_data.data(), segment_dst_data, 0, n_rows, current_n_cols, segment_imatrix_data);
+        segment_sizes[i] = ggml_quantize_chunk(segment_type, segment_src_data.data(), segment_dst_data, 0, n_rows, current_n_cols, segment_imatrix_data);
         }
     }, nthread);
 
     // Recalculate total_bytes_written after all threads are done.
     size_t total_bytes_written = 0;
-    for (int64_t i = 0; i < n_cols; i += 256) {
-        ggml_type type;
-        if (i < 256) type = (ggml_type)sq_info.compression_types[1];
-        else if (i < 512) type = (ggml_type)sq_info.compression_types[2];
-        else if (i < 768) type = (ggml_type)sq_info.compression_types[3];
-        else type = (ggml_type)sq_info.compression_types[0];
-        total_bytes_written += ggml_type_size(type) * n_rows * std::min((int64_t)256, n_cols - i) / ggml_blck_size(type);
+    for (size_t size : segment_sizes) {
+        total_bytes_written += size;
     }
 
     return total_bytes_written;
