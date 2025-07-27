@@ -1099,7 +1099,7 @@ GGML_TABLE_BEGIN(int8_t, kvalues_nf4, 16)
 GGML_TABLE_END()
 
 GGML_TABLE_BEGIN(int8_t, kvalues_fp4, 16)
-    -126,-108,  -90, -72, -63, -54, -45,-36, 36, 45, 54, 63, 72, 90,108, 126,
+    -127, -91, -73, -64, -54, -45, -36, -1, 1, 36, 45, 54, 64, 73, 91, 127,
 GGML_TABLE_END()
 
 
