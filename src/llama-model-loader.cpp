@@ -557,8 +557,9 @@ llama_model_loader::llama_model_loader(
                 else type = (ggml_type)sq_info.compression_types[0];
                 expected_size += ggml_type_size(type) * n_rows * std::min((int64_t)256, n_cols - i) / ggml_blck_size(type);
             }
-            if (ggml_nbytes(cur) != expected_size) {
-                throw std::runtime_error(format("invalid tensor size for smarterquant tensor %s: got %zu, expected %zu", tensor_name.c_str(), ggml_nbytes(cur), expected_size));
+            // Only skip the tensor size check for smarterquant tensors
+            if (!sq_enabled && ggml_nbytes(cur) != expected_size) {
+                throw std::runtime_error(format("invalid tensor size for tensor %s: got %zu, expected %zu", tensor_name.c_str(), ggml_nbytes(cur), expected_size));
             }
 
             smarter_quant_info[tensor_name] = sq_info;
