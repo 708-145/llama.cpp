@@ -97,7 +97,7 @@ size_t llama_tensor_quantize_smarter_blocks(
         // Quantize the segment
         ggml_quantize_chunk(segment_type, segment_src_data.data(), segment_dst_data, 0, n_rows, current_n_cols, segment_imatrix_data);
         }
-    });
+    }, nthread);
 
     // Recalculate total_bytes_written after all threads are done.
     size_t total_bytes_written = 0;
