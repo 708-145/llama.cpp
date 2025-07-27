@@ -1054,7 +1054,7 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
                     LLAMA_LOG_DEBUG("(SmarterQuant override %s %s %s, %s) ", ggml_type_name((ggml_type)it->second.compression_types[1]), ggml_type_name((ggml_type)it->second.compression_types[2]), ggml_type_name((ggml_type)it->second.compression_types[3]), ggml_type_name((ggml_type)it->second.compression_types[0]));
                     sq_info = &it->second;
                     // For SmarterQuant, the main type of the tensor will be the last block's type
-                    new_type = (ggml_type)sq_info->compression_types[3];
+                    new_type = (ggml_type)sq_info->compression_types[0];
                 }
             }
 
@@ -1199,6 +1199,12 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
                 }
                 gguf_set_val_str(ctx_outs[cur_split].get(), (name + ".smarterquant.block_types").c_str(), block_types_json.dump().c_str());
 
+                // Calculate and print average bpw for SmarterQuant
+                const int64_t n_cols = tensor->ne[0];
+                const int64_t n_rows = tensor->ne[1]; // TODO: MoE support with ne[2]?
+                int64_t total_weights = n_cols * n_rows;
+                double avg_bpw = (8.0 * new_size) / total_weights;
+                LLAMA_LOG_INFO("size = %8.2f MiB -> %8.2f MiB (%.2f bpw)\n", ggml_nbytes(tensor)/1024.0/1024.0, new_size/1024.0/1024.0, avg_bpw);
             } else { // Not SmarterQuant, use regular quantization
                 static const int64_t min_chunk_size = 32 * 512;
                 const int64_t chunk_size = (n_per_row >= min_chunk_size ? n_per_row : n_per_row * ((min_chunk_size + n_per_row - 1)/n_per_row));
@@ -1217,7 +1223,7 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
                     new_size += llama_tensor_quantize_impl(new_type, f32_data_03, new_data_03, chunk_size, nrows, n_per_row, imatrix_03, workers, nthread_use);
                 }
             }
-            LLAMA_LOG_INFO("size = %8.2f MiB -> %8.2f MiB\n", ggml_nbytes(tensor)/1024.0/1024.0, new_size/1024.0/1024.0);
+            if (!sq_info) LLAMA_LOG_INFO("size = %8.2f MiB -> %8.2f MiB\n", ggml_nbytes(tensor)/1024.0/1024.0, new_size/1024.0/1024.0);
         }
         total_size_org += ggml_nbytes(tensor);
         total_size_new += new_size;
