@@ -1119,7 +1119,8 @@ void gguf_set_kv(struct gguf_context * ctx, const struct gguf_context * src) {
 
 void gguf_add_tensor(
              struct gguf_context * ctx,
-        const struct ggml_tensor * tensor) {
+        const struct ggml_tensor * tensor,
+        size_t actual_size = 0) {
     GGML_ASSERT(tensor);
     if (gguf_find_tensor(ctx, tensor->name) != -1) {
         GGML_ABORT("duplicate tensor name: %s", tensor->name);
@@ -1128,7 +1129,7 @@ void gguf_add_tensor(
     struct gguf_tensor_info ti;
     ti.t = *tensor;
     ti.offset = ctx->info.empty() ? 0 :
-        ctx->info.back().offset + GGML_PAD(ggml_nbytes(&ctx->info.back().t), ctx->alignment);
+        ctx->info.back().offset + GGML_PAD(actual_size == 0 ? ggml_nbytes(&ctx->info.back().t) : actual_size, ctx->alignment);
     ctx->info.push_back(ti);
 }
 
@@ -1164,6 +1165,24 @@ void gguf_set_tensor_data(struct gguf_context * ctx, const char * name, const vo
     }
 
     ctx->info[tensor_id].t.data = (void *)(uintptr_t)data; // double cast suppresses warning about casting away const
+}
+
+void gguf_set_tensor_actual_size(struct gguf_context * ctx, const char * name, size_t actual_size) {
+    const int64_t tensor_id = gguf_find_tensor(ctx, name);
+    if (tensor_id < 0) {
+        GGML_ABORT("tensor not found: %s", name);
+    }
+    // Update the size of the tensor in gguf_tensor_info
+    // This is a direct update to the size used for offset calculation.
+    // We are effectively overriding ggml_nbytes for this specific tensor.
+    ctx->info[tensor_id].t.nb[0] = actual_size; // Use nb[0] to store the actual size for offset calculation
+    ctx->info[tensor_id].t.ne[0] = actual_size; // Also update ne[0] to reflect the size for ggml_nbytes
+
+    // Recalculate offsets for subsequent tensors
+    const int64_t n_tensors = gguf_get_n_tensors(ctx);
+    for (int64_t i = tensor_id + 1; i < n_tensors; ++i) {
+        ctx->info[i].offset = ctx->info[i - 1].offset + GGML_PAD(ggml_nbytes(&ctx->info[i - 1].t), ctx->alignment);
+    }
 }
 
 struct gguf_writer {

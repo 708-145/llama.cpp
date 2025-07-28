@@ -908,7 +908,7 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
         if (!ctx_outs[i_split]) {
             ctx_outs[i_split].reset(gguf_init_empty());
         }
-        gguf_add_tensor(ctx_outs[i_split].get(), tensor);
+        
     }
 
     // Set split info if needed
@@ -1225,12 +1225,14 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
             }
             if (!sq_info) LLAMA_LOG_INFO("size = %8.2f MiB -> %8.2f MiB\n", ggml_nbytes(tensor)/1024.0/1024.0, new_size/1024.0/1024.0);
         }
+        gguf_add_tensor(ctx_outs[cur_split].get(), tensor, new_size);
+        // Print the offset of the newly added tensor
+        const size_t current_offset = gguf_get_tensor_offset(ctx_outs[cur_split].get(), gguf_get_n_tensors(ctx_outs[cur_split].get()) - 1);
+        LLAMA_LOG_INFO("Offset for %s: %zu bytes (%.2f MiB)\n", ggml_get_name(tensor), current_offset, (double)current_offset / (1024.0 * 1024.0));
         total_size_org += ggml_nbytes(tensor);
         total_size_new += new_size;
 
-        // update the gguf meta data as we go
-        gguf_set_tensor_type(ctx_outs[cur_split].get(), name.c_str(), new_type);
-        gguf_set_tensor_data(ctx_outs[cur_split].get(), name.c_str(), new_data);
+        
 
         // write tensor data + padding
         fout.write((const char *) new_data, new_size);

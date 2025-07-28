@@ -565,7 +565,7 @@ llama_model_loader::llama_model_loader(
 
             if (ggml_nbytes(cur) != final_expected_size) {
                 if (sq_enabled) {
-                    LLAMA_LOG_WARN("smarterquant tensor %s has different size than expected: got %zu, expected %zu (from %s)",
+                    LLAMA_LOG_WARN("smarterquant tensor %s has different size than expected: got %zu, expected %zu (from %s)\n",
                                    tensor_name.c_str(), ggml_nbytes(cur), final_expected_size,
                                    has_actual_size_metadata ? "metadata" : "calculation");
                 } else {
@@ -957,22 +957,45 @@ void llama_model_loader::get_mapping_range(size_t * first, size_t * last, void *
 void llama_model_loader::load_data_for(struct ggml_tensor * cur) const {
     const auto & w = require_weight(ggml_get_name(cur));
 
+    // Check if this tensor has SmarterQuant metadata
+    auto sq_it = smarter_quant_info.find(std::string(ggml_get_name(cur)));
+    size_t load_size = ggml_nbytes(cur);
+
+    if (sq_it != smarter_quant_info.end() && sq_it->second.enabled) {
+        // If SmarterQuant is enabled, calculate the actual size from metadata
+        size_t calculated_expected_size = 0;
+        const int64_t n_rows = cur->ne[1];
+        const int64_t n_cols = cur->ne[0];
+        const auto& sq_info = sq_it->second;
+        
+        for (int64_t i = 0; i < n_cols; i += 256) {
+            ggml_type type;
+            if (i < 256) type = (ggml_type)sq_info.compression_types[1];
+            else if (i < 512) type = (ggml_type)sq_info.compression_types[2];
+            else if (i < 768) type = (ggml_type)sq_info.compression_types[3];
+            else type = (ggml_type)sq_info.compression_types[0];
+            calculated_expected_size += ggml_type_size(type) * n_rows * std::min((int64_t)256, n_cols - i) / ggml_blck_size(type);
+        }
+
+        load_size = calculated_expected_size;
+    }
+
     if (use_mmap) {
         const auto & mapping = mappings.at(w.idx);
         if (cur->data == nullptr) {
             cur->data = (uint8_t *)mapping->addr() + w.offs;
         } else {
-            memcpy(cur->data, (uint8_t *)mapping->addr() + w.offs, ggml_nbytes(cur));
+            memcpy(cur->data, (uint8_t *)mapping->addr() + w.offs, load_size);
         }
     } else {
         GGML_ASSERT(cur->data != nullptr);
         GGML_ASSERT(w.idx < files.size());
         const auto & file = files.at(w.idx);
         file->seek(w.offs, SEEK_SET);
-        file->read_raw(cur->data, ggml_nbytes(cur));
+        file->read_raw(cur->data, load_size);
     }
 
-    if (check_tensors && !ggml_validate_row_data(cur->type, cur->data, ggml_nbytes(cur))) {
+    if (check_tensors && !ggml_validate_row_data(cur->type, cur->data, load_size)) {
         throw std::runtime_error(format("tensor '%s' has invalid data", ggml_get_name(cur)));
     }
 }
