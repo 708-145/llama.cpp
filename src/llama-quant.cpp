@@ -888,6 +888,8 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
     std::vector<no_init<uint8_t>> work;
     std::vector<no_init<float>> f32_conv_buf;
 
+    std::unordered_map<std::string, size_t> tensors_new_size;
+
     uint16_t n_split = 1;
 
     // Assume split index is continuous
@@ -1241,8 +1243,32 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
         // write tensor data + padding
         fout.write((const char *) new_data, new_size);
         zeros(fout, GGML_PAD(new_size, align) - new_size);
+        tensors_new_size[name] = new_size;
     }
     close_ofstream();
+
+    // Validate metadata
+    LLAMA_LOG_INFO("%s: Validating metadata...\n", __func__);
+    struct gguf_init_params gguf_params = { .no_alloc = true, .ctx = NULL };
+    gguf_context_ptr ctx_in { gguf_init_from_file(fname_out.c_str(), gguf_params) };
+    if (!ctx_in) {
+        throw std::runtime_error(format("failed to open GGUF file %s for validation", fname_out.c_str()));
+    }
+
+    for (int i = 0; i < gguf_get_n_tensors(ctx_in.get()); ++i) {
+        const char * name = gguf_get_tensor_name(ctx_in.get(), i);
+        size_t size = gguf_get_tensor_size(ctx_in.get(), i);
+        if (tensors_new_size.count(name) == 0) {
+            LLAMA_LOG_ERROR("%s: Tensor %s not found in bookkeeping map\n", __func__, name);
+            throw std::runtime_error("metadata validation failed");
+        }
+        if (tensors_new_size[name] != size) {
+            LLAMA_LOG_ERROR("%s: Tensor %s size mismatch: expected %zu, got %zu\n", __func__, name, tensors_new_size[name], size);
+            throw std::runtime_error("metadata validation failed");
+        }
+    }
+    LLAMA_LOG_INFO("%s: Metadata validation successful.\n", __func__);
+
     // No need to free WeightMap, as it's replaced by SmartQuantConfig which is std::map
 
     LLAMA_LOG_INFO("%s: model size  = %8.2f MB\n", __func__, total_size_org/1024.0/1024.0);
