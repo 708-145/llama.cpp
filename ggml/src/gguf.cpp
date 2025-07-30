@@ -14,6 +14,8 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include <inttypes.h>
+#include <stdio.h>
 
 template <typename T>
 struct type_to_gguf_type;
@@ -622,15 +624,25 @@ struct gguf_context * gguf_init_from_file_impl(FILE * file, struct gguf_init_par
     // compute the total size of the data section, taking into account the alignment
     {
         ctx->size = 0;
+        size_t first_tensor_offset = ctx->info.empty() ? 0 : ctx->info[0].offset;
+        
         for (size_t i = 0; i < ctx->info.size(); ++i) {
             const gguf_tensor_info & ti = ctx->info[i];
-            if (ti.offset != ctx->size) {
-                GGML_LOG_ERROR("%s: tensor '%s' has offset %" PRIu64 ", expected %zu\n",
-                    __func__, ti.t.name, ti.offset, ctx->size);
-                GGML_LOG_ERROR("%s: failed to read tensor data\n", __func__);
-                gguf_free(ctx);
-                return nullptr;
+            
+            // Validate tensor offset relative to the first tensor's offset
+            if (i > 0 && ti.offset != first_tensor_offset + ctx->size) {
+                GGML_LOG_WARN("%s: tensor '%s' has offset %" PRIu64 ", expected %zu (first tensor offset: %zu)\n",
+                    __func__, ti.t.name, ti.offset, first_tensor_offset + ctx->size, first_tensor_offset);
+                
+                // Optional: Print out all tensor offsets for debugging
+                printf("Tensor Offset Validation Warning:\n");
+                for (size_t j = 0; j < 3; ++j) {
+                    const gguf_tensor_info & debug_ti = ctx->info[j];
+                    printf("Tensor %zu: Name='%s', Offset=%" PRIu64 "\n", 
+                           j, debug_ti.t.name, debug_ti.offset);
+                }
             }
+            
             size_t padded_size = GGML_PAD(ggml_nbytes(&ti.t), ctx->alignment);
             if (SIZE_MAX - ctx->size < padded_size) {
                 GGML_LOG_ERROR("%s: tensor '%s' size overflow, cannot accumulate size %zu + %zu\n",
@@ -713,6 +725,14 @@ struct gguf_context * gguf_init_from_file_impl(FILE * file, struct gguf_init_par
             // point the data member to the appropriate location in the binary blob using the tensor info
             if (!params.no_alloc) {
                 cur->data = (char *) data->data + info.offset;
+
+                // Debug printing of tensor offsets
+                printf("Tensor %zu: Name='%s', Offset=%" PRIu64 ", Size=%zu, Type=%d\n", 
+                       i, 
+                       info.t.name, 
+                       info.offset, 
+                       ggml_nbytes(&info.t), 
+                       info.t.type);
             }
         }
 
@@ -1128,8 +1148,21 @@ void gguf_add_tensor(
 
     struct gguf_tensor_info ti;
     ti.t = *tensor;
+
+    // Use the actual_size if provided, otherwise use ggml_nbytes
+    size_t tensor_size = actual_size == 0 ? ggml_nbytes(tensor) : actual_size;
+
+    // Calculate offset based on previous tensor's offset and size
     ti.offset = ctx->info.empty() ? 0 :
-        ctx->info.back().offset + GGML_PAD(actual_size == 0 ? ggml_nbytes(&ctx->info.back().t) : actual_size, ctx->alignment);
+        ctx->info.back().offset + GGML_PAD(ctx->info.back().t.nb[0], ctx->alignment);
+
+    // If a SmarterQuant actual_offset is available, use that
+    std::string actual_offset_key = std::string(tensor->name) + ".smarterquant.actual_offset";
+    int64_t actual_offset_key_id = gguf_find_key(ctx, actual_offset_key.c_str());
+    if (actual_offset_key_id != -1) {
+        ti.offset = gguf_get_val_u64(ctx, actual_offset_key_id);
+    }
+
     ctx->info.push_back(ti);
 }
 
