@@ -1237,25 +1237,17 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
             }
             if (!sq_info) LLAMA_LOG_INFO("size = %8.2f MiB -> %8.2f MiB\n", ggml_nbytes(tensor)/1024.0/1024.0, new_size/1024.0/1024.0);
         }
-        gguf_add_tensor(ctx_outs[cur_split].get(), tensor, new_size);
-        tensors_new_size[name] = new_size;
+        gguf_add_tensor(ctx_outs[cur_split].get(), tensor, 0); // Pass 0 for actual_size initially
+        tensors_new_size[name] = new_size; // Store the new_size for validation and for gguf_set_tensor_actual_size
 
-        // Print the offset of the newly added tensor
-        size_t current_offset = 0;
-        if (gguf_get_n_tensors(ctx_outs[cur_split].get()) > 1) {
-            const int i = gguf_get_n_tensors(ctx_outs[cur_split].get()) - 2;
-            current_offset = gguf_get_tensor_offset(ctx_outs[cur_split].get(), i);
-            const char * prev_name = gguf_get_tensor_name(ctx_outs[cur_split].get(), i);
-            current_offset += GGML_PAD(tensors_new_size.at(prev_name), align);
-        }
+        // Update the actual size of the tensor and recalculate offsets
+        gguf_set_tensor_actual_size(ctx_outs[cur_split].get(), ggml_get_name(tensor), new_size);
 
-        gguf_set_tensor_offset(ctx_outs[cur_split].get(), gguf_get_n_tensors(ctx_outs[cur_split].get()) - 1, current_offset);
-
+        // Print the offset of the newly added tensor (now should be correct)
+        const size_t current_offset = gguf_get_tensor_offset(ctx_outs[cur_split].get(), gguf_get_n_tensors(ctx_outs[cur_split].get()) - 1);
         LLAMA_LOG_INFO("Offset for %s: %zu bytes (%.2f MiB)\n", ggml_get_name(tensor), current_offset, (double)current_offset / (1024.0 * 1024.0));
-        total_size_org += ggml_nbytes(tensor);
+        total_size_org += ggml_nbytes(tensor); // This should still be original size for total_size_org
         total_size_new += new_size;
-
-        
 
         // write tensor data + padding
         fout.write((const char *) new_data, new_size);
