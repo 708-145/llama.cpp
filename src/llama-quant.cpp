@@ -774,6 +774,16 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
     }
 
     const size_t align = GGUF_DEFAULT_ALIGNMENT;
+    LLAMA_LOG_INFO("Alignment value: %zu\n", align);
+    
+    // Add a debug function to show alignment details
+    auto debug_alignment = [align](size_t size) {
+        size_t padded_size = (size + align - 1) & ~(align - 1);
+        LLAMA_LOG_INFO("Alignment debug: size=%zu, align=%zu, padded_size=%zu\n", 
+                       size, align, padded_size);
+        return padded_size;
+    };
+
     gguf_context_ptr ctx_out { gguf_init_empty() };
 
     std::vector<int> prune_list = {};
@@ -890,7 +900,7 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
 
     std::unordered_map<std::string, size_t> tensors_new_size;
     size_t current_offset = 0;
-    size_t next_offset = 0;
+    size_t next_offset = 0;  // Start from 0, increment based on actual tensor sizes
 
     uint16_t n_split = 1;
 
@@ -972,11 +982,14 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
         }
         ml.load_data_for(tensor);
 
-        LLAMA_LOG_INFO("[%4d/%4d] %36s - [%s], type = %6s, ",
+        LLAMA_LOG_INFO("[%4d/%4d] %36s - [%s], type = %6s, size = %8.3f MB, raw_size = %zu, padded_size = %zu\n",
                ++idx, ml.n_tensors,
                ggml_get_name(tensor),
                llama_format_tensor_shape(tensor).c_str(),
-               ggml_type_name(tensor->type));
+               ggml_type_name(tensor->type),
+               ggml_nbytes(tensor)/1024.0/1024.0,
+               ggml_nbytes(tensor),
+               GGML_PAD(ggml_nbytes(tensor), align));
 
         // This used to be a regex, but <regex> has an extreme cost to compile times.
         bool quantize = name.rfind("weight") == name.size() - 6; // ends with 'weight'?
@@ -1094,6 +1107,8 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
             new_type = tensor->type;
             new_data = tensor->data;
             new_size = ggml_nbytes(tensor);
+            current_offset = next_offset;
+            next_offset = current_offset + GGML_PAD(new_size, align);
             LLAMA_LOG_INFO("size = %8.3f MB\n", ggml_nbytes(tensor)/1024.0/1024.0);
         } else {
             const int64_t nelements = ggml_nelements(tensor);
@@ -1102,13 +1117,17 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
             if (imatrix_data) {
                 auto it = imatrix_data->find(remap_imatrix(tensor->name, mapped));
                 if (it == imatrix_data->end()) {
-                    LLAMA_LOG_INFO("\n====== %s: did not find weights for %s\n", __func__, tensor->name);
+                    LLAMA_LOG_WARN("\n====== %s: did not find weights for %s (remapped name: %s)\n", 
+                                   __func__, tensor->name, remap_imatrix(tensor->name, mapped).c_str());
                 } else {
                     if (it->second.size() == (size_t)tensor->ne[0]*tensor->ne[2]) {
                         imatrix = it->second.data();
                     } else {
-                        LLAMA_LOG_INFO("\n====== %s: imatrix size %d is different from tensor size %d for %s\n", __func__,
-                                int(it->second.size()), int(tensor->ne[0]*tensor->ne[2]), tensor->name);
+                        LLAMA_LOG_WARN("\n====== %s: imatrix size %d is different from tensor size %d for %s\n", 
+                                       __func__, 
+                                       int(it->second.size()), 
+                                       int(tensor->ne[0]*tensor->ne[2]), 
+                                       tensor->name);
 
                         // this can happen when quantizing an old mixtral model with split tensors with a new incompatible imatrix
                         // this is a significant error and it may be good idea to abort the process if this happens,
@@ -1184,8 +1203,14 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
                     }
                 }
                 new_size = llama_tensor_quantize_smarter_blocks(f32_data, new_data, tensor->ne, *sq_info, imatrix, nthread);
-                current_offset = next_offset;
-                next_offset += GGML_PAD(new_size, align);
+                if (sq_info != nullptr) {
+                    LLAMA_LOG_DEBUG("SmarterQuant: name=%s, new_size=%zu, align=%zu, current_offset=%zu, next_offset=%zu\n", 
+                                    name.c_str(), new_size, align, current_offset, next_offset);
+                    current_offset = next_offset;
+                    next_offset += GGML_PAD(new_size, align);
+                    LLAMA_LOG_DEBUG("SmarterQuant: After padding - current_offset=%zu, next_offset=%zu\n", 
+                                    current_offset, next_offset);
+                }
 
                 // Store SmarterQuant metadata in GGUF
                 gguf_set_val_bool(ctx_outs[cur_split].get(), (name + ".smarterquant.enabled").c_str(), true);
@@ -1232,6 +1257,8 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
                     new_size += llama_tensor_quantize_impl(new_type, f32_data_03, new_data_03, chunk_size, nrows, n_per_row, imatrix_03, workers, nthread_use);
                     current_offset = next_offset;
                     next_offset += GGML_PAD(new_size, align);
+                    LLAMA_LOG_DEBUG("Regular Quantization: name=%s, new_size=%zu, align=%zu, current_offset=%zu, next_offset=%zu\n", 
+                                    name.c_str(), new_size, align, current_offset, next_offset);
                 }
             }
             if (!sq_info) LLAMA_LOG_INFO("size = %8.2f MiB -> %8.2f MiB\n", ggml_nbytes(tensor)/1024.0/1024.0, new_size/1024.0/1024.0);
@@ -1243,7 +1270,12 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
         gguf_set_tensor_actual_size(ctx_outs[cur_split].get(), ggml_get_name(tensor), new_size);
 
         // Print the offset of the newly added tensor (now should be correct)
-        LLAMA_LOG_INFO("Offset for %s: %zu bytes (%.2f MiB); next offset %zu bytes (%.2f MiB)\n", ggml_get_name(tensor), current_offset, (double)current_offset / (1024.0 * 1024.0), next_offset, (double)next_offset / (1024.0 * 1024.0));
+        LLAMA_LOG_INFO("Offset for %s: raw_size = %zu, padded_size = %zu, current_offset = %zu bytes (%.2f MiB); next offset = %zu bytes (%.2f MiB)\n", 
+                     ggml_get_name(tensor), 
+                     new_size, 
+                     GGML_PAD(new_size, align), 
+                     current_offset, (double)current_offset / (1024.0 * 1024.0), 
+                     next_offset, (double)next_offset / (1024.0 * 1024.0));
         total_size_org += ggml_nbytes(tensor); // This should still be original size for total_size_org
         total_size_new += new_size;
 
