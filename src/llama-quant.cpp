@@ -889,6 +889,8 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
     std::vector<no_init<float>> f32_conv_buf;
 
     std::unordered_map<std::string, size_t> tensors_new_size;
+    size_t current_offset = 0;
+    size_t next_offset = 0;
 
     uint16_t n_split = 1;
 
@@ -1182,6 +1184,8 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
                     }
                 }
                 new_size = llama_tensor_quantize_smarter_blocks(f32_data, new_data, tensor->ne, *sq_info, imatrix, nthread);
+                current_offset = next_offset;
+                next_offset += GGML_PAD(new_size, align);
 
                 // Store SmarterQuant metadata in GGUF
                 gguf_set_val_bool(ctx_outs[cur_split].get(), (name + ".smarterquant.enabled").c_str(), true);
@@ -1206,14 +1210,7 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
                 double avg_bpw = (8.0 * new_size) / total_weights;
                 LLAMA_LOG_INFO("size = %8.2f MiB -> %8.2f MiB (%.2f bpw)\n", ggml_nbytes(tensor)/1024.0/1024.0, new_size/1024.0/1024.0, avg_bpw);
 
-                // Write the actual offset metadata with a consistent key format
-                size_t current_offset = 0;
-                if (gguf_get_n_tensors(ctx_outs[cur_split].get()) > 0) {
-                    const int i = gguf_get_n_tensors(ctx_outs[cur_split].get()) - 1;
-                    current_offset = gguf_get_tensor_offset(ctx_outs[cur_split].get(), i);
-                    const char * prev_name = gguf_get_tensor_name(ctx_outs[cur_split].get(), i);
-                    current_offset += GGML_PAD(tensors_new_size.at(prev_name), align);
-                }
+                // Set the actual offset for the current tensor
                 gguf_set_val_u64(ctx_outs[cur_split].get(),
                                  (name + ".smarterquant.actual_offset").c_str(),
                                  current_offset);
@@ -1233,6 +1230,8 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
                     const float * imatrix_03 = imatrix ? imatrix + i03 * n_per_row : nullptr;
 
                     new_size += llama_tensor_quantize_impl(new_type, f32_data_03, new_data_03, chunk_size, nrows, n_per_row, imatrix_03, workers, nthread_use);
+                    current_offset = next_offset;
+                    next_offset += GGML_PAD(new_size, align);
                 }
             }
             if (!sq_info) LLAMA_LOG_INFO("size = %8.2f MiB -> %8.2f MiB\n", ggml_nbytes(tensor)/1024.0/1024.0, new_size/1024.0/1024.0);
@@ -1244,8 +1243,7 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
         gguf_set_tensor_actual_size(ctx_outs[cur_split].get(), ggml_get_name(tensor), new_size);
 
         // Print the offset of the newly added tensor (now should be correct)
-        const size_t current_offset = gguf_get_tensor_offset(ctx_outs[cur_split].get(), gguf_get_n_tensors(ctx_outs[cur_split].get()) - 1);
-        LLAMA_LOG_INFO("Offset for %s: %zu bytes (%.2f MiB)\n", ggml_get_name(tensor), current_offset, (double)current_offset / (1024.0 * 1024.0));
+        LLAMA_LOG_INFO("Offset for %s: %zu bytes (%.2f MiB); next offset %zu bytes (%.2f MiB)\n", ggml_get_name(tensor), current_offset, (double)current_offset / (1024.0 * 1024.0), next_offset, (double)next_offset / (1024.0 * 1024.0));
         total_size_org += ggml_nbytes(tensor); // This should still be original size for total_size_org
         total_size_new += new_size;
 
