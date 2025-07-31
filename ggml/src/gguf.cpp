@@ -486,6 +486,8 @@ struct gguf_context * gguf_init_from_file_impl(FILE * file, struct gguf_init_par
             return nullptr;
         }
     }
+    // gr. current position
+    GGML_LOG_WARN("%s: filepos = %zu\n", __func__, ftell(file));
 
     // read the tensor info
     for (int64_t i = 0; ok && i < n_tensors; ++i) {
@@ -624,8 +626,7 @@ struct gguf_context * gguf_init_from_file_impl(FILE * file, struct gguf_init_par
     // compute the total size of the data section, taking into account the alignment
     ctx->size = 0;
     size_t first_tensor_offset = ctx->info.empty() ? 0 : ctx->info[0].offset;
-    GGML_LOG_WARN("%s: first tensor offset: %zu\n",
-                __func__, first_tensor_offset);
+    GGML_LOG_WARN("%s: first tensor offset: %zu\n", __func__, first_tensor_offset);
     
     for (size_t i = 0; i < ctx->info.size(); ++i) {
         struct gguf_tensor_info & ti = ctx->info[i];
@@ -662,7 +663,7 @@ struct gguf_context * gguf_init_from_file_impl(FILE * file, struct gguf_init_par
         }
         
         // Validate again
-        if (true || ti.offset != actual_offset || ggml_nbytes(&ti.t) != actual_size) {
+        if (ti.offset != actual_offset || ggml_nbytes(&ti.t) != actual_size) {
             GGML_LOG_WARN("%s: updated tensor '%s' has offset %" PRIu64 ", actual_offset %" PRIu64 ", has size %zu, actual size %zu\n",
                 __func__, ti.t.name, ti.offset, actual_offset, ggml_nbytes(&ti.t), actual_size);
         }
