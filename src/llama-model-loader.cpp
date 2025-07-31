@@ -547,7 +547,8 @@ llama_model_loader::llama_model_loader(
 
             // Validate tensor size against block types
             size_t expected_size_from_metadata = 0;
-            bool has_actual_size_metadata = get_key(tensor_name + ".smarterquant.actual_size", expected_size_from_metadata, false);
+            bool has_actual_size_metadata =
+                get_key(tensor_name + ".smarterquant.actual_size", expected_size_from_metadata, false);
 
             size_t calculated_expected_size = 0;
             const int64_t n_rows = cur->ne[1];
@@ -559,6 +560,13 @@ llama_model_loader::llama_model_loader(
                 else if (i < 768) type = (ggml_type)sq_info.compression_types[3];
                 else type = (ggml_type)sq_info.compression_types[0];
                 calculated_expected_size += ggml_type_size(type) * n_rows * std::min((int64_t)256, n_cols - i) / ggml_blck_size(type);
+            }
+
+            // Store the calculated expected size in metadata if not already present
+            if (!has_actual_size_metadata) {
+                // Note: There's no direct set_key method, so we'll log a warning instead
+                LLAMA_LOG_WARN("Calculated expected size for tensor %s: %zu\n", 
+                               tensor_name.c_str(), calculated_expected_size);
             }
 
             size_t final_expected_size = has_actual_size_metadata ? expected_size_from_metadata : calculated_expected_size;

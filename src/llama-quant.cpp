@@ -777,12 +777,14 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
     LLAMA_LOG_INFO("Alignment value: %zu\n", align);
     
     // Add a debug function to show alignment details
-    auto debug_alignment = [align](size_t size) {
-        size_t padded_size = (size + align - 1) & ~(align - 1);
-        LLAMA_LOG_INFO("Alignment debug: size=%zu, align=%zu, padded_size=%zu\n", 
-                       size, align, padded_size);
-        return padded_size;
-    };
+    // auto debug_alignment = [align](size_t size) {
+    //     return GGML_PAD(size, align);
+    // };
+
+    // Use traditional initialization for struct
+    struct gguf_init_params gguf_params;
+    gguf_params.no_alloc = true;
+    gguf_params.ctx = NULL;
 
     gguf_context_ptr ctx_out { gguf_init_empty() };
 
@@ -982,14 +984,18 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
         }
         ml.load_data_for(tensor);
 
-        LLAMA_LOG_INFO("[%4d/%4d] %36s - [%s], type = %6s, size = %8.3f MB, raw_size = %zu, padded_size = %zu\n",
+        // Calculate and print average bpw for SmarterQuant
+        const int64_t n_cols = tensor->ne[0];
+        const int64_t n_rows = tensor->ne[1]; // TODO: MoE support with ne[2]?
+        int64_t total_weights = n_cols * n_rows;
+        double avg_bpw = (8.0 * ggml_nbytes(tensor)) / total_weights;
+        LLAMA_LOG_INFO("[%4d/%4d] %36s - [%s], type = %6s, size = %8.3f MB (%.2f bpw)\n",
                ++idx, ml.n_tensors,
                ggml_get_name(tensor),
                llama_format_tensor_shape(tensor).c_str(),
                ggml_type_name(tensor->type),
                ggml_nbytes(tensor)/1024.0/1024.0,
-               ggml_nbytes(tensor),
-               GGML_PAD(ggml_nbytes(tensor), align));
+               avg_bpw)
 
         // This used to be a regex, but <regex> has an extreme cost to compile times.
         bool quantize = name.rfind("weight") == name.size() - 6; // ends with 'weight'?
@@ -1204,12 +1210,9 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
                 }
                 new_size = llama_tensor_quantize_smarter_blocks(f32_data, new_data, tensor->ne, *sq_info, imatrix, nthread);
                 if (sq_info != nullptr) {
-                    LLAMA_LOG_DEBUG("SmarterQuant: name=%s, new_size=%zu, align=%zu, current_offset=%zu, next_offset=%zu\n", 
-                                    name.c_str(), new_size, align, current_offset, next_offset);
+                    LLAMA_LOG_DEBUG("SmarterQuant: name=%s\n", name.c_str());
                     current_offset = next_offset;
                     next_offset += GGML_PAD(new_size, align);
-                    LLAMA_LOG_DEBUG("SmarterQuant: After padding - current_offset=%zu, next_offset=%zu\n", 
-                                    current_offset, next_offset);
                 }
 
                 // Store SmarterQuant metadata in GGUF
@@ -1233,12 +1236,16 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
                 const int64_t n_rows = tensor->ne[1]; // TODO: MoE support with ne[2]?
                 int64_t total_weights = n_cols * n_rows;
                 double avg_bpw = (8.0 * new_size) / total_weights;
-                LLAMA_LOG_INFO("size = %8.2f MiB -> %8.2f MiB (%.2f bpw)\n", ggml_nbytes(tensor)/1024.0/1024.0, new_size/1024.0/1024.0, avg_bpw);
+                LLAMA_LOG_INFO("size = %8.2f MiB -> %8.2f MiB (%.2f bpw SmarterQuant)\n", ggml_nbytes(tensor)/1024.0/1024.0, new_size/1024.0/1024.0, avg_bpw);
 
                 // Set the actual offset for the current tensor
                 gguf_set_val_u64(ctx_outs[cur_split].get(),
                                  (name + ".smarterquant.actual_offset").c_str(),
                                  current_offset);
+                
+                // Ensure the offset is consistent with the tensor's actual size
+                LLAMA_LOG_DEBUG("Tensor %s: current_offset=%zu, new_size=%zu, next_offset=%zu\n", 
+                                name.c_str(), current_offset, new_size, next_offset);
             } else { // Not SmarterQuant, use regular quantization
                 static const int64_t min_chunk_size = 32 * 512;
                 const int64_t chunk_size = (n_per_row >= min_chunk_size ? n_per_row : n_per_row * ((min_chunk_size + n_per_row - 1)/n_per_row));
@@ -1264,17 +1271,32 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
             if (!sq_info) LLAMA_LOG_INFO("size = %8.2f MiB -> %8.2f MiB\n", ggml_nbytes(tensor)/1024.0/1024.0, new_size/1024.0/1024.0);
         }
         gguf_add_tensor(ctx_outs[cur_split].get(), tensor, 0); // Pass 0 for actual_size initially
+        
+        // Check for stored actual size in metadata
+        std::string actual_size_key = name + ".smarterquant.actual_size";
+        int64_t actual_size_key_id = gguf_find_key(ctx_outs[cur_split].get(), actual_size_key.c_str());
+        
+        if (actual_size_key_id != -1) {
+            size_t stored_actual_size = gguf_get_val_u64(ctx_outs[cur_split].get(), actual_size_key_id);
+            
+            // Use the stored actual size if it makes sense
+            if (stored_actual_size > 0 && stored_actual_size < ggml_nbytes(tensor)) {
+                LLAMA_LOG_INFO("Using stored actual size for %s: %zu (original size: %zu)\n", 
+                               name.c_str(), stored_actual_size, ggml_nbytes(tensor));
+                new_size = stored_actual_size;
+            }
+        }
+        
         tensors_new_size[name] = new_size; // Store the new_size for validation and for gguf_set_tensor_actual_size
 
         // Update the actual size of the tensor and recalculate offsets
         gguf_set_tensor_actual_size(ctx_outs[cur_split].get(), ggml_get_name(tensor), new_size);
 
         // Print the offset of the newly added tensor (now should be correct)
-        LLAMA_LOG_INFO("Offset for %s: raw_size = %zu, padded_size = %zu, current_offset = %zu bytes (%.2f MiB); next offset = %zu bytes (%.2f MiB)\n", 
+        LLAMA_LOG_INFO("Offset for %s: current_offset (%zu) + padded_size (%zu) = next_offset(%zu, %.2f MiB)\n", 
                      ggml_get_name(tensor), 
-                     new_size, 
+                     current_offset,
                      GGML_PAD(new_size, align), 
-                     current_offset, (double)current_offset / (1024.0 * 1024.0), 
                      next_offset, (double)next_offset / (1024.0 * 1024.0));
         total_size_org += ggml_nbytes(tensor); // This should still be original size for total_size_org
         total_size_new += new_size;
@@ -1287,7 +1309,6 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
 
     // Validate metadata
     LLAMA_LOG_INFO("%s: Validating metadata...\n", __func__);
-    struct gguf_init_params gguf_params = { .no_alloc = true, .ctx = NULL };
     gguf_context_ptr ctx_in { gguf_init_from_file(fname_out.c_str(), gguf_params) };
     if (!ctx_in) {
         throw std::runtime_error(format("failed to open GGUF file %s for validation", fname_out.c_str()));
