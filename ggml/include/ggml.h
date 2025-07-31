@@ -600,6 +600,7 @@ extern "C" {
     // n-dimensional tensor
     struct ggml_tensor {
         enum ggml_type type;
+        size_t actual_size;
 
         struct ggml_backend_buffer * buffer;
 
@@ -629,7 +630,7 @@ extern "C" {
 
         void * extra; // extra things e.g. for ggml-cuda.cu
 
-        char padding[8];
+        // char padding[8]; // removed due to actual_size
     };
 
     static const size_t GGML_TENSOR_SIZE = sizeof(struct ggml_tensor);

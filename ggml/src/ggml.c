@@ -1188,6 +1188,10 @@ int64_t ggml_nrows(const struct ggml_tensor * tensor) {
 }
 
 size_t ggml_nbytes(const struct ggml_tensor * tensor) {
+    if (tensor->actual_size != 0) {
+        return tensor->actual_size;
+    }
+    
     for (int i = 0; i < GGML_MAX_DIMS; ++i) {
         if (tensor->ne[i] <= 0) {
             return 0;

@@ -657,14 +657,7 @@ struct gguf_context * gguf_init_from_file_impl(FILE * file, struct gguf_init_par
             
             // Update the tensor info with actual values
             ti.offset = actual_offset;
-            // Modify the tensor to use the actual size
-            ti.t.data = nullptr; // Reset data pointer to force reallocation
-            for (int i = 0; i < GGML_MAX_DIMS; ++i) {
-                if (i < ggml_n_dims(&ti.t)) {
-                    // Adjust dimensions to match actual size
-                    ti.t.ne[i] = (actual_size / ggml_type_size(ti.t.type)) / (i == 0 ? 1 : ti.t.ne[i-1]);
-                }
-            }
+            ti.t.actual_size = actual_size;
         }
         
         // Validate again
