@@ -650,12 +650,29 @@ struct gguf_context * gguf_init_from_file_impl(FILE * file, struct gguf_init_par
             actual_size = gguf_get_val_u64(ctx, actual_size_key_id);
         }
             
-        // Validate tensor offset relative to the first tensor's offset
+        // Validate and potentially update tensor offset and size
         if (ti.offset != actual_offset || ggml_nbytes(&ti.t) != actual_size) {
             GGML_LOG_WARN("%s: tensor '%s' has offset %" PRIu64 ", actual_offset %" PRIu64 ", has size %zu, actual size %zu\n",
                 __func__, ti.t.name, ti.offset, actual_offset, ggml_nbytes(&ti.t), actual_size);
+            
+            // Update the tensor info with actual values
+            ti.offset = actual_offset;
+            // Modify the tensor to use the actual size
+            ti.t.data = nullptr; // Reset data pointer to force reallocation
+            for (int i = 0; i < GGML_MAX_DIMS; ++i) {
+                if (i < ggml_n_dims(&ti.t)) {
+                    // Adjust dimensions to match actual size
+                    ti.t.ne[i] = (actual_size / ggml_type_size(ti.t.type)) / (i == 0 ? 1 : ti.t.ne[i-1]);
+                }
+            }
         }
-          
+        
+        // Validate again
+        if (ti.offset != actual_offset || ggml_nbytes(&ti.t) != actual_size) {
+            GGML_LOG_WARN("%s: updated tensor '%s' has offset %" PRIu64 ", actual_offset %" PRIu64 ", has size %zu, actual size %zu\n",
+                __func__, ti.t.name, ti.offset, actual_offset, ggml_nbytes(&ti.t), actual_size);
+        }
+
         size_t padded_size = GGML_PAD(actual_size, ctx->alignment);
         if (SIZE_MAX - ctx->size < padded_size) {
             GGML_LOG_ERROR("%s: tensor '%s' size overflow, cannot accumulate size %zu + %zu\n",
