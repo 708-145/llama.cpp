@@ -995,7 +995,7 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
                llama_format_tensor_shape(tensor).c_str(),
                ggml_type_name(tensor->type),
                ggml_nbytes(tensor)/1024.0/1024.0,
-               avg_bpw)
+               avg_bpw);
 
         // This used to be a regex, but <regex> has an extreme cost to compile times.
         bool quantize = name.rfind("weight") == name.size() - 6; // ends with 'weight'?
