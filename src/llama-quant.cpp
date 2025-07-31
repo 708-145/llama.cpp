@@ -60,7 +60,7 @@ size_t llama_tensor_quantize_smarter_blocks(
         }
 
         // Prepare source data for the current segment
-        // TB: is it permuted?
+        // Data is already permuted in llama_model_quantize_impl
         std::vector<float> segment_src_data(n_rows * current_n_cols);
         for (int64_t r = 0; r < n_rows; ++r) {
             for (int64_t c = 0; c < current_n_cols; ++c) {
@@ -69,7 +69,7 @@ size_t llama_tensor_quantize_smarter_blocks(
         }
 
         // Prepare imatrix data for the current segment
-        // TB: is it permuted?
+        // Data is already permuted in llama_model_quantize_impl
         const float * segment_imatrix_data = nullptr;
         std::vector<float> temp_imatrix_data;
         if (imatrix_data) {
