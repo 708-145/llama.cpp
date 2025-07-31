@@ -1102,7 +1102,6 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
             new_size = ggml_nbytes(tensor);
             current_offset = next_offset;
             next_offset = current_offset + GGML_PAD(new_size, align);
-            LLAMA_LOG_INFO("size = %8.3f MB\n", ggml_nbytes(tensor)/1024.0/1024.0);
         } else {
             const int64_t nelements = ggml_nelements(tensor);
 
