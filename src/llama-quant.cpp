@@ -1123,7 +1123,7 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
             if (imatrix_data) {
                 auto it = imatrix_data->find(remap_imatrix(tensor->name, mapped));
                 if (it == imatrix_data->end()) {
-                    LLAMA_LOG_WARN("\n====== %s: did not find weights for %s (remapped name: %s)\n", 
+                    LLAMA_LOG_WARN("\n====== %s: did not find imatrix weights for %s (remapped name: %s)\n", 
                                    __func__, tensor->name, remap_imatrix(tensor->name, mapped).c_str());
                 } else {
                     if (it->second.size() == (size_t)tensor->ne[0]*tensor->ne[2]) {
@@ -1210,7 +1210,6 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
                 }
                 new_size = llama_tensor_quantize_smarter_blocks(f32_data, new_data, tensor->ne, *sq_info, imatrix, nthread);
                 if (sq_info != nullptr) {
-                    LLAMA_LOG_DEBUG("SmarterQuant: name=%s\n", name.c_str());
                     current_offset = next_offset;
                     next_offset += GGML_PAD(new_size, align);
                 }
@@ -1264,28 +1263,17 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
                     new_size += llama_tensor_quantize_impl(new_type, f32_data_03, new_data_03, chunk_size, nrows, n_per_row, imatrix_03, workers, nthread_use);
                     current_offset = next_offset;
                     next_offset += GGML_PAD(new_size, align);
-                    LLAMA_LOG_DEBUG("Regular Quantization: name=%s, new_size=%zu, align=%zu, current_offset=%zu, next_offset=%zu\n", 
-                                    name.c_str(), new_size, align, current_offset, next_offset);
+                    LLAMA_LOG_DEBUG("Regular Quantization: ");
                 }
             }
-            if (!sq_info) LLAMA_LOG_INFO("size = %8.2f MiB -> %8.2f MiB\n", ggml_nbytes(tensor)/1024.0/1024.0, new_size/1024.0/1024.0);
+            // Calculate and print average bpw for SmarterQuant
+            const int64_t n_cols = tensor->ne[0];
+            const int64_t n_rows = tensor->ne[1]; // TODO: MoE support with ne[2]?
+            int64_t total_weights = n_cols * n_rows;
+            double avg_bpw = (8.0 * new_size) / total_weights;
+            if (!sq_info) LLAMA_LOG_INFO("size = %8.2f MiB -> %8.2f MiB (%.2fbpw)\n", ggml_nbytes(tensor)/1024.0/1024.0, new_size/1024.0/1024.0, avg_bpw);
         }
         gguf_add_tensor(ctx_outs[cur_split].get(), tensor, 0); // Pass 0 for actual_size initially
-        
-        // Check for stored actual size in metadata
-        std::string actual_size_key = name + ".smarterquant.actual_size";
-        int64_t actual_size_key_id = gguf_find_key(ctx_outs[cur_split].get(), actual_size_key.c_str());
-        
-        if (actual_size_key_id != -1) {
-            size_t stored_actual_size = gguf_get_val_u64(ctx_outs[cur_split].get(), actual_size_key_id);
-            
-            // Use the stored actual size if it makes sense
-            if (stored_actual_size > 0 && stored_actual_size < ggml_nbytes(tensor)) {
-                LLAMA_LOG_INFO("Using stored actual size for %s: %zu (original size: %zu)\n", 
-                               name.c_str(), stored_actual_size, ggml_nbytes(tensor));
-                new_size = stored_actual_size;
-            }
-        }
         
         tensors_new_size[name] = new_size; // Store the new_size for validation and for gguf_set_tensor_actual_size
 

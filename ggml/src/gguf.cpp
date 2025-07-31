@@ -624,7 +624,9 @@ struct gguf_context * gguf_init_from_file_impl(FILE * file, struct gguf_init_par
     // compute the total size of the data section, taking into account the alignment
     ctx->size = 0;
     size_t first_tensor_offset = ctx->info.empty() ? 0 : ctx->info[0].offset;
-   
+    GGML_LOG_WARN("%s: first tensor offset: %zu\n",
+                __func__, first_tensor_offset);
+    
     for (size_t i = 0; i < ctx->info.size(); ++i) {
         const gguf_tensor_info & ti = ctx->info[i];
            
@@ -650,8 +652,8 @@ struct gguf_context * gguf_init_from_file_impl(FILE * file, struct gguf_init_par
             
         // Validate tensor offset relative to the first tensor's offset
         if (i > 0 && ti.offset != expected_offset) {
-            GGML_LOG_WARN("%s: tensor '%s' has offset %" PRIu64 ", expected %zu (first tensor offset: %zu)\n",
-                __func__, ti.t.name, ti.offset, expected_offset, first_tensor_offset);
+            GGML_LOG_WARN("%s: tensor '%s' has offset %" PRIu64 ", actual size %zu\n",
+                __func__, ti.t.name, ti.offset, actual_size);
         }
           
         size_t padded_size = GGML_PAD(actual_size, ctx->alignment);
