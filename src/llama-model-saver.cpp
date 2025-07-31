@@ -100,7 +100,7 @@ void llama_model_saver::add_tensor(const struct ggml_tensor * tensor) {
         GGML_ASSERT(std::string(tensor->name) == "rope_freqs.weight"); // FIXME
         return;
     }
-    gguf_add_tensor(gguf_ctx, tensor, 0ULL);
+    gguf_add_tensor(gguf_ctx, tensor);
 }
 
 void llama_model_saver::add_kv_from_model() {

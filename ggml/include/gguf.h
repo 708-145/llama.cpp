@@ -154,8 +154,7 @@ extern "C" {
     // add tensor to GGUF context, tensor name must be unique
     GGML_API void gguf_add_tensor(
              struct gguf_context * ctx,
-        const struct ggml_tensor * tensor,
-        size_t actual_size);
+        const struct ggml_tensor * tensor);
 
     // after changing a tensor's type, the offsets of all tensors with higher indices are immediately recalculated
     //   in such a way that the tensor data remains as one contiguous block (except for padding)

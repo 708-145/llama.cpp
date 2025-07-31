@@ -651,10 +651,11 @@ struct gguf_context * gguf_init_from_file_impl(FILE * file, struct gguf_init_par
         }
             
         // Validate tensor offset relative to the first tensor's offset
-        //if (ti.offset != expected_offset) {
+        if (ti.offset != expected_offset) {
+            ti.offset = expected_offset; // update the offset to the expected offset
             GGML_LOG_WARN("%s: tensor '%s' has offset %" PRIu64 ", expected_offset %" PRIu64 ", actual size %zu\n",
                 __func__, ti.t.name, ti.offset, expected_offset, actual_size);
-        //}
+        }
           
         size_t padded_size = GGML_PAD(actual_size, ctx->alignment);
         if (SIZE_MAX - ctx->size < padded_size) {
@@ -725,7 +726,7 @@ struct gguf_context * gguf_init_from_file_impl(FILE * file, struct gguf_init_par
             const struct gguf_tensor_info & info = ctx->info[i];
 
             // Check for actual size in metadata
-            std::string actual_size_key = std::string(info.t.name) + ".smarterquant.actual_size";
+            std::string actual_size_key = std::string(info.t.name) + ".actual_size";
             int64_t actual_size_key_id = gguf_find_key(ctx, actual_size_key.c_str());
             
             size_t actual_size = ggml_nbytes(&info.t);
@@ -1163,8 +1164,7 @@ void gguf_set_kv(struct gguf_context * ctx, const struct gguf_context * src) {
 
 void gguf_add_tensor(
              struct gguf_context * ctx,
-        const struct ggml_tensor * tensor,
-        size_t actual_size = 0) {
+        const struct ggml_tensor * tensor) {
     GGML_ASSERT(tensor);
     if (gguf_find_tensor(ctx, tensor->name) != -1) {
         GGML_ABORT("duplicate tensor name: %s", tensor->name);
@@ -1178,7 +1178,7 @@ void gguf_add_tensor(
         ctx->info.back().offset + GGML_PAD(ctx->info.back().t.nb[0], ctx->alignment);
 
     // If a SmarterQuant actual_offset is available, use that
-    std::string actual_offset_key = std::string(tensor->name) + ".smarterquant.actual_offset";
+    std::string actual_offset_key = std::string(tensor->name) + ".actual_offset";
     int64_t actual_offset_key_id = gguf_find_key(ctx, actual_offset_key.c_str());
     if (actual_offset_key_id != -1) {
         ti.offset = gguf_get_val_u64(ctx, actual_offset_key_id);

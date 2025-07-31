@@ -1272,12 +1272,12 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
             double avg_bpw = (8.0 * new_size) / total_weights;
             if (!sq_info) LLAMA_LOG_INFO("size = %8.2f MiB -> %8.2f MiB (%.2fbpw)\n", ggml_nbytes(tensor)/1024.0/1024.0, new_size/1024.0/1024.0, avg_bpw);
         }
-        gguf_add_tensor(ctx_outs[cur_split].get(), tensor, new_size);
+        gguf_add_tensor(ctx_outs[cur_split].get(), tensor);
         tensors_new_size[ggml_get_name(tensor)] = new_size; // Store the new_size for validation and for gguf_set_tensor_actual_size
 
         // Update actual_size attribute with newsize value
-        gguf_set_val_u64(ctx_outs[cur_split].get(), (ggml_get_name(tensor) + ".actual_size").c_str(), new_size);
-        gguf_set_val_u64(ctx_outs[cur_split].get(), (ggml_get_name(tensor) + ".actual_offset").c_str(), current_offset);
+        gguf_set_val_u64(ctx_outs[cur_split].get(), (std::string(ggml_get_name(tensor)) + ".actual_size").c_str(), new_size);
+        gguf_set_val_u64(ctx_outs[cur_split].get(), (std::string(ggml_get_name(tensor)) + ".actual_offset").c_str(), current_offset);
 
         // Print the offset of the newly added tensor (now should be correct)
         LLAMA_LOG_INFO("Offset for %s: current_offset (%zu) + padded_size (%zu) = next_offset(%zu, %.2f MiB)\n", 
