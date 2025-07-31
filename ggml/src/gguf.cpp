@@ -631,14 +631,14 @@ struct gguf_context * gguf_init_from_file_impl(FILE * file, struct gguf_init_par
         const gguf_tensor_info & ti = ctx->info[i];
            
         // Check for expected_offset and actual_size in metadata
-        std::string expected_offset_key = std::string(ti.t.name) + ".smarterquant.actual_offset";
-        std::string actual_size_key = std::string(ti.t.name) + ".smarterquant.actual_size";
+        std::string expected_offset_key = std::string(ti.t.name) + ".actual_offset";
+        std::string actual_size_key = std::string(ti.t.name) + ".actual_size";
           
         int64_t expected_offset_key_id = gguf_find_key(ctx, expected_offset_key.c_str());
         int64_t actual_size_key_id = gguf_find_key(ctx, actual_size_key.c_str());
            
         size_t expected_offset = first_tensor_offset + ctx->size;
-        size_t actual_size = ggml_nbytes(&ti.t);
+        size_t actual_size = 0; //ggml_nbytes(&ti.t);
             
         // Use metadata for expected offset if available
         if (expected_offset_key_id != -1) {
@@ -651,10 +651,10 @@ struct gguf_context * gguf_init_from_file_impl(FILE * file, struct gguf_init_par
         }
             
         // Validate tensor offset relative to the first tensor's offset
-        if (i > 0 && ti.offset != expected_offset) {
-            GGML_LOG_WARN("%s: tensor '%s' has offset %" PRIu64 ", actual size %zu\n",
-                __func__, ti.t.name, ti.offset, actual_size);
-        }
+        //if (ti.offset != expected_offset) {
+            GGML_LOG_WARN("%s: tensor '%s' has offset %" PRIu64 ", expected_offset %" PRIu64 ", actual size %zu\n",
+                __func__, ti.t.name, ti.offset, expected_offset, actual_size);
+        //}
           
         size_t padded_size = GGML_PAD(actual_size, ctx->alignment);
         if (SIZE_MAX - ctx->size < padded_size) {
