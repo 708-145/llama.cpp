@@ -652,16 +652,17 @@ struct gguf_context * gguf_init_from_file_impl(FILE * file, struct gguf_init_par
             
         // Validate and potentially update tensor offset and size
         if (ti.offset != actual_offset || ggml_nbytes(&ti.t) != actual_size) {
-            GGML_LOG_WARN("%s: tensor '%s' has offset %" PRIu64 ", actual_offset %" PRIu64 ", has size %zu, actual size %zu\n",
-                __func__, ti.t.name, ti.offset, actual_offset, ggml_nbytes(&ti.t), actual_size);
+            //GGML_LOG_WARN("%s: tensor '%s' has offset %" PRIu64 ", actual_offset %" PRIu64 ", has size %zu, actual size %zu\n",
+            //    __func__, ti.t.name, ti.offset, actual_offset, ggml_nbytes(&ti.t), actual_size);
             
             // Update the tensor info with actual values
             ti.offset = actual_offset;
             ti.t.actual_size = actual_size;
+            ctx->info[i] = ti; // Update the tensor info with actual values
         }
         
         // Validate again
-        if (ti.offset != actual_offset || ggml_nbytes(&ti.t) != actual_size) {
+        if (true || ti.offset != actual_offset || ggml_nbytes(&ti.t) != actual_size) {
             GGML_LOG_WARN("%s: updated tensor '%s' has offset %" PRIu64 ", actual_offset %" PRIu64 ", has size %zu, actual size %zu\n",
                 __func__, ti.t.name, ti.offset, actual_offset, ggml_nbytes(&ti.t), actual_size);
         }
@@ -675,6 +676,8 @@ struct gguf_context * gguf_init_from_file_impl(FILE * file, struct gguf_init_par
         }
         ctx->size += padded_size;
     }
+    GGML_LOG_WARN("%s: updated offsets and sizes\n======================\n",
+                __func__);
 
     // load the tensor data only if requested
     if (params.ctx != nullptr) {
