@@ -637,12 +637,12 @@ struct gguf_context * gguf_init_from_file_impl(FILE * file, struct gguf_init_par
         int64_t expected_offset_key_id = gguf_find_key(ctx, expected_offset_key.c_str());
         int64_t actual_size_key_id = gguf_find_key(ctx, actual_size_key.c_str());
            
-        size_t expected_offset = first_tensor_offset + ctx->size;
+        size_t actual_offset = first_tensor_offset + ctx->size;
         size_t actual_size = 0; //ggml_nbytes(&ti.t);
             
         // Use metadata for expected offset if available
         if (expected_offset_key_id != -1) {
-            expected_offset = gguf_get_val_u64(ctx, expected_offset_key_id);
+            actual_offset = gguf_get_val_u64(ctx, expected_offset_key_id);
         }
             
         // Use metadata for actual size if available
@@ -651,10 +651,9 @@ struct gguf_context * gguf_init_from_file_impl(FILE * file, struct gguf_init_par
         }
             
         // Validate tensor offset relative to the first tensor's offset
-        if (ti.offset != expected_offset) {
-            ti.offset = expected_offset; // update the offset to the expected offset
-            GGML_LOG_WARN("%s: tensor '%s' has offset %" PRIu64 ", expected_offset %" PRIu64 ", actual size %zu\n",
-                __func__, ti.t.name, ti.offset, expected_offset, actual_size);
+        if (ti.offset != actual_offset || ggml_nbytes(&ti.t) != actual_size) {
+            GGML_LOG_WARN("%s: tensor '%s' has offset %" PRIu64 ", actual_offset %" PRIu64 ", has size %zu, actual size %zu\n",
+                __func__, ti.t.name, ti.offset, actual_offset, ggml_nbytes(&ti.t), actual_size);
         }
           
         size_t padded_size = GGML_PAD(actual_size, ctx->alignment);

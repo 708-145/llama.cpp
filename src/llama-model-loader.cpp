@@ -548,7 +548,7 @@ llama_model_loader::llama_model_loader(
             // Validate tensor size against block types
             size_t expected_size_from_metadata = 0;
             bool has_actual_size_metadata =
-                get_key(tensor_name + ".smarterquant.actual_size", expected_size_from_metadata, false);
+                get_key(tensor_name + ".actual_size", expected_size_from_metadata, false);
 
             size_t calculated_expected_size = 0;
             const int64_t n_rows = cur->ne[1];

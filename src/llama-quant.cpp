@@ -19,9 +19,6 @@
 
 #include "../vendor/nlohmann/json.hpp" // Added for nlohmann::json
 
-// No longer needed here as it's defined in llama-quant.h
-// struct tensor_quantization;
-
 size_t llama_tensor_quantize_smarter_blocks(
     const float * src_data,
     void * dst_data,
@@ -776,16 +773,6 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
     const size_t align = GGUF_DEFAULT_ALIGNMENT;
     LLAMA_LOG_INFO("Alignment value: %zu\n", align);
     
-    // Add a debug function to show alignment details
-    // auto debug_alignment = [align](size_t size) {
-    //     return GGML_PAD(size, align);
-    // };
-
-    // Use traditional initialization for struct
-    struct gguf_init_params gguf_params;
-    gguf_params.no_alloc = true;
-    gguf_params.ctx = NULL;
-
     gguf_context_ptr ctx_out { gguf_init_empty() };
 
     std::vector<int> prune_list = {};
@@ -1238,12 +1225,8 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
 
                 // Set the actual offset for the current tensor
                 gguf_set_val_u64(ctx_outs[cur_split].get(),
-                                 (name + ".smarterquant.actual_offset").c_str(),
+                                 (name + ".actual_offset").c_str(),
                                  current_offset);
-                
-                // Ensure the offset is consistent with the tensor's actual size
-                LLAMA_LOG_DEBUG("Tensor %s: current_offset=%zu, new_size=%zu, next_offset=%zu\n", 
-                                name.c_str(), current_offset, new_size, next_offset);
             } else { // Not SmarterQuant, use regular quantization
                 static const int64_t min_chunk_size = 32 * 512;
                 const int64_t chunk_size = (n_per_row >= min_chunk_size ? n_per_row : n_per_row * ((min_chunk_size + n_per_row - 1)/n_per_row));
@@ -1293,29 +1276,6 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
         zeros(fout, GGML_PAD(new_size, align) - new_size);
     }
     close_ofstream();
-
-    // Validate metadata
-    LLAMA_LOG_INFO("%s: Validating metadata...\n", __func__);
-    gguf_context_ptr ctx_in { gguf_init_from_file(fname_out.c_str(), gguf_params) };
-    if (!ctx_in) {
-        throw std::runtime_error(format("failed to open GGUF file %s for validation", fname_out.c_str()));
-    }
-
-    for (int i = 0; i < gguf_get_n_tensors(ctx_in.get()); ++i) {
-        const char * name = gguf_get_tensor_name(ctx_in.get(), i);
-        size_t size = gguf_get_tensor_size(ctx_in.get(), i);
-        if (tensors_new_size.count(name) == 0) {
-            LLAMA_LOG_ERROR("%s: Tensor %s not found in bookkeeping map\n", __func__, name);
-            throw std::runtime_error("metadata validation failed");
-        }
-        if (tensors_new_size[name] != size) {
-            LLAMA_LOG_ERROR("%s: Tensor %s size mismatch: expected %zu, got %zu\n", __func__, name, tensors_new_size[name], size);
-            throw std::runtime_error("metadata validation failed");
-        }
-    }
-    LLAMA_LOG_INFO("%s: Metadata validation successful.\n", __func__);
-
-    // No need to free WeightMap, as it's replaced by SmartQuantConfig which is std::map
 
     LLAMA_LOG_INFO("%s: model size  = %8.2f MB\n", __func__, total_size_org/1024.0/1024.0);
     LLAMA_LOG_INFO("%s: quant size  = %8.2f MB\n", __func__, total_size_new/1024.0/1024.0);
