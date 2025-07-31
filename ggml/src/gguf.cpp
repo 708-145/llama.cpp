@@ -628,7 +628,7 @@ struct gguf_context * gguf_init_from_file_impl(FILE * file, struct gguf_init_par
                 __func__, first_tensor_offset);
     
     for (size_t i = 0; i < ctx->info.size(); ++i) {
-        const gguf_tensor_info & ti = ctx->info[i];
+        struct gguf_tensor_info & ti = ctx->info[i];
            
         // Check for expected_offset and actual_size in metadata
         std::string expected_offset_key = std::string(ti.t.name) + ".actual_offset";
