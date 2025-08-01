@@ -877,6 +877,16 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
     size_t total_size_org = 0;
     size_t total_size_new = 0;
 
+    // Helper function to calculate a simple 64-bit checksum
+    auto calculate_checksum = [](const void *data, size_t size) -> uint64_t {
+        uint64_t checksum = 0;
+        const uint8_t *bytes = (const uint8_t *)data;
+        for (size_t i = 0; i < size; ++i) {
+            checksum += bytes[i];
+        }
+        return checksum;
+    };
+
     std::vector<std::thread> workers;
     workers.reserve(nthread);
 
@@ -1308,6 +1318,7 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
 
         gguf_add_tensor(ctx_outs[cur_split].get(), &q_tensor);
         gguf_set_val_u64(ctx_outs[cur_split].get(), (name + ".actual_size").c_str(), new_size);
+        gguf_set_val_u64(ctx_outs[cur_split].get(), (name + ".checksum").c_str(), calculate_checksum(new_data, new_size));
         gguf_set_tensor_offset(ctx_outs[cur_split].get(), name.c_str(), current_offset);
 
         // Print the offset of the newly added tensor (now should be correct)
