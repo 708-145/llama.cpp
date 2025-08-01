@@ -921,6 +921,9 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
         }
     }
 
+    // TB: write smarterquant metadata here: loop through json, with info about tensor dimensions and quant bpw
+
+
     int cur_split = -1;
     std::ofstream fout;
     auto close_ofstream = [&]() {
