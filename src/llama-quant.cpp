@@ -956,7 +956,7 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
                     else if (j < 512) type = (ggml_type)sq_info.compression_types[2];
                     else if (j < 768) type = (ggml_type)sq_info.compression_types[3];
                     else type = (ggml_type)sq_info.compression_types[0];
-                    actual_size += ggml_type_size(type) * n_rows * std::min((int64_t)256, n_cols - j) / ggml_blck_size(type);
+                    actual_size += ggml_type_size(type) * n_rows; // * std::min((int64_t)256, n_cols - j) / ggml_blck_size(type);
                 }
                 gguf_set_val_u64(ctx_outs[i_split].get(), (name + ".actual_size").c_str(), actual_size);
                 dict_actual_size[name] = actual_size;
@@ -1006,14 +1006,6 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
         }
 
         const std::string name = ggml_get_name(tensor);
-        // TB: if actual_size attribute is set in dict_actual_size then override in tensor info so that ggml_nbytes(tensor) returns it.
-        //std::string actual_size_key = std::string(name + ".actual_size");
-        //int64_t actual_size_key_id = gguf_find_key(ctx, actual_size_key.c_str());
-        // size_t actual_size = dict_actual_size[name]; 
-        // Use metadata for actual size if available
-        //if (actual_size_key_id != -1) actual_size = gguf_get_val_u64(ctx, actual_size_key_id);
-        // if (actual_size != 0) tensor->actual_size = actual_size;
-        //ctx->info[i] = ti; // TB: Update the tensor info with actual values
 
         if (!ml.use_mmap) {
             if (read_data.size() < ggml_nbytes(tensor)) {
@@ -1294,13 +1286,6 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
 
         if (quantize) {
             q_tensor.type = new_type;
-            const size_t  type_size = ggml_type_size(new_type);
-            const int64_t blck_size = ggml_blck_size(new_type);
-            q_tensor.nb[0] = type_size;
-            q_tensor.nb[1] = q_tensor.nb[0]*(q_tensor.ne[0]/blck_size);
-            for (int i = 2; i < GGML_MAX_DIMS; i++) {
-                q_tensor.nb[i] = q_tensor.nb[i - 1]*q_tensor.ne[i - 1];
-            }
         }
 
         gguf_add_tensor(ctx_outs[cur_split].get(), &q_tensor);
