@@ -731,9 +731,10 @@ struct gguf_context * gguf_init_from_file_impl(FILE * file, struct gguf_init_par
             int64_t actual_size_key_id = gguf_find_key(ctx, actual_size_key.c_str());
             
             size_t actual_size = ggml_nbytes(&info.t);
+
             if (actual_size_key_id != -1) {
                 size_t stored_actual_size = gguf_get_val_u64(ctx, actual_size_key_id);
-                if (stored_actual_size > 0 && stored_actual_size < ggml_nbytes(&info.t)) {
+                if (stored_actual_size > 0 && stored_actual_size <= ggml_nbytes(&info.t)) {
                     actual_size = stored_actual_size;
                 }
             }
@@ -1408,6 +1409,12 @@ void gguf_write_to_buf(const struct gguf_context * ctx, std::vector<int8_t> & bu
 }
 
 bool gguf_write_to_file(const struct gguf_context * ctx, const char * fname, bool only_meta) {
+    GGML_LOG_WARN("GGUF_WRITE: Starting file write process\n");
+    GGML_LOG_WARN("  Filename: %s\n", fname);
+    GGML_LOG_WARN("  Metadata only: %s\n", only_meta ? "Yes" : "No");
+    GGML_LOG_WARN("  Number of key-value pairs: %" PRIi64 "\n", gguf_get_n_kv(ctx));
+    GGML_LOG_WARN("  Number of tensors: %" PRIi64 "\n", gguf_get_n_tensors(ctx));
+
     FILE * file = ggml_fopen(fname, "wb");
 
     if (!file) {
@@ -1416,9 +1423,20 @@ bool gguf_write_to_file(const struct gguf_context * ctx, const char * fname, boo
     }
 
     std::vector<int8_t> buf;
+    GGML_LOG_WARN("GGUF_WRITE: Preparing buffer\n");
     gguf_write_to_buf(ctx, buf, only_meta);
+    
+    GGML_LOG_WARN("GGUF_WRITE: Buffer prepared\n");
+    GGML_LOG_WARN("  Buffer size: %zu bytes\n", buf.size());
+    
+    GGML_LOG_WARN("GGUF_WRITE: Writing buffer to file\n");
     const bool ok = fwrite(buf.data(), 1, buf.size(), file) == buf.size();
+    
+    GGML_LOG_WARN("GGUF_WRITE: Closing file\n");
     fclose(file);
+    
+    GGML_LOG_WARN("GGUF_WRITE: Write operation %s\n", ok ? "successful" : "failed");
+    
     return ok;
 }
 
