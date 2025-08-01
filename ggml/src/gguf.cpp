@@ -651,7 +651,7 @@ struct gguf_context * gguf_init_from_file_impl(FILE * file, struct gguf_init_par
         }
         
         // Validate again
-        if (ggml_nbytes(&ti.t) != actual_size) {
+        if (true || ggml_nbytes(&ti.t) != actual_size) {
             GGML_LOG_WARN("%s: updated tensor '%s' has offset %" PRIu64 ", has size %zu, actual size %zu\n",
                 __func__, ti.t.name, ti.offset, ggml_nbytes(&ti.t), actual_size);
         }
