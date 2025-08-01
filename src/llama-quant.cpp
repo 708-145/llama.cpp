@@ -1113,7 +1113,7 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
                     LLAMA_LOG_DEBUG("(SmarterQuant override %s %s %s, %s) ", ggml_type_name((ggml_type)it->second.compression_types[1]), ggml_type_name((ggml_type)it->second.compression_types[2]), ggml_type_name((ggml_type)it->second.compression_types[3]), ggml_type_name((ggml_type)it->second.compression_types[0]));
                     sq_info = &it->second;
                     // For SmarterQuant, the main type of the tensor will be the first block's type
-                    new_type = (ggml_type)sq_info->compression_types[1];
+                    new_type = (ggml_type)sq_info->compression_types[1]; // TB: or use [0]?
                 }
             }
 
@@ -1290,9 +1290,15 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
             if (!sq_info) LLAMA_LOG_INFO("size = %8.2f MiB -> %8.2f MiB (%.2fbpw)\n", ggml_nbytes(tensor)/1024.0/1024.0, new_size/1024.0/1024.0, avg_bpw);
         }
 
-        if (quantize && sq_info == nullptr) {
-            tensor->type = new_type;
+        if (quantize) {
+            if (sq_info == nullptr) {
+                tensor->type = new_type;
+            } else {
+                // already written earlier in the code: gguf_set_val_u64(ctx_outs[cur_split].get(), (name + ".actual_size").c_str(), new_size);
+                tensor->type = (ggml_type)sq_info->compression_types[0]; // TB: set to predominant SmarterQuant type per tensor
+            }
         }
+
         gguf_add_tensor(ctx_outs[cur_split].get(), tensor);
 
         // Print the offset of the newly added tensor (now should be correct)
