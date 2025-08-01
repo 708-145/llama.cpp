@@ -1006,6 +1006,7 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
         fout = std::ofstream(fname, std::ios::binary);
         fout.exceptions(std::ofstream::failbit); // fail fast on write errors
         const size_t meta_size = gguf_get_meta_size(ctx_outs[cur_split].get());
+        LLAMA_LOG_WARN("Initial metadata size: %zu bytes (KV pairs: %" PRIi64 ")\n", meta_size, gguf_get_n_kv(ctx_outs[cur_split].get())); // TB: add info about kv size
         // placeholder for the meta data
         ::zeros(fout, meta_size);
     };
