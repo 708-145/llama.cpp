@@ -634,21 +634,20 @@ struct gguf_context * gguf_init_from_file_impl(FILE * file, struct gguf_init_par
         // Check for expected_offset and actual_size in metadata
         std::string actual_size_key = std::string(ti.t.name) + ".actual_size";
         int64_t actual_size_key_id = gguf_find_key(ctx, actual_size_key.c_str());
-        size_t actual_size = 0; //ggml_nbytes(&ti.t);
-            
+        size_t actual_size = 0; //ggml_nbytes(&ti.t);  
         // Use metadata for actual size if available
         if (actual_size_key_id != -1) {
             actual_size = gguf_get_val_u64(ctx, actual_size_key_id);
         }
             
         // Validate and potentially update tensor offset and size
-        if (ggml_nbytes(&ti.t) != actual_size) {
+        if (actual_size >0 && ggml_nbytes(&ti.t) != actual_size) {
             //GGML_LOG_WARN("%s: tensor '%s' has offset %" PRIu64 ", actual_offset %" PRIu64 ", has size %zu, actual size %zu\n",
             //    __func__, ti.t.name, ti.offset, actual_offset, ggml_nbytes(&ti.t), actual_size);
             
             // Update the tensor info with actual values
-            //ti.t.actual_size = actual_size; // TB: ?
-            //ctx->info[i] = ti; // TB: Update the tensor info with actual values
+            ti.t.actual_size = actual_size; // TB: ?
+            ctx->info[i] = ti; // TB: Update the tensor info with actual values
         }
         
         // Validate again

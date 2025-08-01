@@ -1007,6 +1007,15 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
 
         const std::string name = ggml_get_name(tensor);
         // TB: if actual_size attribute is set in dict_actual_size then override in tensor info so that ggml_nbytes(tensor) returns it.
+        std::string actual_size_key = std::string(name + ".actual_size");
+        int64_t actual_size_key_id = gguf_find_key(ctx, actual_size_key.c_str());
+        size_t actual_size = 0; //ggml_nbytes(&ti.t);  
+        // Use metadata for actual size if available
+        if (actual_size_key_id != -1) {
+            actual_size = gguf_get_val_u64(ctx, actual_size_key_id);
+        }
+        tensor->actual_size = actual_size;
+        //ctx->info[i] = ti; // TB: Update the tensor info with actual values
 
         if (!ml.use_mmap) {
             if (read_data.size() < ggml_nbytes(tensor)) {
