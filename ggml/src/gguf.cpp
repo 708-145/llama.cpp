@@ -646,8 +646,8 @@ struct gguf_context * gguf_init_from_file_impl(FILE * file, struct gguf_init_par
             //    __func__, ti.t.name, ti.offset, ggml_nbytes(&ti.t), actual_size);
             
             // Update the tensor info with actual values
-            ti.t.actual_size = actual_size; // TB: ?
-            ctx->info[i] = ti; // TB: Update the tensor info with actual values
+            ti.t.actual_size = actual_size;
+            ctx->info[i] = ti; // Update the tensor info with actual values
         }
         
         // Validate again
@@ -1175,20 +1175,7 @@ void gguf_add_tensor(
     struct gguf_tensor_info ti;
     ti.t = *tensor;
 
-    size_t prev_tensor_size = 0;
-    if (!ctx->info.empty()) {
-        const struct gguf_tensor_info & prev_ti = ctx->info.back();
-        const std::string key = std::string(prev_ti.t.name) + ".actual_size";
-        const int64_t key_id = gguf_find_key(ctx, key.c_str());
-        if (key_id != -1) {
-            prev_tensor_size = gguf_get_val_u64(ctx, key_id);
-        } else {
-            prev_tensor_size = ggml_nbytes(&prev_ti.t);
-        }
-    }
-
-    ti.offset = ctx->info.empty() ? 0 :
-        ctx->info.back().offset + GGML_PAD(prev_tensor_size, ctx->alignment);
+    ti.offset = 0; // will be set later
 
     ctx->info.push_back(ti);
 }
@@ -1216,6 +1203,14 @@ void gguf_set_tensor_type(struct gguf_context * ctx, const char * name, enum ggm
     for (int64_t i = tensor_id + 1; i < n_tensors; ++i) {
         ctx->info[i].offset = ctx->info[i - 1].offset + GGML_PAD(ggml_nbytes(&ctx->info[i - 1].t), ctx->alignment);
     }
+}
+
+void gguf_set_tensor_offset(struct gguf_context * ctx, const char * name, size_t offset) {
+    const int64_t tensor_id = gguf_find_tensor(ctx, name);
+    if (tensor_id < 0) {
+        GGML_ABORT("tensor not found: %s", name);
+    }
+    ctx->info[tensor_id].offset = offset;
 }
 
 void gguf_set_tensor_data(struct gguf_context * ctx, const char * name, const void * data) {

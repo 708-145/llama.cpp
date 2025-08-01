@@ -1121,7 +1121,7 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
                     LLAMA_LOG_DEBUG("(SmarterQuant override %s %s %s, %s) ", ggml_type_name((ggml_type)it->second.compression_types[1]), ggml_type_name((ggml_type)it->second.compression_types[2]), ggml_type_name((ggml_type)it->second.compression_types[3]), ggml_type_name((ggml_type)it->second.compression_types[0]));
                     sq_info = &it->second;
                     // For SmarterQuant, the main type of the tensor will be the last block's type
-                    new_type = (ggml_type)sq_info->compression_types[0]; // TB: use [0] instead of [1]
+                    new_type = (ggml_type)sq_info->compression_types[0]; // use [0] instead of [1]
                 }
             }
 
@@ -1304,19 +1304,9 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
         q_tensor.type = new_type;
         //q_tensor.offset = current_offset;
         q_tensor.actual_size = new_size;
-        // TB: write the metadate to file
-        LLAMA_LOG_INFO("TB_METADATA_WRITE: Preparing to write metadata for tensor %s\n", name.c_str());
-        LLAMA_LOG_INFO("  Tensor metadata details:\n");
-        LLAMA_LOG_INFO("    - New type: %d\n", q_tensor.type);
-        //LLAMA_LOG_INFO("    - Offset: %zu\n", q_tensor.offset);
-        LLAMA_LOG_INFO("    - Actual size: %zu\n", q_tensor.actual_size);
-        
+
         gguf_add_tensor(ctx_outs[cur_split].get(), &q_tensor);
-        // TB: Add logging
-        LLAMA_LOG_INFO("TB_TENSOR_ADD: Added tensor to GGUF context\n");
-        LLAMA_LOG_INFO("  Tensor name: %s\n", name.c_str());
-        LLAMA_LOG_INFO("  Tensor type: %d\n", q_tensor.type);
-        //LLAMA_LOG_INFO("  Tensor offset: %zu\n", q_tensor.offset);
+        gguf_set_tensor_offset(ctx_outs[cur_split].get(), name.c_str(), current_offset);
 
         // Print the offset of the newly added tensor (now should be correct)
         LLAMA_LOG_INFO("Offset for %s: current_offset (%zu) + padded_size (%zu) = next_offset(%zu, %.2f MiB)\n", 
