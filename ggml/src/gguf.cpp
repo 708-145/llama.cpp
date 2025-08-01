@@ -1174,21 +1174,8 @@ void gguf_add_tensor(
     struct gguf_tensor_info ti;
     ti.t = *tensor;
 
-    // Calculate offset based on previous tensor's offset and size
-    size_t prev_tensor_size = 0;
-    if (!ctx->info.empty()) {
-        const struct gguf_tensor_info & prev_ti = ctx->info.back();
-        const std::string key = std::string(prev_ti.t.name) + ".actual_size";
-        const int64_t key_id = gguf_find_key(ctx, key.c_str());
-        if (key_id != -1) {
-            prev_tensor_size = gguf_get_val_u64(ctx, key_id);
-        } else {
-            prev_tensor_size = ggml_nbytes(&prev_ti.t);
-        }
-    }
-
     ti.offset = ctx->info.empty() ? 0 :
-        ctx->info.back().offset + GGML_PAD(prev_tensor_size, ctx->alignment);
+        ctx->info.back().offset + GGML_PAD(ggml_nbytes(&ctx->info.back().t), ctx->alignment);
 
     ctx->info.push_back(ti);
 }

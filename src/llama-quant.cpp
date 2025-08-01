@@ -956,7 +956,7 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
                     else if (j < 512) type = (ggml_type)sq_info.compression_types[2];
                     else if (j < 768) type = (ggml_type)sq_info.compression_types[3];
                     else type = (ggml_type)sq_info.compression_types[0];
-                    actual_size += ggml_type_size(type) * n_rows; // * std::min((int64_t)256, n_cols - j) / ggml_blck_size(type);
+                    actual_size += ggml_type_size(type) * n_rows * std::min((int64_t)256, n_cols - j) / ggml_blck_size(type);
                 }
                 gguf_set_val_u64(ctx_outs[i_split].get(), (name + ".actual_size").c_str(), actual_size);
                 dict_actual_size[name] = actual_size;
@@ -1290,16 +1290,24 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
             if (!sq_info) LLAMA_LOG_INFO("size = %8.2f MiB -> %8.2f MiB (%.2fbpw)\n", ggml_nbytes(tensor)/1024.0/1024.0, new_size/1024.0/1024.0, avg_bpw);
         }
 
+        struct ggml_tensor q_tensor = *tensor;
+
         if (quantize) {
-            if (sq_info == nullptr) {
-                tensor->type = new_type;
-            } else {
-                // already written earlier in the code: gguf_set_val_u64(ctx_outs[cur_split].get(), (name + ".actual_size").c_str(), new_size);
-                tensor->type = (ggml_type)sq_info->compression_types[0]; // TB: set to predominant SmarterQuant type per tensor
+            q_tensor.type = new_type;
+            const size_t  type_size = ggml_type_size(new_type);
+            const int64_t blck_size = ggml_blck_size(new_type);
+            q_tensor.nb[0] = type_size;
+            q_tensor.nb[1] = q_tensor.nb[0]*(q_tensor.ne[0]/blck_size);
+            for (int i = 2; i < GGML_MAX_DIMS; i++) {
+                q_tensor.nb[i] = q_tensor.nb[i - 1]*q_tensor.ne[i - 1];
             }
         }
 
-        gguf_add_tensor(ctx_outs[cur_split].get(), tensor);
+        gguf_add_tensor(ctx_outs[cur_split].get(), &q_tensor);
+
+        if (quantize && sq_info != nullptr) {
+            gguf_set_val_u64(ctx_outs[cur_split].get(), (name + ".actual_size").c_str(), new_size);
+        }
 
         // Print the offset of the newly added tensor (now should be correct)
         LLAMA_LOG_INFO("Offset for %s: current_offset (%zu) + padded_size (%zu) = next_offset(%zu, %.2f MiB)\n", 
