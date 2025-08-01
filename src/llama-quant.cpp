@@ -970,11 +970,27 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
     auto close_ofstream = [&]() {
         // Write metadata and close file handler
         if (fout.is_open()) {
-            fout.seekp(0);
-            std::vector<uint8_t> data(gguf_get_meta_size(ctx_outs[cur_split].get()));
+            LLAMA_LOG_WARN("Rewriting metadata for split %d\n", cur_split);
+            
+            // Get metadata size
+            const size_t meta_size = gguf_get_meta_size(ctx_outs[cur_split].get());
+            LLAMA_LOG_WARN("  Metadata size: %zu bytes\n", meta_size);
+            
+            // Prepare metadata buffer
+            std::vector<uint8_t> data(meta_size);
             gguf_get_meta_data(ctx_outs[cur_split].get(), data.data());
+            
+            // Seek to beginning of file
+            fout.seekp(0);
+            LLAMA_LOG_WARN("  Seeking to file start (position 0)\n");
+            
+            // Write metadata
             fout.write((const char *) data.data(), data.size());
+            LLAMA_LOG_WARN("  Wrote %zu bytes of metadata\n", data.size());
+            
+            // Close file
             fout.close();
+            LLAMA_LOG_WARN("  File closed\n");
         }
     };
     auto new_ofstream = [&](int index) {
