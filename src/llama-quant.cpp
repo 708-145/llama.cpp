@@ -1307,6 +1307,7 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
         q_tensor.actual_size = new_size;
 
         gguf_add_tensor(ctx_outs[cur_split].get(), &q_tensor);
+        gguf_set_val_u64(ctx_outs[cur_split].get(), (name + ".actual_size").c_str(), new_size);
         gguf_set_tensor_offset(ctx_outs[cur_split].get(), name.c_str(), current_offset);
 
         // Print the offset of the newly added tensor (now should be correct)
