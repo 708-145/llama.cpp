@@ -634,7 +634,7 @@ struct gguf_context * gguf_init_from_file_impl(FILE * file, struct gguf_init_par
         // Check for expected_offset and actual_size in metadata
         std::string actual_size_key = std::string(ti.t.name) + ".actual_size";
         int64_t actual_size_key_id = gguf_find_key(ctx, actual_size_key.c_str());
-        size_t actual_size = 0; //ggml_nbytes(&ti.t);  
+        size_t actual_size = 0;
         // Use metadata for actual size if available
         if (actual_size_key_id != -1) {
             actual_size = gguf_get_val_u64(ctx, actual_size_key_id);
@@ -642,8 +642,8 @@ struct gguf_context * gguf_init_from_file_impl(FILE * file, struct gguf_init_par
             
         // Validate and potentially update tensor offset and size
         if (actual_size >0 && ggml_nbytes(&ti.t) != actual_size) {
-            //GGML_LOG_WARN("%s: tensor '%s' has offset %" PRIu64 ", actual_offset %" PRIu64 ", has size %zu, actual size %zu\n",
-            //    __func__, ti.t.name, ti.offset, actual_offset, ggml_nbytes(&ti.t), actual_size);
+            //GGML_LOG_WARN("%s: tensor '%s' has offset %" PRIu64 ", has size %zu, actual size %zu\n",
+            //    __func__, ti.t.name, ti.offset, ggml_nbytes(&ti.t), actual_size);
             
             // Update the tensor info with actual values
             ti.t.actual_size = actual_size; // TB: ?
@@ -1176,14 +1176,7 @@ void gguf_add_tensor(
 
     // Calculate offset based on previous tensor's offset and size
     ti.offset = ctx->info.empty() ? 0 :
-        ctx->info.back().offset + GGML_PAD(ctx->info.back().t.nb[0], ctx->alignment);
-
-    // If a SmarterQuant actual_offset is available, use that
-    std::string actual_offset_key = std::string(tensor->name) + ".actual_offset";
-    int64_t actual_offset_key_id = gguf_find_key(ctx, actual_offset_key.c_str());
-    if (actual_offset_key_id != -1) {
-        ti.offset = gguf_get_val_u64(ctx, actual_offset_key_id);
-    }
+        ctx->info.back().offset + GGML_PAD(ggml_nbytes(&ctx->info.back().t), ctx->alignment);
 
     ctx->info.push_back(ti);
 }

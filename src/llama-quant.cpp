@@ -1289,6 +1289,10 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
             double avg_bpw = (8.0 * new_size) / total_weights;
             if (!sq_info) LLAMA_LOG_INFO("size = %8.2f MiB -> %8.2f MiB (%.2fbpw)\n", ggml_nbytes(tensor)/1024.0/1024.0, new_size/1024.0/1024.0, avg_bpw);
         }
+
+        if (quantize && sq_info == nullptr) {
+            tensor->type = new_type;
+        }
         gguf_add_tensor(ctx_outs[cur_split].get(), tensor);
 
         // Print the offset of the newly added tensor (now should be correct)
