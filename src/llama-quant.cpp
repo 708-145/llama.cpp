@@ -886,7 +886,7 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
     std::vector<no_init<uint8_t>> work;
     std::vector<no_init<float>> f32_conv_buf;
 
-    std::unordered_map<std::string, size_t> tensors_new_size;
+    std::unordered_map<std::string, size_t> dict_actual_size;
     size_t current_offset = 0;
     size_t next_offset = 0;  // Start from 0, increment based on actual tensor sizes
 
@@ -920,7 +920,7 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
         }
     }
 
-    // TB: write smarterquant metadata here: loop through json, with info about tensor dimensions and quant bpw
+    // write smarterquant metadata here: loop through json, with info about tensor dimensions and quant bpw
     if (params->smarter_quant_config) {
         const auto & smarter_quant_config = *static_cast<const std::map<std::string, SmarterQuantTensorInfo>*>(params->smarter_quant_config);
         for (const auto * it : tensors) {
@@ -959,8 +959,7 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
                     actual_size += ggml_type_size(type) * n_rows; // * std::min((int64_t)256, n_cols - j) / ggml_blck_size(type);
                 }
                 gguf_set_val_u64(ctx_outs[i_split].get(), (name + ".actual_size").c_str(), actual_size);
-                // TB: also store in dict_actual_size for later. use name as index.
-                
+                dict_actual_size[name] = actual_size;
             }
         }
     }
@@ -1241,6 +1240,9 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
                     }
                 }
                 new_size = llama_tensor_quantize_smarter_blocks(f32_data, new_data, tensor->ne, *sq_info, imatrix, nthread);
+                if (new_size != dict_actual_size[tensor->name]) { // check if previous size calculation was correct. Use dict_actual_size[name]
+                    LLAMA_LOG_INFO("tensor size estimation for %s: new_size = %zu, dict_actual_size = %zu.\n", tensor->name, new_size, dict_actual_size[tensor->name]); 
+                }
                 if (sq_info != nullptr) {
                     current_offset = next_offset;
                     next_offset += GGML_PAD(new_size, align);
@@ -1281,7 +1283,6 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
             if (!sq_info) LLAMA_LOG_INFO("size = %8.2f MiB -> %8.2f MiB (%.2fbpw)\n", ggml_nbytes(tensor)/1024.0/1024.0, new_size/1024.0/1024.0, avg_bpw);
         }
         gguf_add_tensor(ctx_outs[cur_split].get(), tensor);
-        tensors_new_size[ggml_get_name(tensor)] = new_size; // Store the new_size for validation and for gguf_set_tensor_actual_size
 
         // Print the offset of the newly added tensor (now should be correct)
         LLAMA_LOG_INFO("Offset for %s: current_offset (%zu) + padded_size (%zu) = next_offset(%zu, %.2f MiB)\n", 
