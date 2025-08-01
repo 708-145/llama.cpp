@@ -771,7 +771,6 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
     }
 
     const size_t align = GGUF_DEFAULT_ALIGNMENT;
-    LLAMA_LOG_INFO("Alignment value: %zu\n", align);
     
     gguf_context_ptr ctx_out { gguf_init_empty() };
 
@@ -957,9 +956,11 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
                     else if (j < 512) type = (ggml_type)sq_info.compression_types[2];
                     else if (j < 768) type = (ggml_type)sq_info.compression_types[3];
                     else type = (ggml_type)sq_info.compression_types[0];
-                    actual_size += ggml_type_size(type) * n_rows * std::min((int64_t)256, n_cols - j) / ggml_blck_size(type);
+                    actual_size += ggml_type_size(type) * n_rows; // * std::min((int64_t)256, n_cols - j) / ggml_blck_size(type);
                 }
                 gguf_set_val_u64(ctx_outs[i_split].get(), (name + ".actual_size").c_str(), actual_size);
+                // TB: also store in dict_actual_size for later. use name as index.
+                
             }
         }
     }
@@ -1006,6 +1007,7 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
         }
 
         const std::string name = ggml_get_name(tensor);
+        // TB: if actual_size attribute is set in dict_actual_size then override in tensor info so that ggml_nbytes(tensor) returns it.
 
         if (!ml.use_mmap) {
             if (read_data.size() < ggml_nbytes(tensor)) {
@@ -1244,19 +1246,12 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
                     next_offset += GGML_PAD(new_size, align);
                 }
 
-                
-
                 // Calculate and print average bpw for SmarterQuant
                 const int64_t n_cols = tensor->ne[0];
                 const int64_t n_rows = tensor->ne[1]; // TODO: MoE support with ne[2]?
                 int64_t total_weights = n_cols * n_rows;
                 double avg_bpw = (8.0 * new_size) / total_weights;
                 LLAMA_LOG_INFO("size = %8.2f MiB -> %8.2f MiB (%.2f bpw SmarterQuant)\n", ggml_nbytes(tensor)/1024.0/1024.0, new_size/1024.0/1024.0, avg_bpw);
-
-                // Set the actual offset for the current tensor
-                gguf_set_val_u64(ctx_outs[cur_split].get(),
-                                 (name + ".actual_offset").c_str(),
-                                 current_offset);
             } else { // Not SmarterQuant, use regular quantization
                 static const int64_t min_chunk_size = 32 * 512;
                 const int64_t chunk_size = (n_per_row >= min_chunk_size ? n_per_row : n_per_row * ((min_chunk_size + n_per_row - 1)/n_per_row));
