@@ -922,6 +922,47 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
     }
 
     // TB: write smarterquant metadata here: loop through json, with info about tensor dimensions and quant bpw
+    if (params->smarter_quant_config) {
+        const auto & smarter_quant_config = *static_cast<const std::map<std::string, SmarterQuantTensorInfo>*>(params->smarter_quant_config);
+        for (const auto * it : tensors) {
+            const auto & weight = *it;
+            ggml_tensor * tensor = weight.tensor;
+            const std::string name = ggml_get_name(tensor);
+            auto sq_it = smarter_quant_config.find(name);
+            if (sq_it != smarter_quant_config.end() && sq_it->second.enabled) {
+                const auto & sq_info = sq_it->second;
+                uint16_t i_split = params->keep_split ? weight.idx : 0;
+
+                gguf_set_val_bool(ctx_outs[i_split].get(), (name + ".smarterquant.enabled").c_str(), true);
+                if (sq_info.column_permutation != nullptr && sq_info.n_cols_for_permutation > 0) {
+                    nlohmann::json perm_json = nlohmann::json::array();
+                    for (int64_t i = 0; i < sq_info.n_cols_for_permutation; ++i) {
+                        perm_json.push_back(sq_info.column_permutation[i]);
+                    }
+                    gguf_set_val_str(ctx_outs[i_split].get(), (name + ".smarterquant.permutation").c_str(), perm_json.dump().c_str());
+                }
+                nlohmann::json block_types_json = nlohmann::json::array();
+                for (int i = 0; i < 4; ++i) {
+                    block_types_json.push_back(sq_info.compression_types[i]);
+                }
+                gguf_set_val_str(ctx_outs[i_split].get(), (name + ".smarterquant.block_types").c_str(), block_types_json.dump().c_str());
+
+                // Calculate actual_size from tensor types and dimensions
+                size_t actual_size = 0;
+                const int64_t n_cols = tensor->ne[0];
+                const int64_t n_rows = tensor->ne[1];
+                for (int64_t j = 0; j < n_cols; j += 256) {
+                    ggml_type type;
+                    if (j < 256) type = (ggml_type)sq_info.compression_types[1];
+                    else if (j < 512) type = (ggml_type)sq_info.compression_types[2];
+                    else if (j < 768) type = (ggml_type)sq_info.compression_types[3];
+                    else type = (ggml_type)sq_info.compression_types[0];
+                    actual_size += ggml_type_size(type) * n_rows * std::min((int64_t)256, n_cols - j) / ggml_blck_size(type);
+                }
+                gguf_set_val_u64(ctx_outs[i_split].get(), (name + ".actual_size").c_str(), actual_size);
+            }
+        }
+    }
 
 
     int cur_split = -1;
@@ -1203,20 +1244,7 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
                     next_offset += GGML_PAD(new_size, align);
                 }
 
-                // Store SmarterQuant metadata in GGUF
-                gguf_set_val_bool(ctx_outs[cur_split].get(), (name + ".smarterquant.enabled").c_str(), true);
-                if (sq_info->column_permutation != nullptr && sq_info->n_cols_for_permutation > 0) {
-                    nlohmann::json perm_json = nlohmann::json::array();
-                    for (int64_t i = 0; i < sq_info->n_cols_for_permutation; ++i) {
-                        perm_json.push_back(sq_info->column_permutation[i]);
-                    }
-                    gguf_set_val_str(ctx_outs[cur_split].get(), (name + ".smarterquant.permutation").c_str(), perm_json.dump().c_str());
-                }
-                nlohmann::json block_types_json = nlohmann::json::array();
-                for (int i = 0; i < 4; ++i) {
-                    block_types_json.push_back(sq_info->compression_types[i]);
-                }
-                gguf_set_val_str(ctx_outs[cur_split].get(), (name + ".smarterquant.block_types").c_str(), block_types_json.dump().c_str());
+                
 
                 // Calculate and print average bpw for SmarterQuant
                 const int64_t n_cols = tensor->ne[0];
@@ -1259,10 +1287,6 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
         }
         gguf_add_tensor(ctx_outs[cur_split].get(), tensor);
         tensors_new_size[ggml_get_name(tensor)] = new_size; // Store the new_size for validation and for gguf_set_tensor_actual_size
-
-        // Update actual_size attribute with newsize value
-        gguf_set_val_u64(ctx_outs[cur_split].get(), (std::string(ggml_get_name(tensor)) + ".actual_size").c_str(), new_size);
-        gguf_set_val_u64(ctx_outs[cur_split].get(), (std::string(ggml_get_name(tensor)) + ".actual_offset").c_str(), current_offset);
 
         // Print the offset of the newly added tensor (now should be correct)
         LLAMA_LOG_INFO("Offset for %s: current_offset (%zu) + padded_size (%zu) = next_offset(%zu, %.2f MiB)\n", 
