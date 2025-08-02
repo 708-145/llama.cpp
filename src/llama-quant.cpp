@@ -1322,11 +1322,12 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
         gguf_set_tensor_offset(ctx_outs[cur_split].get(), name.c_str(), current_offset);
 
         // Print the offset of the newly added tensor (now should be correct)
-        LLAMA_LOG_INFO("Offset for %s: current_offset (%zu) + padded_size (%zu) = next_offset(%zu, %.2f MiB)\n", 
+        LLAMA_LOG_INFO("Offset for %s: current_offset (%zu) + padded_size (%zu) = next_offset(%zu, %.2f MiB), filepos %ld\n", 
                      ggml_get_name(tensor), 
                      current_offset,
                      GGML_PAD(new_size, align), 
-                     next_offset, (double)next_offset / (1024.0 * 1024.0));
+                     next_offset, (double)next_offset / (1024.0 * 1024.0),
+                     (long)fout.tellp());
         total_size_org += ggml_nbytes(tensor); // This should still be original size for total_size_org
         total_size_new += new_size;
 

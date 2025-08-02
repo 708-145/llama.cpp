@@ -803,13 +803,14 @@ struct gguf_context * gguf_init_from_file_impl(FILE * file, struct gguf_init_par
                 }
             }
 
-            // Debug printing of tensor offsets
-            printf("Tensor %zu: Name='%s', Offset=%" PRIu64 ", Size=%zu, Type=%d\n", 
-                   i, 
-                   info.t.name, 
-                   info.offset, 
-                   actual_size, 
-                   info.t.type);
+                        // Debug printing of tensor offsets
+            printf("Tensor %zu: Name='%s', Offset=%" PRIu64 ", Size=%zu, Type=%d, FilePos=%ld\n",
+                   i,
+                   info.t.name,
+                   info.offset,
+                   actual_size,
+                   info.t.type,
+                   ftell(file));
         }
 
         if (!ok) {
@@ -1448,6 +1449,8 @@ void gguf_write_to_buf(const struct gguf_context * ctx, std::vector<int8_t> & bu
 
     // write tensor data
     for (int64_t i = 0; i < n_tensors; ++i) {
+        const auto & info = ctx->info[i];
+        fprintf(stderr, "quant: tensor %s, offset %zu, size %zu\n", info.t.name, (size_t)info.offset, ggml_nbytes(&info.t));
         gw.write_tensor_data(ctx->info[i], offset_data, ctx->alignment);
     }
 }
