@@ -918,7 +918,6 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
         if (!ctx_outs[i_split]) {
             ctx_outs[i_split].reset(gguf_init_empty());
         }
-        
     }
 
     // Set split info if needed
@@ -977,30 +976,32 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
 
     int cur_split = -1;
     std::ofstream fout;
+    std::string temp_fname;
     auto close_ofstream = [&]() {
-        // Write metadata and close file handler
         if (fout.is_open()) {
-            LLAMA_LOG_WARN("Rewriting metadata for split %d\n", cur_split);
-            
-            // Get metadata size
+            fout.close();
+
             const size_t meta_size = gguf_get_meta_size(ctx_outs[cur_split].get());
-            LLAMA_LOG_WARN("  Metadata size: %zu bytes\n", meta_size);
-            
-            // Prepare metadata buffer
             std::vector<uint8_t> data(meta_size);
             gguf_get_meta_data(ctx_outs[cur_split].get(), data.data());
-            
-            // Seek to beginning of file
-            fout.seekp(0);
-            LLAMA_LOG_WARN("  Seeking to file start (position 0)\n");
-            
-            // Write metadata
-            fout.write((const char *) data.data(), data.size());
-            LLAMA_LOG_WARN("  Wrote %zu bytes of metadata\n", data.size());
-            
-            // Close file
-            fout.close();
-            LLAMA_LOG_WARN("  File closed\n");
+
+            std::string final_fname = fname_out;
+            if (params->keep_split) {
+                std::vector<char> split_path(llama_path_max(), 0);
+                llama_split_path(split_path.data(), split_path.size(), fname_out.c_str(), cur_split, n_split);
+                final_fname = std::string(split_path.data());
+            }
+
+            std::ofstream final_fout(final_fname, std::ios::binary);
+            final_fout.exceptions(std::ofstream::failbit);
+            final_fout.write((const char *)data.data(), data.size());
+
+            std::ifstream temp_fin(temp_fname, std::ios::binary);
+            final_fout << temp_fin.rdbuf();
+
+            final_fout.close();
+            temp_fin.close();
+            std::remove(temp_fname.c_str());
         }
     };
     auto new_ofstream = [&](int index) {
@@ -1013,12 +1014,9 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
             fname = std::string(split_path.data());
         }
 
-        fout = std::ofstream(fname, std::ios::binary);
+        temp_fname = fname + ".tmp";
+        fout.open(temp_fname, std::ios::binary);
         fout.exceptions(std::ofstream::failbit); // fail fast on write errors
-        const size_t meta_size = gguf_get_meta_size(ctx_outs[cur_split].get());
-        LLAMA_LOG_WARN("Initial metadata size: %zu bytes (KV pairs: %" PRIi64 ")\n", meta_size, gguf_get_n_kv(ctx_outs[cur_split].get())); // TB: add info about kv size
-        // placeholder for the meta data
-        ::zeros(fout, meta_size);
     };
 
     const auto tn = LLM_TN(model.arch);
