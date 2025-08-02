@@ -4905,6 +4905,8 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
         if (!ml.load_all_data(ctx, bufs, use_mlock ? &pimpl->mlock_mmaps : NULL, params.progress_callback, params.progress_callback_user_data)) {
             return false;
         }
+        // TB: Verify checksum for each tensor
+        //gguf_verify_tensor_checksums(static_cast<const gguf_context*>(ctx), bufs);
     }
 
     if (use_mmap_buffer) {

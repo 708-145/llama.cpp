@@ -771,7 +771,6 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
     }
 
     const size_t align = GGUF_DEFAULT_ALIGNMENT;
-    LLAMA_LOG_INFO("Alignment value: %zu\n", align);
     
     gguf_context_ptr ctx_out { gguf_init_empty() };
 
@@ -878,6 +877,16 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
     size_t total_size_org = 0;
     size_t total_size_new = 0;
 
+    // Helper function to calculate a simple 64-bit checksum
+    auto calculate_checksum = [](const void *data, size_t size) -> uint64_t {
+        uint64_t checksum = 0;
+        const uint8_t *bytes = (const uint8_t *)data;
+        for (size_t i = 0; i < size; ++i) {
+            checksum += bytes[i];
+        }
+        return checksum;
+    };
+
     std::vector<std::thread> workers;
     workers.reserve(nthread);
 
@@ -887,7 +896,7 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
     std::vector<no_init<uint8_t>> work;
     std::vector<no_init<float>> f32_conv_buf;
 
-    std::unordered_map<std::string, size_t> tensors_new_size;
+    std::unordered_map<std::string, size_t> dict_actual_size;
     size_t current_offset = 0;
     size_t next_offset = 0;  // Start from 0, increment based on actual tensor sizes
 
@@ -909,7 +918,6 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
         if (!ctx_outs[i_split]) {
             ctx_outs[i_split].reset(gguf_init_empty());
         }
-        
     }
 
     // Set split info if needed
@@ -921,16 +929,84 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
         }
     }
 
+    // write smarterquant metadata here: loop through json, with info about tensor dimensions and quant bpw
+    if (params->smarter_quant_config) {
+        const auto & smarter_quant_config = *static_cast<const std::map<std::string, SmarterQuantTensorInfo>*>(params->smarter_quant_config);
+        for (const auto * it : tensors) {
+            const auto & weight = *it;
+            ggml_tensor * tensor = weight.tensor;
+            const std::string name = ggml_get_name(tensor);
+            auto sq_it = smarter_quant_config.find(name);
+            if (sq_it != smarter_quant_config.end() && sq_it->second.enabled) {
+                const auto & sq_info = sq_it->second;
+                uint16_t i_split = params->keep_split ? weight.idx : 0;
+
+                gguf_set_val_bool(ctx_outs[i_split].get(), (name + ".smarterquant.enabled").c_str(), true);
+                if (sq_info.column_permutation != nullptr && sq_info.n_cols_for_permutation > 0) {
+                    nlohmann::json perm_json = nlohmann::json::array();
+                    for (int64_t i = 0; i < sq_info.n_cols_for_permutation; ++i) {
+                        perm_json.push_back(sq_info.column_permutation[i]);
+                    }
+                    gguf_set_val_str(ctx_outs[i_split].get(), (name + ".smarterquant.permutation").c_str(), perm_json.dump().c_str());
+                }
+                nlohmann::json block_types_json = nlohmann::json::array();
+                for (int i = 0; i < 4; ++i) {
+                    block_types_json.push_back(sq_info.compression_types[i]);
+                }
+                gguf_set_val_str(ctx_outs[i_split].get(), (name + ".smarterquant.block_types").c_str(), block_types_json.dump().c_str());
+
+                // Calculate actual_size from tensor types and dimensions
+                size_t actual_size = 0;
+                const int64_t n_cols = tensor->ne[0];
+                const int64_t n_rows = tensor->ne[1];
+                for (int64_t j = 0; j < n_cols; j += 256) {
+                    ggml_type type;
+                    if (j < 256) type = (ggml_type)sq_info.compression_types[1];
+                    else if (j < 512) type = (ggml_type)sq_info.compression_types[2];
+                    else if (j < 768) type = (ggml_type)sq_info.compression_types[3];
+                    else type = (ggml_type)sq_info.compression_types[0];
+                    actual_size += ggml_type_size(type) * n_rows; // * std::min((int64_t)256, n_cols - j) / ggml_blck_size(type);
+                }
+                gguf_set_val_u64(ctx_outs[i_split].get(), (name + ".actual_size").c_str(), actual_size);
+                dict_actual_size[name] = actual_size;
+            }
+        }
+    }
+
+
     int cur_split = -1;
     std::ofstream fout;
+    std::string temp_fname;
     auto close_ofstream = [&]() {
-        // Write metadata and close file handler
         if (fout.is_open()) {
-            fout.seekp(0);
-            std::vector<uint8_t> data(gguf_get_meta_size(ctx_outs[cur_split].get()));
-            gguf_get_meta_data(ctx_outs[cur_split].get(), data.data());
-            fout.write((const char *) data.data(), data.size());
             fout.close();
+
+            const size_t meta_size = gguf_get_meta_size(ctx_outs[cur_split].get());
+            std::vector<uint8_t> data(meta_size);
+            gguf_get_meta_data(ctx_outs[cur_split].get(), data.data());
+
+            std::string final_fname = fname_out;
+            if (params->keep_split) {
+                std::vector<char> split_path(llama_path_max(), 0);
+                llama_split_path(split_path.data(), split_path.size(), fname_out.c_str(), cur_split, n_split);
+                final_fname = std::string(split_path.data());
+            }
+
+            std::ofstream final_fout(final_fname, std::ios::binary);
+            final_fout.exceptions(std::ofstream::failbit);
+            final_fout.write((const char *)data.data(), data.size());
+
+            std::ifstream temp_fin(temp_fname, std::ios::binary);
+            constexpr size_t BUFFER_SIZE = 8192 * 1024; // 8MB buffer
+            std::vector<char> buffer(BUFFER_SIZE);
+            while (temp_fin.read(buffer.data(), buffer.size())) {
+                final_fout.write(buffer.data(), temp_fin.gcount());
+            }
+            final_fout.write(buffer.data(), temp_fin.gcount());
+
+            final_fout.close();
+            temp_fin.close();
+            std::remove(temp_fname.c_str());
         }
     };
     auto new_ofstream = [&](int index) {
@@ -943,11 +1019,9 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
             fname = std::string(split_path.data());
         }
 
-        fout = std::ofstream(fname, std::ios::binary);
+        temp_fname = fname + ".tmp";
+        fout.open(temp_fname, std::ios::binary);
         fout.exceptions(std::ofstream::failbit); // fail fast on write errors
-        const size_t meta_size = gguf_get_meta_size(ctx_outs[cur_split].get());
-        // placeholder for the meta data
-        ::zeros(fout, meta_size);
     };
 
     const auto tn = LLM_TN(model.arch);
@@ -1060,8 +1134,8 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
                 if (it != smarter_quant_config.end() && it->second.enabled) {
                     LLAMA_LOG_DEBUG("(SmarterQuant override %s %s %s, %s) ", ggml_type_name((ggml_type)it->second.compression_types[1]), ggml_type_name((ggml_type)it->second.compression_types[2]), ggml_type_name((ggml_type)it->second.compression_types[3]), ggml_type_name((ggml_type)it->second.compression_types[0]));
                     sq_info = &it->second;
-                    // For SmarterQuant, the main type of the tensor will be the first block's type
-                    new_type = (ggml_type)sq_info->compression_types[1];
+                    // For SmarterQuant, the main type of the tensor will be the last block's type
+                    new_type = (ggml_type)sq_info->compression_types[0]; // use [0] instead of [1]
                 }
             }
 
@@ -1195,25 +1269,13 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
                     }
                 }
                 new_size = llama_tensor_quantize_smarter_blocks(f32_data, new_data, tensor->ne, *sq_info, imatrix, nthread);
+                if (new_size != dict_actual_size[tensor->name]) { // check if previous size calculation was correct. Use dict_actual_size[name]
+                    LLAMA_LOG_INFO("tensor size estimation for %s: new_size = %zu, dict_actual_size = %zu.\n", tensor->name, new_size, dict_actual_size[tensor->name]); 
+                }
                 if (sq_info != nullptr) {
                     current_offset = next_offset;
                     next_offset += GGML_PAD(new_size, align);
                 }
-
-                // Store SmarterQuant metadata in GGUF
-                gguf_set_val_bool(ctx_outs[cur_split].get(), (name + ".smarterquant.enabled").c_str(), true);
-                if (sq_info->column_permutation != nullptr && sq_info->n_cols_for_permutation > 0) {
-                    nlohmann::json perm_json = nlohmann::json::array();
-                    for (int64_t i = 0; i < sq_info->n_cols_for_permutation; ++i) {
-                        perm_json.push_back(sq_info->column_permutation[i]);
-                    }
-                    gguf_set_val_str(ctx_outs[cur_split].get(), (name + ".smarterquant.permutation").c_str(), perm_json.dump().c_str());
-                }
-                nlohmann::json block_types_json = nlohmann::json::array();
-                for (int i = 0; i < 4; ++i) {
-                    block_types_json.push_back(sq_info->compression_types[i]);
-                }
-                gguf_set_val_str(ctx_outs[cur_split].get(), (name + ".smarterquant.block_types").c_str(), block_types_json.dump().c_str());
 
                 // Calculate and print average bpw for SmarterQuant
                 const int64_t n_cols = tensor->ne[0];
@@ -1221,11 +1283,6 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
                 int64_t total_weights = n_cols * n_rows;
                 double avg_bpw = (8.0 * new_size) / total_weights;
                 LLAMA_LOG_INFO("size = %8.2f MiB -> %8.2f MiB (%.2f bpw SmarterQuant)\n", ggml_nbytes(tensor)/1024.0/1024.0, new_size/1024.0/1024.0, avg_bpw);
-
-                // Set the actual offset for the current tensor
-                gguf_set_val_u64(ctx_outs[cur_split].get(),
-                                 (name + ".actual_offset").c_str(),
-                                 current_offset);
             } else { // Not SmarterQuant, use regular quantization
                 static const int64_t min_chunk_size = 32 * 512;
                 const int64_t chunk_size = (n_per_row >= min_chunk_size ? n_per_row : n_per_row * ((min_chunk_size + n_per_row - 1)/n_per_row));
@@ -1254,19 +1311,26 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
             double avg_bpw = (8.0 * new_size) / total_weights;
             if (!sq_info) LLAMA_LOG_INFO("size = %8.2f MiB -> %8.2f MiB (%.2fbpw)\n", ggml_nbytes(tensor)/1024.0/1024.0, new_size/1024.0/1024.0, avg_bpw);
         }
-        gguf_add_tensor(ctx_outs[cur_split].get(), tensor);
-        tensors_new_size[ggml_get_name(tensor)] = new_size; // Store the new_size for validation and for gguf_set_tensor_actual_size
 
-        // Update actual_size attribute with newsize value
-        gguf_set_val_u64(ctx_outs[cur_split].get(), (std::string(ggml_get_name(tensor)) + ".actual_size").c_str(), new_size);
-        gguf_set_val_u64(ctx_outs[cur_split].get(), (std::string(ggml_get_name(tensor)) + ".actual_offset").c_str(), current_offset);
+        struct ggml_tensor q_tensor = *tensor;
+
+        // update tensor info
+        q_tensor.type = new_type;
+        //q_tensor.offset = current_offset;
+        q_tensor.actual_size = new_size;
+
+        gguf_add_tensor(ctx_outs[cur_split].get(), &q_tensor);
+        gguf_set_val_u64(ctx_outs[cur_split].get(), (name + ".actual_size").c_str(), new_size);
+        gguf_set_val_u64(ctx_outs[cur_split].get(), (name + ".checksum").c_str(), calculate_checksum(new_data, new_size));
+        gguf_set_tensor_offset(ctx_outs[cur_split].get(), name.c_str(), current_offset);
 
         // Print the offset of the newly added tensor (now should be correct)
-        LLAMA_LOG_INFO("Offset for %s: current_offset (%zu) + padded_size (%zu) = next_offset(%zu, %.2f MiB)\n", 
+        LLAMA_LOG_INFO("Offset for %s: current_offset (%zu) + padded_size (%zu) = next_offset(%zu, %.2f MiB), filepos %ld\n", 
                      ggml_get_name(tensor), 
                      current_offset,
                      GGML_PAD(new_size, align), 
-                     next_offset, (double)next_offset / (1024.0 * 1024.0));
+                     next_offset, (double)next_offset / (1024.0 * 1024.0),
+                     (long)fout.tellp());
         total_size_org += ggml_nbytes(tensor); // This should still be original size for total_size_org
         total_size_new += new_size;
 

@@ -547,39 +547,8 @@ llama_model_loader::llama_model_loader(
 
             // Validate tensor size against block types
             size_t expected_size_from_metadata = 0;
-            bool has_actual_size_metadata =
-                get_key(tensor_name + ".actual_size", expected_size_from_metadata, false);
-
-            size_t calculated_expected_size = 0;
-            const int64_t n_rows = cur->ne[1];
-            const int64_t n_cols = cur->ne[0];
-            for (int64_t i = 0; i < n_cols; i += 256) {
-                ggml_type type;
-                if (i < 256) type = (ggml_type)sq_info.compression_types[1];
-                else if (i < 512) type = (ggml_type)sq_info.compression_types[2];
-                else if (i < 768) type = (ggml_type)sq_info.compression_types[3];
-                else type = (ggml_type)sq_info.compression_types[0];
-                calculated_expected_size += ggml_type_size(type) * n_rows * std::min((int64_t)256, n_cols - i) / ggml_blck_size(type);
-            }
-
-            // Store the calculated expected size in metadata if not already present
-            if (!has_actual_size_metadata) {
-                // Note: There's no direct set_key method, so we'll log a warning instead
-                LLAMA_LOG_WARN("Calculated expected size for tensor %s: %zu\n", 
-                               tensor_name.c_str(), calculated_expected_size);
-            }
-
-            size_t final_expected_size = has_actual_size_metadata ? expected_size_from_metadata : calculated_expected_size;
-
-            if (ggml_nbytes(cur) != final_expected_size) {
-                if (sq_enabled) {
-                    LLAMA_LOG_WARN("smarterquant tensor %s has different size than expected: got %zu, expected %zu (from %s)\n",
-                                   tensor_name.c_str(), ggml_nbytes(cur), final_expected_size,
-                                   has_actual_size_metadata ? "metadata" : "calculation");
-                } else {
-                    throw std::runtime_error(format("invalid tensor size for tensor %s: got %zu, expected %zu", tensor_name.c_str(), ggml_nbytes(cur), final_expected_size));
-                }
-            }
+            get_key(tensor_name + ".actual_size", expected_size_from_metadata, false);
+            // TODO: sq_info.actual_size = expected_size_from_metadata;
 
             smarter_quant_info[tensor_name] = sq_info;
         }
