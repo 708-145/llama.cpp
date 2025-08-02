@@ -726,6 +726,43 @@ struct gguf_context * gguf_init_from_file_impl(FILE * file, struct gguf_init_par
                 return nullptr;
             }
 
+            // Verify checksums for all tensors after reading the entire blob
+            for (size_t i = 0; i < ctx->info.size(); ++i) {
+                const struct gguf_tensor_info & info = ctx->info[i];
+                size_t actual_size = ggml_nbytes(&info.t);
+
+                std::string actual_size_key = std::string(info.t.name) + ".actual_size";
+                int64_t actual_size_key_id = gguf_find_key(ctx, actual_size_key.c_str());
+                if (actual_size_key_id != -1) {
+                    size_t stored_actual_size = gguf_get_val_u64(ctx, actual_size_key_id);
+                    if (stored_actual_size > 0 && stored_actual_size <= ggml_nbytes(&info.t)) {
+                        actual_size = stored_actual_size;
+                    }
+                }
+
+                std::string checksum_key = std::string(info.t.name) + ".checksum";
+                int64_t checksum_key_id = gguf_find_key(ctx, checksum_key.c_str());
+                if (checksum_key_id != -1) {
+                    uint64_t stored_checksum = gguf_get_val_u64(ctx, checksum_key_id);
+                    uint64_t calculated_checksum = calculate_checksum((char *)data->data + info.offset, actual_size);
+                    if (stored_checksum != calculated_checksum) {
+                        GGML_LOG_ERROR("%s: Checksum mismatch for tensor '%s'. Stored: %" PRIu64 ", Calculated: %" PRIu64 "\n",
+                                       __func__, info.t.name, stored_checksum, calculated_checksum);
+                        ok = false;
+                        break;
+                    } else {
+                        GGML_LOG_WARN("%s: Checksum for tensor '%s' verified successfully.\n", __func__, info.t.name);
+                    }
+                }
+            }
+
+            if (!ok) {
+                ggml_free(ctx_data);
+                *params.ctx = nullptr;
+                gguf_free(ctx);
+                return nullptr;
+            }
+
             ctx->data = data->data;
         }
 
@@ -758,26 +795,9 @@ struct gguf_context * gguf_init_from_file_impl(FILE * file, struct gguf_init_par
 
             ggml_set_name(cur, info.t.name);
             
-            GGML_LOG_WARN("%s: Checksum verification\n", __func__);
             // point the data member to the appropriate location in the binary blob using the tensor info
             if (!params.no_alloc) {
                 cur->data = (char *) data->data + info.offset;
-
-                // Verify checksum if available
-                std::string checksum_key = std::string(info.t.name) + ".checksum";
-                int64_t checksum_key_id = gguf_find_key(ctx, checksum_key.c_str());
-                if (checksum_key_id != -1) {
-                    uint64_t stored_checksum = gguf_get_val_u64(ctx, checksum_key_id);
-                    uint64_t calculated_checksum = calculate_checksum(cur->data, actual_size);
-                    if (stored_checksum != calculated_checksum) {
-                        GGML_LOG_ERROR("%s: Checksum mismatch for tensor '%s'. Stored: %" PRIu64 ", Calculated: %" PRIu64 "\n",
-                                       __func__, info.t.name, stored_checksum, calculated_checksum);
-                        ok = false;
-                        break;
-                    } else {
-                        GGML_LOG_WARN("%s: Checksum for tensor '%s' verified successfully.\n", __func__, info.t.name);
-                    }
-                }
 
                 // Debug printing of tensor offsets
                 printf("Tensor %zu: Name='%s', Offset=%" PRIu64 ", Size=%zu, Type=%d\n", 
