@@ -997,7 +997,12 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
             final_fout.write((const char *)data.data(), data.size());
 
             std::ifstream temp_fin(temp_fname, std::ios::binary);
-            final_fout << temp_fin.rdbuf();
+            constexpr size_t BUFFER_SIZE = 8192 * 1024; // 8MB buffer
+            std::vector<char> buffer(BUFFER_SIZE);
+            while (temp_fin.read(buffer.data(), buffer.size())) {
+                final_fout.write(buffer.data(), temp_fin.gcount());
+            }
+            final_fout.write(buffer.data(), temp_fin.gcount());
 
             final_fout.close();
             temp_fin.close();
