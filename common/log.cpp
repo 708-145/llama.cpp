@@ -9,7 +9,7 @@
 #include <thread>
 #include <vector>
 
-int common_log_verbosity_thold = LOG_DEFAULT_LLAMA;
+int common_log_verbosity_thold = 3;
 
 void common_log_set_verbosity_thold(int verbosity) {
     common_log_verbosity_thold = verbosity;

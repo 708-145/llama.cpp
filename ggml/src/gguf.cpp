@@ -757,7 +757,8 @@ struct gguf_context * gguf_init_from_file_impl(FILE * file, struct gguf_init_par
             }
 
             ggml_set_name(cur, info.t.name);
-
+            
+            GGML_LOG_WARN("%s: Checksum verification\n", __func__);
             // point the data member to the appropriate location in the binary blob using the tensor info
             if (!params.no_alloc) {
                 cur->data = (char *) data->data + info.offset;
@@ -774,7 +775,7 @@ struct gguf_context * gguf_init_from_file_impl(FILE * file, struct gguf_init_par
                         ok = false;
                         break;
                     } else {
-                        GGML_LOG_INFO("%s: Checksum for tensor '%s' verified successfully.\n", __func__, info.t.name);
+                        GGML_LOG_WARN("%s: Checksum for tensor '%s' verified successfully.\n", __func__, info.t.name);
                     }
                 }
 
