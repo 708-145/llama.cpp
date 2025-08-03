@@ -18033,7 +18033,7 @@ llama_model_params llama_model_default_params() {
         /*.vocab_only                  =*/ false,
         /*.use_mmap                    =*/ true,
         /*.use_mlock                   =*/ false,
-        /*.check_tensors               =*/ false,
+        /*.check_tensors               =*/ true,
         /*.use_extra_bufts             =*/ true,
     };
 

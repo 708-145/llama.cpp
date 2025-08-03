@@ -5,6 +5,7 @@
 #include "sampling.h"
 #include "llama.h"
 #include "chat.h"
+#include "../src/llama-impl.h"
 
 #include <cstdio>
 #include <cstring>
@@ -89,6 +90,8 @@ int main(int argc, char ** argv) {
     if (!common_params_parse(argc, argv, params, LLAMA_EXAMPLE_MAIN, print_usage)) {
         return 1;
     }
+
+    llama_log_set(llama_log_callback_default, nullptr);
 
     common_init();
 
