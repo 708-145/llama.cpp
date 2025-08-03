@@ -760,7 +760,6 @@ struct gguf_context * gguf_init_from_file_impl(FILE * file, struct gguf_init_par
             }
 
             ggml_set_name(cur, info.t.name);
-            GGML_LOG_WARN("%s: Processing tensor %s.\n", __func__, info.t.name);
 
             // point the data member to the appropriate location in the binary blob using the tensor info
             if (!params.no_alloc) {
@@ -768,9 +767,9 @@ struct gguf_context * gguf_init_from_file_impl(FILE * file, struct gguf_init_par
             }
 
             // Verify checksum if available
+            uint64_t seek_pos = ftell(file);
             std::string checksum_key = std::string(info.t.name) + ".checksum";
             int64_t checksum_key_id = gguf_find_key(ctx, checksum_key.c_str());
-            GGML_LOG_WARN("%s: Processing tensor '%s'. Checksum key ID: %" PRIi64 "\n", __func__, info.t.name, checksum_key_id);
 
             if (checksum_key_id != -1) {
                 uint64_t stored_checksum = gguf_get_val_u64(ctx, checksum_key_id);
@@ -784,6 +783,7 @@ struct gguf_context * gguf_init_from_file_impl(FILE * file, struct gguf_init_par
                     // Temporarily seek and read for checksum
                     long current_pos = ftell(file); // Save current file position
                     fseek(file, ctx->offset + info.offset, SEEK_SET); // Seek to tensor data
+                    seek_pos = ftell(file);
                     std::vector<char> temp_buffer(actual_size);
                     if (gr.read(temp_buffer.data(), actual_size)) {
                         calculated_checksum = calculate_checksum(temp_buffer.data(), actual_size);
@@ -798,19 +798,17 @@ struct gguf_context * gguf_init_from_file_impl(FILE * file, struct gguf_init_par
                     GGML_LOG_ERROR("%s: Checksum mismatch for tensor '%s'. Stored: %" PRIu64 ", Calculated: %" PRIu64 "\n",
                                    __func__, info.t.name, stored_checksum, calculated_checksum);
                     ok = false;
-                } else {
-                    GGML_LOG_WARN("%s: Checksum for tensor '%s' verified successfully.\n", __func__, info.t.name);
                 }
             }
 
-                        // Debug printing of tensor offsets
+            // Debug printing of tensor offsets
             printf("Tensor %zu: Name='%s', Offset=%" PRIu64 ", Size=%zu, Type=%d, FilePos=%ld\n",
                    i,
                    info.t.name,
                    info.offset,
                    actual_size,
                    info.t.type,
-                   ftell(file));
+                   seek_pos);
         }
 
         if (!ok) {
