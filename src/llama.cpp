@@ -131,6 +131,8 @@ static int llama_model_load(const std::string & fname, std::vector<std::string> 
         return -1;
     }
 
+    // TB: check if the model is loaded correctly by checking the tensor checksums
+
     return 0;
 }
 
