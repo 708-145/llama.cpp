@@ -930,6 +930,7 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
     }
 
     // write smarterquant metadata here: loop through json, with info about tensor dimensions and quant bpw
+    uint32_t smarterquant_ftype = 0;
     if (params->smarter_quant_config) {
         const auto & smarter_quant_config = *static_cast<const std::map<std::string, SmarterQuantTensorInfo>*>(params->smarter_quant_config);
         for (const auto * it : tensors) {
@@ -970,7 +971,10 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
                 gguf_set_val_u64(ctx_outs[i_split].get(), (name + ".actual_size").c_str(), actual_size);
                 dict_actual_size[name] = actual_size;
             }
+            // TB: record which is the most often used compression_types[1] and set smarterquant_ftype to that
+            //smarterquant_ftype = (uint32_t)sq_it->second.compression_types[1]; // fix the type to the most common one
         }
+        //gguf_set_val_u32(ctx_out.get(), "general.file_type", smarterquant_ftype); // TB: smarterquant file_type
     }
 
 
