@@ -69,6 +69,7 @@ class ModelBase:
     hparams: dict[str, Any]
     tensor_names: set[str] | None
     gguf_writer: gguf.GGUFWriter
+    original_tensor_name_map: dict[str, str]
     model_name: str | None
     metadata_override: Path | None
     dir_model_card: Path
@@ -117,6 +118,7 @@ class ModelBase:
                 self.part_names = ModelBase.get_model_part_names(self.dir_model, "pytorch_model", ".bin")
         self.hparams = ModelBase.load_hparams(self.dir_model) if hparams is None else hparams
         self.tensor_names = None
+        self.original_tensor_name_map = {}
         self.metadata_override = metadata_override
         self.model_name = model_name
         self.dir_model_card = dir_model  # overridden in convert_lora_to_gguf.py
@@ -369,6 +371,7 @@ class ModelBase:
                 logger.info(f"{f'%-{max_name_len}s' % f'{new_name},'} {old_dtype} --> {data_qtype.name}, shape = {shape_str}")
 
                 self.gguf_writer.add_tensor(new_name, data, raw_dtype=data_qtype)
+                self.original_tensor_name_map[new_name] = name
 
     def set_type(self):
         self.gguf_writer.add_type(gguf.GGUFType.MODEL)
@@ -567,6 +570,12 @@ class TextModel(ModelBase):
 
         self.gguf_writer.add_file_type(self.ftype)
         logger.info(f"gguf: file type = {self.ftype}")
+
+        # Write tensor map to JSON
+        json_path = self.fname_out.with_suffix(".json")
+        logger.info(f"Writing tensor map to {json_path}")
+        with open(json_path, "w", encoding="utf-8") as f:
+            json.dump(self.original_tensor_name_map, f, indent=2)
 
     def write_vocab(self):
         if len(self.gguf_writer.tensors) != 1:
