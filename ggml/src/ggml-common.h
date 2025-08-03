@@ -417,6 +417,22 @@ typedef struct {
 } block_iq4_xs;
 static_assert(sizeof(block_iq4_xs) == sizeof(ggml_half) + sizeof(uint16_t) + QK_K/64 + QK_K/2, "wrong iq4_xs block size/padding");
 
+typedef struct {
+    ggml_half d;
+    uint16_t scales_h;
+    uint8_t  scales_l[QK_K/64];
+    uint8_t  qs[QK_K/2];
+} block_nf4_xs;
+static_assert(sizeof(block_nf4_xs) == sizeof(ggml_half) + sizeof(uint16_t) + QK_K/64 + QK_K/2, "wrong nf4_xs block size/padding");
+
+typedef struct {
+    ggml_half d;
+    uint16_t scales_h;
+    uint8_t  scales_l[QK_K/64];
+    uint8_t  qs[QK_K/2];
+} block_fp4_xs;
+static_assert(sizeof(block_fp4_xs) == sizeof(ggml_half) + sizeof(uint16_t) + QK_K/64 + QK_K/2, "wrong fp4_xs block size/padding");
+
 #endif // GGML_COMMON_DECL
 #endif // GGML_COMMON_DECL
 
@@ -1077,6 +1093,15 @@ GGML_TABLE_END()
 GGML_TABLE_BEGIN(int8_t, kvalues_iq4nl, 16)
     -127, -104, -83, -65, -49, -35, -22, -10, 1, 13, 25, 38, 53, 69, 89, 113,
 GGML_TABLE_END()
+
+GGML_TABLE_BEGIN(int8_t, kvalues_nf4, 16)
+    -128, -89,  -67, -51, -37, -24, -12,  0, 10, 20, 31, 43, 56, 71, 92, 127,
+GGML_TABLE_END()
+
+GGML_TABLE_BEGIN(int8_t, kvalues_fp4, 16)
+    -127, -91, -73, -64, -54, -45, -36, -1, 1, 36, 45, 54, 64, 73, 91, 127,
+GGML_TABLE_END()
+
 
 #define NGRID_IQ1S 2048
 #define IQ1S_DELTA 0.125f

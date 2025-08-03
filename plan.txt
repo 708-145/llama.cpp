@@ -1,0 +1,89 @@
+Detailed Plan for SmarterQuant and SmartQuant Implementation in llama.cpp
+
+The order of compression types in the JSON is:
+  dtype0 = get_good_dtype(max_stripe0) # first 256 weights
+  dtype1 = get_good_dtype(max_stripe1) # second
+  dtype2 = get_good_dtype(max_stripe2) # third
+  dtype  = get_good_dtype(max_rest)    # rest
+  smarterquant_config[key] = (dtype, dtype0, dtype1, dtype2, permutation_vector)
+
+**Goal:** Implement the remaining parts of the SmarterQuant algorithm and introduce a new SmartQuant option, ensuring both can override default quantization and their configurations are correctly read and written to GGUF metadata.
+
+**Current Status (based on pr17.txt and docs/smarterquant.md):**
+*   **SmarterQuant Data Structures:** `SmarterQuantTensorInfo` and its integration into `ggml_tensor`, `llama_model_loader`, and `llama_model` are largely in place.
+*   **GGUF Metadata Loading (Inference):** Logic to load SmarterQuant metadata from GGUF into `llama_model_loader` is present, allowing inference engines to use it.
+*   **Inference-time Dequantization:** `ggml_get_rows_smarterquant` and its integration into `ggml_compute_forward_mul_mat` and `ggml_compute_forward_get_rows` are present, indicating partial support for dequantization.
+*   **SmarterQuant Config Loading (Quantization):** `load_smarter_quant_config` function exists in `llama-quant.cpp` to read the JSON file.
+*   **Core Quantization (`llama-quant.cpp`):** `llama_tensor_quantize_smarter_blocks` is declared and partially implemented, intended for block-specific quantization and permutation.
+
+**Identified Gaps/Tasks:**
+
+**Phase 1: Command Line Argument Parsing and Configuration Loading**
+
+1.  **Modify `tools/quantize/quantize.cpp`:**
+    *   [x] **Add CLI Options:** Introduce `--smarterquant <json_file_path>` and `--smartquant <json_file_path>` arguments.
+    *   [x] **Parse Arguments:** Parse these paths and store them. Ensure mutual exclusivity or clear precedence if both are provided (e.g., SmarterQuant takes precedence over SmarterQuant).
+    *   [x] **Pass Configs:** Pass the loaded `SmarterQuantConfig` and `SmartQuantConfig` (once defined) to the `llama_model_quantize_impl` function.
+2.  **Implement `load_smart_quant_config` (in `llama-quant.cpp` or a new common utility):**
+    *   [x] **Purpose:** This function will load a simpler JSON file where each key is a tensor name and its value is a single `ggml_type` integer, overriding the default quantization for that tensor.
+    *   [x] **Format:** `{"tensor_name_1": 8, "tensor_name_2": 14}` (where 8 is `GGML_TYPE_Q4_0`, 14 is `GGML_TYPE_Q4_K_M`, etc.).
+    *   [x] **Error Handling:** Include robust JSON parsing and validation.
+3.  **Integrate Configuration Loading:**
+    *   [x] In `tools/quantize/quantize.cpp`, call `load_smarter_quant_config` if `--smarterquant` is specified.
+    *   [x] Call `load_smart_quant_config` if `--smartquant` is specified.
+
+**Phase 2: Core Quantization Logic (`llama-quant.cpp`)**
+
+1.  **Refine `llama_tensor_quantize_smarter_blocks`:**
+    *   [x] **Input:** This function receives `src_data` (F32), `dst_data` (output buffer), `ne` (tensor dimensions), `sq_info` (SmarterQuant config for this tensor), `imatrix_data` (optional), and `nthread`.
+    *   [x] **Column Permutation (Pre-quantization):**
+        *   [x] If `sq_info.column_permutation` is non-empty, create a temporary F32 buffer.
+        *   [x] Copy `src_data` into this temporary buffer, applying the permutation: `temp_buffer[new_col_idx] = src_data[original_col_idx]`.
+        *   [x] Use this permuted `temp_buffer` as the source for subsequent quantization steps.
+    *   [x] **Block-Specific Quantization:**
+        *   [x] Iterate through the (potentially permuted) F32 data in 256-column segments.
+        *   [x] For each segment `j` (columns `j` to `j+255`):
+            *   [x] Determine the `ggml_type` for this segment using `sq_info.compression_types` (first four types for first four blocks, then `compression_types[3]` for subsequent blocks).
+            *   [x] Call `ggml_quantize_chunk` for this segment:
+                *   `ggml_quantize_chunk(segment_type, segment_src_ptr, segment_dst_ptr, 0, nrows, n_cols_in_segment, segment_imatrix_ptr);`
+                *   `segment_src_ptr`: Pointer to the start of the current 256-column segment in the F32 source (or permuted F32 source).
+                *   `segment_dst_ptr`: Pointer to the correct offset in the `dst_data` buffer where the quantized segment should be written. This offset will accumulate based on the `ggml_row_size` of the *quantized type* of each preceding segment.
+                *   `segment_imatrix_ptr`: Adjust `imatrix_data` pointer for the current segment if `imatrix_data` is provided.
+            *   [x] Accumulate the `ggml_row_size` of the quantized segment to calculate the `segment_dst_ptr` for the next segment.
+    *   [x] **Return Value:** Return the total bytes written to `dst_data`.
+2.  **Integrate SmartQuant Logic:**
+    *   [x] In `llama_model_quantize_impl`, before calling `llama_tensor_get_type`, check if the current tensor's name exists in the `SmartQuantConfig` map.
+    *   [x] If it does, use the specified `ggml_type` from `SmartQuantConfig` as the `new_type` for that tensor, overriding the default `llama_tensor_get_type` logic.
+3.  **Review `llama_tensor_get_type`:**
+    *   [x] Ensure its logic correctly handles the precedence: SmarterQuant (if active for tensor) > SmartQuant (if active for tensor) > Default FType logic.
+    *   [x] The `pr17.txt` changes to this function should be carefully reviewed to ensure they align with the new plan.
+
+**Phase 3: GGUF Metadata Writing**
+
+1.  **Modify `llama_model_quantize_impl` (or a helper function called from it):**
+    *   [x] After a tensor has been quantized and its `new_data` (quantized bytes) is ready, write the SmarterQuant metadata to the GGUF file.
+    *   [x] **For SmarterQuant-processed tensors:**
+        *   [x] Add `tensor_name.smarterquant.enabled` (boolean, `true`).
+        *   [x] Add `tensor_name.smarterquant.permutation` (string, JSON representation of `sq_info.column_permutation`). Use `nlohmann::json` to serialize the `std::vector<int32_t>` to a JSON string.
+        *   [x] Add `tensor_name.smarterquant.block_types` (string, JSON representation of `sq_info.compression_types`). Use `nlohmann::json` to serialize the `int8_t[4]` to a JSON string.
+    *   [x] **For SmartQuant-processed tensors:** No specific metadata is required unless explicitly requested by the user, as it's a simple type override.
+
+**Phase 4: Compilation and Testing**
+
+1.  **Address Compilation Issues:**
+    *   [ ] Thoroughly review and fix any compilation errors introduced by `pr17.txt` or the new implementations. Pay close attention to header includes, type mismatches, and memory management (especially for `column_permutation`).
+2.  **Unit Testing (if feasible):**
+    *   [ ] Create small, isolated tests for the column permutation logic.
+    *   [ ] Create tests for the block-specific quantization logic, verifying output sizes and types.
+3.  **End-to-End Testing:**
+    *   [ ] **Test Case 1 (Default):** Run `llama-quantize` without `--smarterquant` or `--smartquant`. Verify output is as expected for default quantization.
+    *   [ ] **Test Case 2 (SmartQuant):** Create a `smartquant.json` with a few tensor overrides. Run `llama-quantize --smartquant smartquant.json ...`. Verify the specified tensors are quantized with the overridden types.
+    *   [ ] **Test Case 3 (SmarterQuant - No Permutation):** Use the `default.smarterquant.json` from `pr17.txt` (with empty permutation arrays). Run `llama-quantize --smarterquant default.smarterquant.json ...`. Verify block-specific quantization is applied and GGUF metadata is written.
+    *   [ ] **Test Case 4 (SmarterQuant - With Permutation):** Create a `smarterquant.json` with a tensor that includes a column permutation. Run `llama-quantize --smarterquant smarterquant.json ...`. Verify permutation is applied before quantization and GGUF metadata is written.
+    *   [ ] **Inference Verification:** For Test Cases 3 and 4, load the quantized models with `llama-cli` (or `llama-server`) and perform a simple inference to ensure correct dequantization and functionality.
+
+**Considerations:**
+*   **Memory Management:** Pay close attention to `new`/`delete` for `column_permutation` in `SmarterQuantTensorInfo` to prevent memory leaks, especially during loading and destruction of `llama_model`. The `pr17.txt` already includes a destructor for `llama_model` to handle this.
+*   **Error Handling:** Implement robust error handling for file I/O, JSON parsing, and invalid configuration values.
+*   **Performance:** While implementing, keep performance in mind, especially for permutation and block-wise processing of large tensors.
+*   **Existing Codebase:** Adhere to the existing coding style, conventions, and error reporting mechanisms of `llama.cpp`.

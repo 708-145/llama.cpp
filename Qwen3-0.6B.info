@@ -1,0 +1,2677 @@
+Metadata:
+{
+  version: 3,
+  tensor_count: 310n,
+  kv_count: 32n,
+  'general.architecture': 'qwen3',
+  'general.type': 'model',
+  'general.name': 'Qwen3-0.6B',
+  'general.basename': 'Qwen3-0.6B',
+  'general.quantized_by': 'Unsloth',
+  'general.size_label': '0.6B',
+  'general.repo_url': 'https://huggingface.co/unsloth',
+  'qwen3.block_count': 28,
+  'qwen3.context_length': 40960,
+  'qwen3.embedding_length': 1024,
+  'qwen3.feed_forward_length': 3072,
+  'qwen3.attention.head_count': 16,
+  'qwen3.attention.head_count_kv': 8,
+  'qwen3.rope.freq_base': 1000000,
+  'qwen3.attention.layer_norm_rms_epsilon': 9.999999974752427e-7,
+  'qwen3.attention.key_length': 128,
+  'qwen3.attention.value_length': 128,
+  'tokenizer.ggml.model': 'gpt2',
+  'tokenizer.ggml.pre': 'qwen2',
+  'tokenizer.ggml.tokens': [
+    '!', '"', '#', '$', '%',  '&', "'", '(', ')', '*', '+',
+    ',', '-', '.', '/', '0',  '1', '2', '3', '4', '5', '6',
+    '7', '8', '9', ':', ';',  '<', '=', '>', '?', '@', 'A',
+    'B', 'C', 'D', 'E', 'F',  'G', 'H', 'I', 'J', 'K', 'L',
+    'M', 'N', 'O', 'P', 'Q',  'R', 'S', 'T', 'U', 'V', 'W',
+    'X', 'Y', 'Z', '[', '\\', ']', '^', '_', '`', 'a', 'b',
+    'c', 'd', 'e', 'f', 'g',  'h', 'i', 'j', 'k', 'l', 'm',
+    'n', 'o', 'p', 'q', 'r',  's', 't', 'u', 'v', 'w', 'x',
+    'y', 'z', '{', '|', '}',  '~', '¡', '¢', '£', '¤', '¥',
+    '¦',
+    ... 151836 more items
+  ],
+  'tokenizer.ggml.token_type': [
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1,
+    ... 151836 more items
+  ],
+  'tokenizer.ggml.merges': [
+    'Ġ Ġ',          'ĠĠ ĠĠ',             'i n',
+    'Ġ t',          'ĠĠĠĠ ĠĠĠĠ',         'e r',
+    'ĠĠ Ġ',         'o n',               'Ġ a',
+    'r e',          'a t',               's t',
+    'e n',          'o r',               'Ġt h',
+    'Ċ Ċ',          'Ġ c',               'l e',
+    'Ġ s',          'i t',               'a n',
+    'a r',          'a l',               'Ġth e',
+    '; Ċ',          'Ġ p',               'Ġ f',
+    'o u',          'Ġ =',               'i s',
+    'ĠĠĠĠ ĠĠĠ',     'in g',              'e s',
+    'Ġ w',          'i on',              'e d',
+    'i c',          'Ġ b',               'Ġ d',
+    'e t',          'Ġ m',               'Ġ o',
+    'ĉ ĉ',          'r o',               'a s',
+    'e l',          'c t',               'n d',
+    'Ġ in',         'Ġ h',               'en t',
+    'i d',          'Ġ n',               'a m',
+    'ĠĠĠĠĠĠĠĠ ĠĠĠ', 'Ġt o',              'Ġ re',
+    '- -',          'Ġ {',               'Ġo f',
+    'o m',          ') ;Ċ',              'i m',
+    'č Ċ',          'Ġ (',               'i l',
+    '/ /',          'Ġa nd',             'u r',
+    's e',          'Ġ l',               'e x',
+    'Ġ S',          'a d',               'Ġ "',
+    'c h',          'u t',               'i f',
+    '* *',          'Ġ }',               'e m',
+    'o l',          'ĠĠĠĠĠĠĠĠ ĠĠĠĠĠĠĠĠ', 't h',
+    ') Ċ',          'Ġ{ Ċ',              'Ġ g',
+    'i g',          'i v',               ', Ċ',
+    'c e',          'o d',               'Ġ v',
+    'at e',         'Ġ T',               'a g',
+    'a y',          'Ġ *',               'o t',
+    'u s',
+    ... 151287 more items
+  ],
+  'tokenizer.ggml.eos_token_id': 151645,
+  'tokenizer.ggml.padding_token_id': 151654,
+  'tokenizer.ggml.add_bos_token': false,
+  'tokenizer.chat_template': '{%- if tools %}\n' +
+    "    {{- '<|im_start|>system\\n' }}\n" +
+    "    {%- if messages[0].role == 'system' %}\n" +
+    "        {{- messages[0].content + '\\n\\n' }}\n" +
+    '    {%- endif %}\n' +
+    '    {{- "# Tools\\n\\nYou may call one or more functions to assist with the user query.\\n\\nYou are provided with function signatures within <tools></tools> XML tags:\\n<tools>" }}\n' +
+    '    {%- for tool in tools %}\n' +
+    '        {{- "\\n" }}\n' +
+    '        {{- tool | tojson }}\n' +
+    '    {%- endfor %}\n' +
+    '    {{- "\\n</tools>\\n\\nFor each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:\\n<tool_call>\\n{\\"name\\": <function-name>, \\"arguments\\": <args-json-object>}\\n</tool_call><|im_end|>\\n" }}\n' +
+    '{%- else %}\n' +
+    "    {%- if messages[0].role == 'system' %}\n" +
+    "        {{- '<|im_start|>system\\n' + messages[0].content + '<|im_end|>\\n' }}\n" +
+    '    {%- endif %}\n' +
+    '{%- endif %}\n' +
+    '{%- set ns = namespace(multi_step_tool=true, last_query_index=messages|length - 1) %}\n' +
+    '{%- for forward_message in messages %}\n' +
+    '    {%- set index = (messages|length - 1) - loop.index0 %}\n' +
+    '    {%- set message = messages[index] %}\n' +
+    "    {%- set current_content = message.content if message.content is defined and message.content is not none else '' %}\n" +
+    "    {%- set tool_start = '<tool_response>' %}\n" +
+    '    {%- set tool_start_length = tool_start|length %}\n' +
+    '    {%- set start_of_message = current_content[:tool_start_length] %}\n' +
+    "    {%- set tool_end = '</tool_response>' %}\n" +
+    '    {%- set tool_end_length = tool_end|length %}\n' +
+    '    {%- set start_pos = (current_content|length) - tool_end_length %}\n' +
+    '    {%- if start_pos < 0 %}\n' +
+    '        {%- set start_pos = 0 %}\n' +
+    '    {%- endif %}\n' +
+    '    {%- set end_of_message = current_content[start_pos:] %}\n' +
+    '    {%- if ns.multi_step_tool and message.role == "user" and not(start_of_message == tool_start and end_of_message == tool_end) %}\n' +
+    '        {%- set ns.multi_step_tool = false %}\n' +
+    '        {%- set ns.last_query_index = index %}\n' +
+    '    {%- endif %}\n' +
+    '{%- endfor %}\n' +
+    '{%- for message in messages %}\n' +
+    '    {%- if (message.role == "user") or (message.role == "system" and not loop.first) %}\n' +
+    "        {{- '<|im_start|>' + message.role + '\\n' + message.content + '<|im_end|>' + '\\n' }}\n" +
+    '    {%- elif message.role == "assistant" %}\n' +
+    "        {%- set m_content = message.content if message.content is defined and message.content is not none else '' %}\n" +
+    '        {%- set content = m_content %}\n' +
+    "        {%- set reasoning_content = '' %}\n" +
+    '        {%- if message.reasoning_content is defined and message.reasoning_content is not none %}\n' +
+    '            {%- set reasoning_content = message.reasoning_content %}\n' +
+    '        {%- else %}\n' +
+    "            {%- if '</think>' in m_content %}\n" +
+    "                {%- set content = (m_content.split('</think>')|last).lstrip('\\n') %}\n" +
+    "                {%- set reasoning_content = (m_content.split('</think>')|first).rstrip('\\n') %}\n" +
+    "                {%- set reasoning_content = (reasoning_content.split('<think>')|last).lstrip('\\n') %}\n" +
+    '            {%- endif %}\n' +
+    '        {%- endif %}\n' +
+    '        {%- if loop.index0 > ns.last_query_index %}\n' +
+    "            {%- if loop.last or (not loop.last and (not reasoning_content.strip() == '')) %}\n" +
+    "                {{- '<|im_start|>' + message.role + '\\n<think>\\n' + reasoning_content.strip('\\n') + '\\n</think>\\n\\n' + content.lstrip('\\n') }}\n" +
+    '            {%- else %}\n' +
+    "                {{- '<|im_start|>' + message.role + '\\n' + content }}\n" +
+    '            {%- endif %}\n' +
+    '        {%- else %}\n' +
+    "            {{- '<|im_start|>' + message.role + '\\n' + content }}\n" +
+    '        {%- endif %}\n' +
+    '        {%- if message.tool_calls %}\n' +
+    '            {%- for tool_call in message.tool_calls %}\n' +
+    '                {%- if (loop.first and content) or (not loop.first) %}\n' +
+    "                    {{- '\\n' }}\n" +
+    '                {%- endif %}\n' +
+    '                {%- if tool_call.function %}\n' +
+    '                    {%- set tool_call = tool_call.function %}\n' +
+    '                {%- endif %}\n' +
+    `                {{- '<tool_call>\\n{"name": "' }}\n` +
+    '                {{- tool_call.name }}\n' +
+    `                {{- '", "arguments": ' }}\n` +
+    '                {%- if tool_call.arguments is string %}\n' +
+    '                    {{- tool_call.arguments }}\n' +
+    '                {%- else %}\n' +
+    '                    {{- tool_call.arguments | tojson }}\n' +
+    '                {%- endif %}\n' +
+    "                {{- '}\\n</tool_call>' }}\n" +
+    '            {%- endfor %}\n' +
+    '        {%- endif %}\n' +
+    "        {{- '<|im_end|>\\n' }}\n" +
+    '    {%- elif message.role == "tool" %}\n' +
+    '        {%- if loop.first or (messages[loop.index0 - 1].role != "tool") %}\n' +
+    "            {{- '<|im_start|>user' }}\n" +
+    '        {%- endif %}\n' +
+    "        {{- '\\n<tool_response>\\n' }}\n" +
+    '        {{- message.content }}\n' +
+    "        {{- '\\n</tool_response>' }}\n" +
+    '        {%- if loop.last or (messages[loop.index0 + 1].role != "tool") %}\n' +
+    "            {{- '<|im_end|>\\n' }}\n" +
+    '        {%- endif %}\n' +
+    '    {%- endif %}\n' +
+    '{%- endfor %}\n' +
+    '{%- if add_generation_prompt %}\n' +
+    "    {{- '<|im_start|>assistant\\n' }}\n" +
+    '    {%- if enable_thinking is defined and enable_thinking is false %}\n' +
+    "        {{- '<think>\\n\\n</think>\\n\\n' }}\n" +
+    '    {%- endif %}\n' +
+    '{%- endif %}',
+  'general.quantization_version': 2,
+  'general.file_type': 24,
+  'quantize.imatrix.file': 'Qwen3-0.6B-GGUF/imatrix_unsloth.dat',
+  'quantize.imatrix.dataset': 'unsloth_calibration_Qwen3-0.6B.txt',
+  'quantize.imatrix.entries_count': 196,
+  'quantize.imatrix.chunks_count': 688
+}
+
+Tensor Infos:
+{
+  name: 'output_norm.weight',
+  n_dims: 1,
+  shape: [ 1024n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 0n
+}
+{
+  name: 'token_embd.weight',
+  n_dims: 2,
+  shape: [ 1024n, 151936n ],
+  dtype: 13,
+  precision: 'Q5_K',
+  offset: 4096n
+}
+{
+  name: 'blk.0.attn_k.weight',
+  n_dims: 2,
+  shape: [ 1024n, 1024n ],
+  dtype: 16,
+  precision: 'IQ2_XXS',
+  offset: 106967040n
+}
+{
+  name: 'blk.0.attn_k_norm.weight',
+  n_dims: 1,
+  shape: [ 128n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 107237376n
+}
+{
+  name: 'blk.0.attn_norm.weight',
+  n_dims: 1,
+  shape: [ 1024n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 107237888n
+}
+{
+  name: 'blk.0.attn_output.weight',
+  n_dims: 2,
+  shape: [ 2048n, 1024n ],
+  dtype: 16,
+  precision: 'IQ2_XXS',
+  offset: 107241984n
+}
+{
+  name: 'blk.0.attn_q.weight',
+  n_dims: 2,
+  shape: [ 1024n, 2048n ],
+  dtype: 16,
+  precision: 'IQ2_XXS',
+  offset: 107782656n
+}
+{
+  name: 'blk.0.attn_q_norm.weight',
+  n_dims: 1,
+  shape: [ 128n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 108323328n
+}
+{
+  name: 'blk.0.attn_v.weight',
+  n_dims: 2,
+  shape: [ 1024n, 1024n ],
+  dtype: 18,
+  precision: 'IQ3_XXS',
+  offset: 108323840n
+}
+{
+  name: 'blk.0.ffn_down.weight',
+  n_dims: 2,
+  shape: [ 3072n, 1024n ],
+  dtype: 21,
+  precision: 'IQ3_S',
+  offset: 108725248n
+}
+{
+  name: 'blk.0.ffn_gate.weight',
+  n_dims: 2,
+  shape: [ 1024n, 3072n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 110076928n
+}
+{
+  name: 'blk.0.ffn_norm.weight',
+  n_dims: 1,
+  shape: [ 1024n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 110691328n
+}
+{
+  name: 'blk.0.ffn_up.weight',
+  n_dims: 2,
+  shape: [ 1024n, 3072n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 110695424n
+}
+{
+  name: 'blk.1.attn_k.weight',
+  n_dims: 2,
+  shape: [ 1024n, 1024n ],
+  dtype: 16,
+  precision: 'IQ2_XXS',
+  offset: 111309824n
+}
+{
+  name: 'blk.1.attn_k_norm.weight',
+  n_dims: 1,
+  shape: [ 128n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 111580160n
+}
+{
+  name: 'blk.1.attn_norm.weight',
+  n_dims: 1,
+  shape: [ 1024n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 111580672n
+}
+{
+  name: 'blk.1.attn_output.weight',
+  n_dims: 2,
+  shape: [ 2048n, 1024n ],
+  dtype: 16,
+  precision: 'IQ2_XXS',
+  offset: 111584768n
+}
+{
+  name: 'blk.1.attn_q.weight',
+  n_dims: 2,
+  shape: [ 1024n, 2048n ],
+  dtype: 16,
+  precision: 'IQ2_XXS',
+  offset: 112125440n
+}
+{
+  name: 'blk.1.attn_q_norm.weight',
+  n_dims: 1,
+  shape: [ 128n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 112666112n
+}
+{
+  name: 'blk.1.attn_v.weight',
+  n_dims: 2,
+  shape: [ 1024n, 1024n ],
+  dtype: 18,
+  precision: 'IQ3_XXS',
+  offset: 112666624n
+}
+{
+  name: 'blk.1.ffn_down.weight',
+  n_dims: 2,
+  shape: [ 3072n, 1024n ],
+  dtype: 21,
+  precision: 'IQ3_S',
+  offset: 113068032n
+}
+{
+  name: 'blk.1.ffn_gate.weight',
+  n_dims: 2,
+  shape: [ 1024n, 3072n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 114419712n
+}
+{
+  name: 'blk.1.ffn_norm.weight',
+  n_dims: 1,
+  shape: [ 1024n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 115034112n
+}
+{
+  name: 'blk.1.ffn_up.weight',
+  n_dims: 2,
+  shape: [ 1024n, 3072n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 115038208n
+}
+{
+  name: 'blk.2.attn_k.weight',
+  n_dims: 2,
+  shape: [ 1024n, 1024n ],
+  dtype: 16,
+  precision: 'IQ2_XXS',
+  offset: 115652608n
+}
+{
+  name: 'blk.2.attn_k_norm.weight',
+  n_dims: 1,
+  shape: [ 128n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 115922944n
+}
+{
+  name: 'blk.2.attn_norm.weight',
+  n_dims: 1,
+  shape: [ 1024n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 115923456n
+}
+{
+  name: 'blk.2.attn_output.weight',
+  n_dims: 2,
+  shape: [ 2048n, 1024n ],
+  dtype: 16,
+  precision: 'IQ2_XXS',
+  offset: 115927552n
+}
+{
+  name: 'blk.2.attn_q.weight',
+  n_dims: 2,
+  shape: [ 1024n, 2048n ],
+  dtype: 16,
+  precision: 'IQ2_XXS',
+  offset: 116468224n
+}
+{
+  name: 'blk.2.attn_q_norm.weight',
+  n_dims: 1,
+  shape: [ 128n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 117008896n
+}
+{
+  name: 'blk.2.attn_v.weight',
+  n_dims: 2,
+  shape: [ 1024n, 1024n ],
+  dtype: 18,
+  precision: 'IQ3_XXS',
+  offset: 117009408n
+}
+{
+  name: 'blk.2.ffn_down.weight',
+  n_dims: 2,
+  shape: [ 3072n, 1024n ],
+  dtype: 21,
+  precision: 'IQ3_S',
+  offset: 117410816n
+}
+{
+  name: 'blk.2.ffn_gate.weight',
+  n_dims: 2,
+  shape: [ 1024n, 3072n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 118762496n
+}
+{
+  name: 'blk.2.ffn_norm.weight',
+  n_dims: 1,
+  shape: [ 1024n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 119376896n
+}
+{
+  name: 'blk.2.ffn_up.weight',
+  n_dims: 2,
+  shape: [ 1024n, 3072n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 119380992n
+}
+{
+  name: 'blk.3.attn_k.weight',
+  n_dims: 2,
+  shape: [ 1024n, 1024n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 119995392n
+}
+{
+  name: 'blk.3.attn_k_norm.weight',
+  n_dims: 1,
+  shape: [ 128n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 120200192n
+}
+{
+  name: 'blk.3.attn_norm.weight',
+  n_dims: 1,
+  shape: [ 1024n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 120200704n
+}
+{
+  name: 'blk.3.attn_output.weight',
+  n_dims: 2,
+  shape: [ 2048n, 1024n ],
+  dtype: 16,
+  precision: 'IQ2_XXS',
+  offset: 120204800n
+}
+{
+  name: 'blk.3.attn_q.weight',
+  n_dims: 2,
+  shape: [ 1024n, 2048n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 120745472n
+}
+{
+  name: 'blk.3.attn_q_norm.weight',
+  n_dims: 1,
+  shape: [ 128n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 121155072n
+}
+{
+  name: 'blk.3.attn_v.weight',
+  n_dims: 2,
+  shape: [ 1024n, 1024n ],
+  dtype: 16,
+  precision: 'IQ2_XXS',
+  offset: 121155584n
+}
+{
+  name: 'blk.3.ffn_down.weight',
+  n_dims: 2,
+  shape: [ 3072n, 1024n ],
+  dtype: 22,
+  precision: 'IQ2_S',
+  offset: 121425920n
+}
+{
+  name: 'blk.3.ffn_gate.weight',
+  n_dims: 2,
+  shape: [ 1024n, 3072n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 122433536n
+}
+{
+  name: 'blk.3.ffn_norm.weight',
+  n_dims: 1,
+  shape: [ 1024n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 123047936n
+}
+{
+  name: 'blk.3.ffn_up.weight',
+  n_dims: 2,
+  shape: [ 1024n, 3072n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 123052032n
+}
+{
+  name: 'blk.4.attn_k.weight',
+  n_dims: 2,
+  shape: [ 1024n, 1024n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 123666432n
+}
+{
+  name: 'blk.4.attn_k_norm.weight',
+  n_dims: 1,
+  shape: [ 128n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 123871232n
+}
+{
+  name: 'blk.4.attn_norm.weight',
+  n_dims: 1,
+  shape: [ 1024n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 123871744n
+}
+{
+  name: 'blk.4.attn_output.weight',
+  n_dims: 2,
+  shape: [ 2048n, 1024n ],
+  dtype: 16,
+  precision: 'IQ2_XXS',
+  offset: 123875840n
+}
+{
+  name: 'blk.4.attn_q.weight',
+  n_dims: 2,
+  shape: [ 1024n, 2048n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 124416512n
+}
+{
+  name: 'blk.4.attn_q_norm.weight',
+  n_dims: 1,
+  shape: [ 128n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 124826112n
+}
+{
+  name: 'blk.4.attn_v.weight',
+  n_dims: 2,
+  shape: [ 1024n, 1024n ],
+  dtype: 16,
+  precision: 'IQ2_XXS',
+  offset: 124826624n
+}
+{
+  name: 'blk.4.ffn_down.weight',
+  n_dims: 2,
+  shape: [ 3072n, 1024n ],
+  dtype: 22,
+  precision: 'IQ2_S',
+  offset: 125096960n
+}
+{
+  name: 'blk.4.ffn_gate.weight',
+  n_dims: 2,
+  shape: [ 1024n, 3072n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 126104576n
+}
+{
+  name: 'blk.4.ffn_norm.weight',
+  n_dims: 1,
+  shape: [ 1024n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 126718976n
+}
+{
+  name: 'blk.4.ffn_up.weight',
+  n_dims: 2,
+  shape: [ 1024n, 3072n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 126723072n
+}
+{
+  name: 'blk.5.attn_k.weight',
+  n_dims: 2,
+  shape: [ 1024n, 1024n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 127337472n
+}
+{
+  name: 'blk.5.attn_k_norm.weight',
+  n_dims: 1,
+  shape: [ 128n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 127542272n
+}
+{
+  name: 'blk.5.attn_norm.weight',
+  n_dims: 1,
+  shape: [ 1024n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 127542784n
+}
+{
+  name: 'blk.5.attn_output.weight',
+  n_dims: 2,
+  shape: [ 2048n, 1024n ],
+  dtype: 16,
+  precision: 'IQ2_XXS',
+  offset: 127546880n
+}
+{
+  name: 'blk.5.attn_q.weight',
+  n_dims: 2,
+  shape: [ 1024n, 2048n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 128087552n
+}
+{
+  name: 'blk.5.attn_q_norm.weight',
+  n_dims: 1,
+  shape: [ 128n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 128497152n
+}
+{
+  name: 'blk.5.attn_v.weight',
+  n_dims: 2,
+  shape: [ 1024n, 1024n ],
+  dtype: 16,
+  precision: 'IQ2_XXS',
+  offset: 128497664n
+}
+{
+  name: 'blk.5.ffn_down.weight',
+  n_dims: 2,
+  shape: [ 3072n, 1024n ],
+  dtype: 22,
+  precision: 'IQ2_S',
+  offset: 128768000n
+}
+{
+  name: 'blk.5.ffn_gate.weight',
+  n_dims: 2,
+  shape: [ 1024n, 3072n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 129775616n
+}
+{
+  name: 'blk.5.ffn_norm.weight',
+  n_dims: 1,
+  shape: [ 1024n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 130390016n
+}
+{
+  name: 'blk.5.ffn_up.weight',
+  n_dims: 2,
+  shape: [ 1024n, 3072n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 130394112n
+}
+{
+  name: 'blk.6.attn_k.weight',
+  n_dims: 2,
+  shape: [ 1024n, 1024n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 131008512n
+}
+{
+  name: 'blk.6.attn_k_norm.weight',
+  n_dims: 1,
+  shape: [ 128n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 131213312n
+}
+{
+  name: 'blk.6.attn_norm.weight',
+  n_dims: 1,
+  shape: [ 1024n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 131213824n
+}
+{
+  name: 'blk.6.attn_output.weight',
+  n_dims: 2,
+  shape: [ 2048n, 1024n ],
+  dtype: 16,
+  precision: 'IQ2_XXS',
+  offset: 131217920n
+}
+{
+  name: 'blk.6.attn_q.weight',
+  n_dims: 2,
+  shape: [ 1024n, 2048n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 131758592n
+}
+{
+  name: 'blk.6.attn_q_norm.weight',
+  n_dims: 1,
+  shape: [ 128n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 132168192n
+}
+{
+  name: 'blk.6.attn_v.weight',
+  n_dims: 2,
+  shape: [ 1024n, 1024n ],
+  dtype: 16,
+  precision: 'IQ2_XXS',
+  offset: 132168704n
+}
+{
+  name: 'blk.6.ffn_down.weight',
+  n_dims: 2,
+  shape: [ 3072n, 1024n ],
+  dtype: 22,
+  precision: 'IQ2_S',
+  offset: 132439040n
+}
+{
+  name: 'blk.6.ffn_gate.weight',
+  n_dims: 2,
+  shape: [ 1024n, 3072n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 133446656n
+}
+{
+  name: 'blk.6.ffn_norm.weight',
+  n_dims: 1,
+  shape: [ 1024n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 134061056n
+}
+{
+  name: 'blk.6.ffn_up.weight',
+  n_dims: 2,
+  shape: [ 1024n, 3072n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 134065152n
+}
+{
+  name: 'blk.7.attn_k.weight',
+  n_dims: 2,
+  shape: [ 1024n, 1024n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 134679552n
+}
+{
+  name: 'blk.7.attn_k_norm.weight',
+  n_dims: 1,
+  shape: [ 128n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 134884352n
+}
+{
+  name: 'blk.7.attn_norm.weight',
+  n_dims: 1,
+  shape: [ 1024n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 134884864n
+}
+{
+  name: 'blk.7.attn_output.weight',
+  n_dims: 2,
+  shape: [ 2048n, 1024n ],
+  dtype: 16,
+  precision: 'IQ2_XXS',
+  offset: 134888960n
+}
+{
+  name: 'blk.7.attn_q.weight',
+  n_dims: 2,
+  shape: [ 1024n, 2048n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 135429632n
+}
+{
+  name: 'blk.7.attn_q_norm.weight',
+  n_dims: 1,
+  shape: [ 128n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 135839232n
+}
+{
+  name: 'blk.7.attn_v.weight',
+  n_dims: 2,
+  shape: [ 1024n, 1024n ],
+  dtype: 16,
+  precision: 'IQ2_XXS',
+  offset: 135839744n
+}
+{
+  name: 'blk.7.ffn_down.weight',
+  n_dims: 2,
+  shape: [ 3072n, 1024n ],
+  dtype: 22,
+  precision: 'IQ2_S',
+  offset: 136110080n
+}
+{
+  name: 'blk.7.ffn_gate.weight',
+  n_dims: 2,
+  shape: [ 1024n, 3072n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 137117696n
+}
+{
+  name: 'blk.7.ffn_norm.weight',
+  n_dims: 1,
+  shape: [ 1024n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 137732096n
+}
+{
+  name: 'blk.7.ffn_up.weight',
+  n_dims: 2,
+  shape: [ 1024n, 3072n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 137736192n
+}
+{
+  name: 'blk.8.attn_k.weight',
+  n_dims: 2,
+  shape: [ 1024n, 1024n ],
+  dtype: 29,
+  precision: 'IQ1_M',
+  offset: 138350592n
+}
+{
+  name: 'blk.8.attn_k_norm.weight',
+  n_dims: 1,
+  shape: [ 128n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 138579968n
+}
+{
+  name: 'blk.8.attn_norm.weight',
+  n_dims: 1,
+  shape: [ 1024n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 138580480n
+}
+{
+  name: 'blk.8.attn_output.weight',
+  n_dims: 2,
+  shape: [ 2048n, 1024n ],
+  dtype: 16,
+  precision: 'IQ2_XXS',
+  offset: 138584576n
+}
+{
+  name: 'blk.8.attn_q.weight',
+  n_dims: 2,
+  shape: [ 1024n, 2048n ],
+  dtype: 29,
+  precision: 'IQ1_M',
+  offset: 139125248n
+}
+{
+  name: 'blk.8.attn_q_norm.weight',
+  n_dims: 1,
+  shape: [ 128n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 139584000n
+}
+{
+  name: 'blk.8.attn_v.weight',
+  n_dims: 2,
+  shape: [ 1024n, 1024n ],
+  dtype: 10,
+  precision: 'Q2_K',
+  offset: 139584512n
+}
+{
+  name: 'blk.8.ffn_down.weight',
+  n_dims: 2,
+  shape: [ 3072n, 1024n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 139928576n
+}
+{
+  name: 'blk.8.ffn_gate.weight',
+  n_dims: 2,
+  shape: [ 1024n, 3072n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 140542976n
+}
+{
+  name: 'blk.8.ffn_norm.weight',
+  n_dims: 1,
+  shape: [ 1024n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 141157376n
+}
+{
+  name: 'blk.8.ffn_up.weight',
+  n_dims: 2,
+  shape: [ 1024n, 3072n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 141161472n
+}
+{
+  name: 'blk.9.attn_k.weight',
+  n_dims: 2,
+  shape: [ 1024n, 1024n ],
+  dtype: 29,
+  precision: 'IQ1_M',
+  offset: 141775872n
+}
+{
+  name: 'blk.9.attn_k_norm.weight',
+  n_dims: 1,
+  shape: [ 128n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 142005248n
+}
+{
+  name: 'blk.9.attn_norm.weight',
+  n_dims: 1,
+  shape: [ 1024n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 142005760n
+}
+{
+  name: 'blk.9.attn_output.weight',
+  n_dims: 2,
+  shape: [ 2048n, 1024n ],
+  dtype: 16,
+  precision: 'IQ2_XXS',
+  offset: 142009856n
+}
+{
+  name: 'blk.9.attn_q.weight',
+  n_dims: 2,
+  shape: [ 1024n, 2048n ],
+  dtype: 29,
+  precision: 'IQ1_M',
+  offset: 142550528n
+}
+{
+  name: 'blk.9.attn_q_norm.weight',
+  n_dims: 1,
+  shape: [ 128n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 143009280n
+}
+{
+  name: 'blk.9.attn_v.weight',
+  n_dims: 2,
+  shape: [ 1024n, 1024n ],
+  dtype: 10,
+  precision: 'Q2_K',
+  offset: 143009792n
+}
+{
+  name: 'blk.9.ffn_down.weight',
+  n_dims: 2,
+  shape: [ 3072n, 1024n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 143353856n
+}
+{
+  name: 'blk.9.ffn_gate.weight',
+  n_dims: 2,
+  shape: [ 1024n, 3072n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 143968256n
+}
+{
+  name: 'blk.9.ffn_norm.weight',
+  n_dims: 1,
+  shape: [ 1024n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 144582656n
+}
+{
+  name: 'blk.9.ffn_up.weight',
+  n_dims: 2,
+  shape: [ 1024n, 3072n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 144586752n
+}
+{
+  name: 'blk.10.attn_k.weight',
+  n_dims: 2,
+  shape: [ 1024n, 1024n ],
+  dtype: 29,
+  precision: 'IQ1_M',
+  offset: 145201152n
+}
+{
+  name: 'blk.10.attn_k_norm.weight',
+  n_dims: 1,
+  shape: [ 128n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 145430528n
+}
+{
+  name: 'blk.10.attn_norm.weight',
+  n_dims: 1,
+  shape: [ 1024n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 145431040n
+}
+{
+  name: 'blk.10.attn_output.weight',
+  n_dims: 2,
+  shape: [ 2048n, 1024n ],
+  dtype: 16,
+  precision: 'IQ2_XXS',
+  offset: 145435136n
+}
+{
+  name: 'blk.10.attn_q.weight',
+  n_dims: 2,
+  shape: [ 1024n, 2048n ],
+  dtype: 29,
+  precision: 'IQ1_M',
+  offset: 145975808n
+}
+{
+  name: 'blk.10.attn_q_norm.weight',
+  n_dims: 1,
+  shape: [ 128n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 146434560n
+}
+{
+  name: 'blk.10.attn_v.weight',
+  n_dims: 2,
+  shape: [ 1024n, 1024n ],
+  dtype: 10,
+  precision: 'Q2_K',
+  offset: 146435072n
+}
+{
+  name: 'blk.10.ffn_down.weight',
+  n_dims: 2,
+  shape: [ 3072n, 1024n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 146779136n
+}
+{
+  name: 'blk.10.ffn_gate.weight',
+  n_dims: 2,
+  shape: [ 1024n, 3072n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 147393536n
+}
+{
+  name: 'blk.10.ffn_norm.weight',
+  n_dims: 1,
+  shape: [ 1024n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 148007936n
+}
+{
+  name: 'blk.10.ffn_up.weight',
+  n_dims: 2,
+  shape: [ 1024n, 3072n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 148012032n
+}
+{
+  name: 'blk.11.attn_k.weight',
+  n_dims: 2,
+  shape: [ 1024n, 1024n ],
+  dtype: 29,
+  precision: 'IQ1_M',
+  offset: 148626432n
+}
+{
+  name: 'blk.11.attn_k_norm.weight',
+  n_dims: 1,
+  shape: [ 128n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 148855808n
+}
+{
+  name: 'blk.11.attn_norm.weight',
+  n_dims: 1,
+  shape: [ 1024n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 148856320n
+}
+{
+  name: 'blk.11.attn_output.weight',
+  n_dims: 2,
+  shape: [ 2048n, 1024n ],
+  dtype: 16,
+  precision: 'IQ2_XXS',
+  offset: 148860416n
+}
+{
+  name: 'blk.11.attn_q.weight',
+  n_dims: 2,
+  shape: [ 1024n, 2048n ],
+  dtype: 29,
+  precision: 'IQ1_M',
+  offset: 149401088n
+}
+{
+  name: 'blk.11.attn_q_norm.weight',
+  n_dims: 1,
+  shape: [ 128n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 149859840n
+}
+{
+  name: 'blk.11.attn_v.weight',
+  n_dims: 2,
+  shape: [ 1024n, 1024n ],
+  dtype: 10,
+  precision: 'Q2_K',
+  offset: 149860352n
+}
+{
+  name: 'blk.11.ffn_down.weight',
+  n_dims: 2,
+  shape: [ 3072n, 1024n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 150204416n
+}
+{
+  name: 'blk.11.ffn_gate.weight',
+  n_dims: 2,
+  shape: [ 1024n, 3072n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 150818816n
+}
+{
+  name: 'blk.11.ffn_norm.weight',
+  n_dims: 1,
+  shape: [ 1024n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 151433216n
+}
+{
+  name: 'blk.11.ffn_up.weight',
+  n_dims: 2,
+  shape: [ 1024n, 3072n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 151437312n
+}
+{
+  name: 'blk.12.attn_k.weight',
+  n_dims: 2,
+  shape: [ 1024n, 1024n ],
+  dtype: 29,
+  precision: 'IQ1_M',
+  offset: 152051712n
+}
+{
+  name: 'blk.12.attn_k_norm.weight',
+  n_dims: 1,
+  shape: [ 128n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 152281088n
+}
+{
+  name: 'blk.12.attn_norm.weight',
+  n_dims: 1,
+  shape: [ 1024n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 152281600n
+}
+{
+  name: 'blk.12.attn_output.weight',
+  n_dims: 2,
+  shape: [ 2048n, 1024n ],
+  dtype: 16,
+  precision: 'IQ2_XXS',
+  offset: 152285696n
+}
+{
+  name: 'blk.12.attn_q.weight',
+  n_dims: 2,
+  shape: [ 1024n, 2048n ],
+  dtype: 29,
+  precision: 'IQ1_M',
+  offset: 152826368n
+}
+{
+  name: 'blk.12.attn_q_norm.weight',
+  n_dims: 1,
+  shape: [ 128n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 153285120n
+}
+{
+  name: 'blk.12.attn_v.weight',
+  n_dims: 2,
+  shape: [ 1024n, 1024n ],
+  dtype: 10,
+  precision: 'Q2_K',
+  offset: 153285632n
+}
+{
+  name: 'blk.12.ffn_down.weight',
+  n_dims: 2,
+  shape: [ 3072n, 1024n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 153629696n
+}
+{
+  name: 'blk.12.ffn_gate.weight',
+  n_dims: 2,
+  shape: [ 1024n, 3072n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 154244096n
+}
+{
+  name: 'blk.12.ffn_norm.weight',
+  n_dims: 1,
+  shape: [ 1024n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 154858496n
+}
+{
+  name: 'blk.12.ffn_up.weight',
+  n_dims: 2,
+  shape: [ 1024n, 3072n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 154862592n
+}
+{
+  name: 'blk.13.attn_k.weight',
+  n_dims: 2,
+  shape: [ 1024n, 1024n ],
+  dtype: 29,
+  precision: 'IQ1_M',
+  offset: 155476992n
+}
+{
+  name: 'blk.13.attn_k_norm.weight',
+  n_dims: 1,
+  shape: [ 128n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 155706368n
+}
+{
+  name: 'blk.13.attn_norm.weight',
+  n_dims: 1,
+  shape: [ 1024n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 155706880n
+}
+{
+  name: 'blk.13.attn_output.weight',
+  n_dims: 2,
+  shape: [ 2048n, 1024n ],
+  dtype: 16,
+  precision: 'IQ2_XXS',
+  offset: 155710976n
+}
+{
+  name: 'blk.13.attn_q.weight',
+  n_dims: 2,
+  shape: [ 1024n, 2048n ],
+  dtype: 29,
+  precision: 'IQ1_M',
+  offset: 156251648n
+}
+{
+  name: 'blk.13.attn_q_norm.weight',
+  n_dims: 1,
+  shape: [ 128n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 156710400n
+}
+{
+  name: 'blk.13.attn_v.weight',
+  n_dims: 2,
+  shape: [ 1024n, 1024n ],
+  dtype: 10,
+  precision: 'Q2_K',
+  offset: 156710912n
+}
+{
+  name: 'blk.13.ffn_down.weight',
+  n_dims: 2,
+  shape: [ 3072n, 1024n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 157054976n
+}
+{
+  name: 'blk.13.ffn_gate.weight',
+  n_dims: 2,
+  shape: [ 1024n, 3072n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 157669376n
+}
+{
+  name: 'blk.13.ffn_norm.weight',
+  n_dims: 1,
+  shape: [ 1024n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 158283776n
+}
+{
+  name: 'blk.13.ffn_up.weight',
+  n_dims: 2,
+  shape: [ 1024n, 3072n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 158287872n
+}
+{
+  name: 'blk.14.attn_k.weight',
+  n_dims: 2,
+  shape: [ 1024n, 1024n ],
+  dtype: 29,
+  precision: 'IQ1_M',
+  offset: 158902272n
+}
+{
+  name: 'blk.14.attn_k_norm.weight',
+  n_dims: 1,
+  shape: [ 128n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 159131648n
+}
+{
+  name: 'blk.14.attn_norm.weight',
+  n_dims: 1,
+  shape: [ 1024n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 159132160n
+}
+{
+  name: 'blk.14.attn_output.weight',
+  n_dims: 2,
+  shape: [ 2048n, 1024n ],
+  dtype: 16,
+  precision: 'IQ2_XXS',
+  offset: 159136256n
+}
+{
+  name: 'blk.14.attn_q.weight',
+  n_dims: 2,
+  shape: [ 1024n, 2048n ],
+  dtype: 29,
+  precision: 'IQ1_M',
+  offset: 159676928n
+}
+{
+  name: 'blk.14.attn_q_norm.weight',
+  n_dims: 1,
+  shape: [ 128n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 160135680n
+}
+{
+  name: 'blk.14.attn_v.weight',
+  n_dims: 2,
+  shape: [ 1024n, 1024n ],
+  dtype: 10,
+  precision: 'Q2_K',
+  offset: 160136192n
+}
+{
+  name: 'blk.14.ffn_down.weight',
+  n_dims: 2,
+  shape: [ 3072n, 1024n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 160480256n
+}
+{
+  name: 'blk.14.ffn_gate.weight',
+  n_dims: 2,
+  shape: [ 1024n, 3072n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 161094656n
+}
+{
+  name: 'blk.14.ffn_norm.weight',
+  n_dims: 1,
+  shape: [ 1024n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 161709056n
+}
+{
+  name: 'blk.14.ffn_up.weight',
+  n_dims: 2,
+  shape: [ 1024n, 3072n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 161713152n
+}
+{
+  name: 'blk.15.attn_k.weight',
+  n_dims: 2,
+  shape: [ 1024n, 1024n ],
+  dtype: 29,
+  precision: 'IQ1_M',
+  offset: 162327552n
+}
+{
+  name: 'blk.15.attn_k_norm.weight',
+  n_dims: 1,
+  shape: [ 128n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 162556928n
+}
+{
+  name: 'blk.15.attn_norm.weight',
+  n_dims: 1,
+  shape: [ 1024n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 162557440n
+}
+{
+  name: 'blk.15.attn_output.weight',
+  n_dims: 2,
+  shape: [ 2048n, 1024n ],
+  dtype: 16,
+  precision: 'IQ2_XXS',
+  offset: 162561536n
+}
+{
+  name: 'blk.15.attn_q.weight',
+  n_dims: 2,
+  shape: [ 1024n, 2048n ],
+  dtype: 29,
+  precision: 'IQ1_M',
+  offset: 163102208n
+}
+{
+  name: 'blk.15.attn_q_norm.weight',
+  n_dims: 1,
+  shape: [ 128n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 163560960n
+}
+{
+  name: 'blk.15.attn_v.weight',
+  n_dims: 2,
+  shape: [ 1024n, 1024n ],
+  dtype: 10,
+  precision: 'Q2_K',
+  offset: 163561472n
+}
+{
+  name: 'blk.15.ffn_down.weight',
+  n_dims: 2,
+  shape: [ 3072n, 1024n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 163905536n
+}
+{
+  name: 'blk.15.ffn_gate.weight',
+  n_dims: 2,
+  shape: [ 1024n, 3072n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 164519936n
+}
+{
+  name: 'blk.15.ffn_norm.weight',
+  n_dims: 1,
+  shape: [ 1024n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 165134336n
+}
+{
+  name: 'blk.15.ffn_up.weight',
+  n_dims: 2,
+  shape: [ 1024n, 3072n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 165138432n
+}
+{
+  name: 'blk.16.attn_k.weight',
+  n_dims: 2,
+  shape: [ 1024n, 1024n ],
+  dtype: 29,
+  precision: 'IQ1_M',
+  offset: 165752832n
+}
+{
+  name: 'blk.16.attn_k_norm.weight',
+  n_dims: 1,
+  shape: [ 128n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 165982208n
+}
+{
+  name: 'blk.16.attn_norm.weight',
+  n_dims: 1,
+  shape: [ 1024n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 165982720n
+}
+{
+  name: 'blk.16.attn_output.weight',
+  n_dims: 2,
+  shape: [ 2048n, 1024n ],
+  dtype: 16,
+  precision: 'IQ2_XXS',
+  offset: 165986816n
+}
+{
+  name: 'blk.16.attn_q.weight',
+  n_dims: 2,
+  shape: [ 1024n, 2048n ],
+  dtype: 29,
+  precision: 'IQ1_M',
+  offset: 166527488n
+}
+{
+  name: 'blk.16.attn_q_norm.weight',
+  n_dims: 1,
+  shape: [ 128n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 166986240n
+}
+{
+  name: 'blk.16.attn_v.weight',
+  n_dims: 2,
+  shape: [ 1024n, 1024n ],
+  dtype: 10,
+  precision: 'Q2_K',
+  offset: 166986752n
+}
+{
+  name: 'blk.16.ffn_down.weight',
+  n_dims: 2,
+  shape: [ 3072n, 1024n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 167330816n
+}
+{
+  name: 'blk.16.ffn_gate.weight',
+  n_dims: 2,
+  shape: [ 1024n, 3072n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 167945216n
+}
+{
+  name: 'blk.16.ffn_norm.weight',
+  n_dims: 1,
+  shape: [ 1024n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 168559616n
+}
+{
+  name: 'blk.16.ffn_up.weight',
+  n_dims: 2,
+  shape: [ 1024n, 3072n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 168563712n
+}
+{
+  name: 'blk.17.attn_k.weight',
+  n_dims: 2,
+  shape: [ 1024n, 1024n ],
+  dtype: 29,
+  precision: 'IQ1_M',
+  offset: 169178112n
+}
+{
+  name: 'blk.17.attn_k_norm.weight',
+  n_dims: 1,
+  shape: [ 128n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 169407488n
+}
+{
+  name: 'blk.17.attn_norm.weight',
+  n_dims: 1,
+  shape: [ 1024n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 169408000n
+}
+{
+  name: 'blk.17.attn_output.weight',
+  n_dims: 2,
+  shape: [ 2048n, 1024n ],
+  dtype: 16,
+  precision: 'IQ2_XXS',
+  offset: 169412096n
+}
+{
+  name: 'blk.17.attn_q.weight',
+  n_dims: 2,
+  shape: [ 1024n, 2048n ],
+  dtype: 29,
+  precision: 'IQ1_M',
+  offset: 169952768n
+}
+{
+  name: 'blk.17.attn_q_norm.weight',
+  n_dims: 1,
+  shape: [ 128n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 170411520n
+}
+{
+  name: 'blk.17.attn_v.weight',
+  n_dims: 2,
+  shape: [ 1024n, 1024n ],
+  dtype: 10,
+  precision: 'Q2_K',
+  offset: 170412032n
+}
+{
+  name: 'blk.17.ffn_down.weight',
+  n_dims: 2,
+  shape: [ 3072n, 1024n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 170756096n
+}
+{
+  name: 'blk.17.ffn_gate.weight',
+  n_dims: 2,
+  shape: [ 1024n, 3072n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 171370496n
+}
+{
+  name: 'blk.17.ffn_norm.weight',
+  n_dims: 1,
+  shape: [ 1024n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 171984896n
+}
+{
+  name: 'blk.17.ffn_up.weight',
+  n_dims: 2,
+  shape: [ 1024n, 3072n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 171988992n
+}
+{
+  name: 'blk.18.attn_k.weight',
+  n_dims: 2,
+  shape: [ 1024n, 1024n ],
+  dtype: 29,
+  precision: 'IQ1_M',
+  offset: 172603392n
+}
+{
+  name: 'blk.18.attn_k_norm.weight',
+  n_dims: 1,
+  shape: [ 128n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 172832768n
+}
+{
+  name: 'blk.18.attn_norm.weight',
+  n_dims: 1,
+  shape: [ 1024n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 172833280n
+}
+{
+  name: 'blk.18.attn_output.weight',
+  n_dims: 2,
+  shape: [ 2048n, 1024n ],
+  dtype: 16,
+  precision: 'IQ2_XXS',
+  offset: 172837376n
+}
+{
+  name: 'blk.18.attn_q.weight',
+  n_dims: 2,
+  shape: [ 1024n, 2048n ],
+  dtype: 29,
+  precision: 'IQ1_M',
+  offset: 173378048n
+}
+{
+  name: 'blk.18.attn_q_norm.weight',
+  n_dims: 1,
+  shape: [ 128n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 173836800n
+}
+{
+  name: 'blk.18.attn_v.weight',
+  n_dims: 2,
+  shape: [ 1024n, 1024n ],
+  dtype: 10,
+  precision: 'Q2_K',
+  offset: 173837312n
+}
+{
+  name: 'blk.18.ffn_down.weight',
+  n_dims: 2,
+  shape: [ 3072n, 1024n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 174181376n
+}
+{
+  name: 'blk.18.ffn_gate.weight',
+  n_dims: 2,
+  shape: [ 1024n, 3072n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 174795776n
+}
+{
+  name: 'blk.18.ffn_norm.weight',
+  n_dims: 1,
+  shape: [ 1024n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 175410176n
+}
+{
+  name: 'blk.18.ffn_up.weight',
+  n_dims: 2,
+  shape: [ 1024n, 3072n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 175414272n
+}
+{
+  name: 'blk.19.attn_k.weight',
+  n_dims: 2,
+  shape: [ 1024n, 1024n ],
+  dtype: 29,
+  precision: 'IQ1_M',
+  offset: 176028672n
+}
+{
+  name: 'blk.19.attn_k_norm.weight',
+  n_dims: 1,
+  shape: [ 128n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 176258048n
+}
+{
+  name: 'blk.19.attn_norm.weight',
+  n_dims: 1,
+  shape: [ 1024n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 176258560n
+}
+{
+  name: 'blk.19.attn_output.weight',
+  n_dims: 2,
+  shape: [ 2048n, 1024n ],
+  dtype: 16,
+  precision: 'IQ2_XXS',
+  offset: 176262656n
+}
+{
+  name: 'blk.19.attn_q.weight',
+  n_dims: 2,
+  shape: [ 1024n, 2048n ],
+  dtype: 29,
+  precision: 'IQ1_M',
+  offset: 176803328n
+}
+{
+  name: 'blk.19.attn_q_norm.weight',
+  n_dims: 1,
+  shape: [ 128n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 177262080n
+}
+{
+  name: 'blk.19.attn_v.weight',
+  n_dims: 2,
+  shape: [ 1024n, 1024n ],
+  dtype: 10,
+  precision: 'Q2_K',
+  offset: 177262592n
+}
+{
+  name: 'blk.19.ffn_down.weight',
+  n_dims: 2,
+  shape: [ 3072n, 1024n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 177606656n
+}
+{
+  name: 'blk.19.ffn_gate.weight',
+  n_dims: 2,
+  shape: [ 1024n, 3072n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 178221056n
+}
+{
+  name: 'blk.19.ffn_norm.weight',
+  n_dims: 1,
+  shape: [ 1024n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 178835456n
+}
+{
+  name: 'blk.19.ffn_up.weight',
+  n_dims: 2,
+  shape: [ 1024n, 3072n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 178839552n
+}
+{
+  name: 'blk.20.attn_k.weight',
+  n_dims: 2,
+  shape: [ 1024n, 1024n ],
+  dtype: 29,
+  precision: 'IQ1_M',
+  offset: 179453952n
+}
+{
+  name: 'blk.20.attn_k_norm.weight',
+  n_dims: 1,
+  shape: [ 128n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 179683328n
+}
+{
+  name: 'blk.20.attn_norm.weight',
+  n_dims: 1,
+  shape: [ 1024n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 179683840n
+}
+{
+  name: 'blk.20.attn_output.weight',
+  n_dims: 2,
+  shape: [ 2048n, 1024n ],
+  dtype: 16,
+  precision: 'IQ2_XXS',
+  offset: 179687936n
+}
+{
+  name: 'blk.20.attn_q.weight',
+  n_dims: 2,
+  shape: [ 1024n, 2048n ],
+  dtype: 29,
+  precision: 'IQ1_M',
+  offset: 180228608n
+}
+{
+  name: 'blk.20.attn_q_norm.weight',
+  n_dims: 1,
+  shape: [ 128n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 180687360n
+}
+{
+  name: 'blk.20.attn_v.weight',
+  n_dims: 2,
+  shape: [ 1024n, 1024n ],
+  dtype: 10,
+  precision: 'Q2_K',
+  offset: 180687872n
+}
+{
+  name: 'blk.20.ffn_down.weight',
+  n_dims: 2,
+  shape: [ 3072n, 1024n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 181031936n
+}
+{
+  name: 'blk.20.ffn_gate.weight',
+  n_dims: 2,
+  shape: [ 1024n, 3072n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 181646336n
+}
+{
+  name: 'blk.20.ffn_norm.weight',
+  n_dims: 1,
+  shape: [ 1024n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 182260736n
+}
+{
+  name: 'blk.20.ffn_up.weight',
+  n_dims: 2,
+  shape: [ 1024n, 3072n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 182264832n
+}
+{
+  name: 'blk.21.attn_k.weight',
+  n_dims: 2,
+  shape: [ 1024n, 1024n ],
+  dtype: 29,
+  precision: 'IQ1_M',
+  offset: 182879232n
+}
+{
+  name: 'blk.21.attn_k_norm.weight',
+  n_dims: 1,
+  shape: [ 128n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 183108608n
+}
+{
+  name: 'blk.21.attn_norm.weight',
+  n_dims: 1,
+  shape: [ 1024n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 183109120n
+}
+{
+  name: 'blk.21.attn_output.weight',
+  n_dims: 2,
+  shape: [ 2048n, 1024n ],
+  dtype: 16,
+  precision: 'IQ2_XXS',
+  offset: 183113216n
+}
+{
+  name: 'blk.21.attn_q.weight',
+  n_dims: 2,
+  shape: [ 1024n, 2048n ],
+  dtype: 29,
+  precision: 'IQ1_M',
+  offset: 183653888n
+}
+{
+  name: 'blk.21.attn_q_norm.weight',
+  n_dims: 1,
+  shape: [ 128n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 184112640n
+}
+{
+  name: 'blk.21.attn_v.weight',
+  n_dims: 2,
+  shape: [ 1024n, 1024n ],
+  dtype: 10,
+  precision: 'Q2_K',
+  offset: 184113152n
+}
+{
+  name: 'blk.21.ffn_down.weight',
+  n_dims: 2,
+  shape: [ 3072n, 1024n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 184457216n
+}
+{
+  name: 'blk.21.ffn_gate.weight',
+  n_dims: 2,
+  shape: [ 1024n, 3072n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 185071616n
+}
+{
+  name: 'blk.21.ffn_norm.weight',
+  n_dims: 1,
+  shape: [ 1024n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 185686016n
+}
+{
+  name: 'blk.21.ffn_up.weight',
+  n_dims: 2,
+  shape: [ 1024n, 3072n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 185690112n
+}
+{
+  name: 'blk.22.attn_k.weight',
+  n_dims: 2,
+  shape: [ 1024n, 1024n ],
+  dtype: 29,
+  precision: 'IQ1_M',
+  offset: 186304512n
+}
+{
+  name: 'blk.22.attn_k_norm.weight',
+  n_dims: 1,
+  shape: [ 128n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 186533888n
+}
+{
+  name: 'blk.22.attn_norm.weight',
+  n_dims: 1,
+  shape: [ 1024n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 186534400n
+}
+{
+  name: 'blk.22.attn_output.weight',
+  n_dims: 2,
+  shape: [ 2048n, 1024n ],
+  dtype: 16,
+  precision: 'IQ2_XXS',
+  offset: 186538496n
+}
+{
+  name: 'blk.22.attn_q.weight',
+  n_dims: 2,
+  shape: [ 1024n, 2048n ],
+  dtype: 29,
+  precision: 'IQ1_M',
+  offset: 187079168n
+}
+{
+  name: 'blk.22.attn_q_norm.weight',
+  n_dims: 1,
+  shape: [ 128n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 187537920n
+}
+{
+  name: 'blk.22.attn_v.weight',
+  n_dims: 2,
+  shape: [ 1024n, 1024n ],
+  dtype: 10,
+  precision: 'Q2_K',
+  offset: 187538432n
+}
+{
+  name: 'blk.22.ffn_down.weight',
+  n_dims: 2,
+  shape: [ 3072n, 1024n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 187882496n
+}
+{
+  name: 'blk.22.ffn_gate.weight',
+  n_dims: 2,
+  shape: [ 1024n, 3072n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 188496896n
+}
+{
+  name: 'blk.22.ffn_norm.weight',
+  n_dims: 1,
+  shape: [ 1024n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 189111296n
+}
+{
+  name: 'blk.22.ffn_up.weight',
+  n_dims: 2,
+  shape: [ 1024n, 3072n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 189115392n
+}
+{
+  name: 'blk.23.attn_k.weight',
+  n_dims: 2,
+  shape: [ 1024n, 1024n ],
+  dtype: 29,
+  precision: 'IQ1_M',
+  offset: 189729792n
+}
+{
+  name: 'blk.23.attn_k_norm.weight',
+  n_dims: 1,
+  shape: [ 128n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 189959168n
+}
+{
+  name: 'blk.23.attn_norm.weight',
+  n_dims: 1,
+  shape: [ 1024n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 189959680n
+}
+{
+  name: 'blk.23.attn_output.weight',
+  n_dims: 2,
+  shape: [ 2048n, 1024n ],
+  dtype: 16,
+  precision: 'IQ2_XXS',
+  offset: 189963776n
+}
+{
+  name: 'blk.23.attn_q.weight',
+  n_dims: 2,
+  shape: [ 1024n, 2048n ],
+  dtype: 29,
+  precision: 'IQ1_M',
+  offset: 190504448n
+}
+{
+  name: 'blk.23.attn_q_norm.weight',
+  n_dims: 1,
+  shape: [ 128n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 190963200n
+}
+{
+  name: 'blk.23.attn_v.weight',
+  n_dims: 2,
+  shape: [ 1024n, 1024n ],
+  dtype: 10,
+  precision: 'Q2_K',
+  offset: 190963712n
+}
+{
+  name: 'blk.23.ffn_down.weight',
+  n_dims: 2,
+  shape: [ 3072n, 1024n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 191307776n
+}
+{
+  name: 'blk.23.ffn_gate.weight',
+  n_dims: 2,
+  shape: [ 1024n, 3072n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 191922176n
+}
+{
+  name: 'blk.23.ffn_norm.weight',
+  n_dims: 1,
+  shape: [ 1024n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 192536576n
+}
+{
+  name: 'blk.23.ffn_up.weight',
+  n_dims: 2,
+  shape: [ 1024n, 3072n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 192540672n
+}
+{
+  name: 'blk.24.attn_k.weight',
+  n_dims: 2,
+  shape: [ 1024n, 1024n ],
+  dtype: 29,
+  precision: 'IQ1_M',
+  offset: 193155072n
+}
+{
+  name: 'blk.24.attn_k_norm.weight',
+  n_dims: 1,
+  shape: [ 128n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 193384448n
+}
+{
+  name: 'blk.24.attn_norm.weight',
+  n_dims: 1,
+  shape: [ 1024n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 193384960n
+}
+{
+  name: 'blk.24.attn_output.weight',
+  n_dims: 2,
+  shape: [ 2048n, 1024n ],
+  dtype: 16,
+  precision: 'IQ2_XXS',
+  offset: 193389056n
+}
+{
+  name: 'blk.24.attn_q.weight',
+  n_dims: 2,
+  shape: [ 1024n, 2048n ],
+  dtype: 29,
+  precision: 'IQ1_M',
+  offset: 193929728n
+}
+{
+  name: 'blk.24.attn_q_norm.weight',
+  n_dims: 1,
+  shape: [ 128n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 194388480n
+}
+{
+  name: 'blk.24.attn_v.weight',
+  n_dims: 2,
+  shape: [ 1024n, 1024n ],
+  dtype: 10,
+  precision: 'Q2_K',
+  offset: 194388992n
+}
+{
+  name: 'blk.24.ffn_down.weight',
+  n_dims: 2,
+  shape: [ 3072n, 1024n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 194733056n
+}
+{
+  name: 'blk.24.ffn_gate.weight',
+  n_dims: 2,
+  shape: [ 1024n, 3072n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 195347456n
+}
+{
+  name: 'blk.24.ffn_norm.weight',
+  n_dims: 1,
+  shape: [ 1024n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 195961856n
+}
+{
+  name: 'blk.24.ffn_up.weight',
+  n_dims: 2,
+  shape: [ 1024n, 3072n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 195965952n
+}
+{
+  name: 'blk.25.attn_k.weight',
+  n_dims: 2,
+  shape: [ 1024n, 1024n ],
+  dtype: 29,
+  precision: 'IQ1_M',
+  offset: 196580352n
+}
+{
+  name: 'blk.25.attn_k_norm.weight',
+  n_dims: 1,
+  shape: [ 128n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 196809728n
+}
+{
+  name: 'blk.25.attn_norm.weight',
+  n_dims: 1,
+  shape: [ 1024n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 196810240n
+}
+{
+  name: 'blk.25.attn_output.weight',
+  n_dims: 2,
+  shape: [ 2048n, 1024n ],
+  dtype: 16,
+  precision: 'IQ2_XXS',
+  offset: 196814336n
+}
+{
+  name: 'blk.25.attn_q.weight',
+  n_dims: 2,
+  shape: [ 1024n, 2048n ],
+  dtype: 29,
+  precision: 'IQ1_M',
+  offset: 197355008n
+}
+{
+  name: 'blk.25.attn_q_norm.weight',
+  n_dims: 1,
+  shape: [ 128n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 197813760n
+}
+{
+  name: 'blk.25.attn_v.weight',
+  n_dims: 2,
+  shape: [ 1024n, 1024n ],
+  dtype: 10,
+  precision: 'Q2_K',
+  offset: 197814272n
+}
+{
+  name: 'blk.25.ffn_down.weight',
+  n_dims: 2,
+  shape: [ 3072n, 1024n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 198158336n
+}
+{
+  name: 'blk.25.ffn_gate.weight',
+  n_dims: 2,
+  shape: [ 1024n, 3072n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 198772736n
+}
+{
+  name: 'blk.25.ffn_norm.weight',
+  n_dims: 1,
+  shape: [ 1024n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 199387136n
+}
+{
+  name: 'blk.25.ffn_up.weight',
+  n_dims: 2,
+  shape: [ 1024n, 3072n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 199391232n
+}
+{
+  name: 'blk.26.attn_k.weight',
+  n_dims: 2,
+  shape: [ 1024n, 1024n ],
+  dtype: 16,
+  precision: 'IQ2_XXS',
+  offset: 200005632n
+}
+{
+  name: 'blk.26.attn_k_norm.weight',
+  n_dims: 1,
+  shape: [ 128n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 200275968n
+}
+{
+  name: 'blk.26.attn_norm.weight',
+  n_dims: 1,
+  shape: [ 1024n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 200276480n
+}
+{
+  name: 'blk.26.attn_output.weight',
+  n_dims: 2,
+  shape: [ 2048n, 1024n ],
+  dtype: 16,
+  precision: 'IQ2_XXS',
+  offset: 200280576n
+}
+{
+  name: 'blk.26.attn_q.weight',
+  n_dims: 2,
+  shape: [ 1024n, 2048n ],
+  dtype: 16,
+  precision: 'IQ2_XXS',
+  offset: 200821248n
+}
+{
+  name: 'blk.26.attn_q_norm.weight',
+  n_dims: 1,
+  shape: [ 128n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 201361920n
+}
+{
+  name: 'blk.26.attn_v.weight',
+  n_dims: 2,
+  shape: [ 1024n, 1024n ],
+  dtype: 18,
+  precision: 'IQ3_XXS',
+  offset: 201362432n
+}
+{
+  name: 'blk.26.ffn_down.weight',
+  n_dims: 2,
+  shape: [ 3072n, 1024n ],
+  dtype: 21,
+  precision: 'IQ3_S',
+  offset: 201763840n
+}
+{
+  name: 'blk.26.ffn_gate.weight',
+  n_dims: 2,
+  shape: [ 1024n, 3072n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 203115520n
+}
+{
+  name: 'blk.26.ffn_norm.weight',
+  n_dims: 1,
+  shape: [ 1024n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 203729920n
+}
+{
+  name: 'blk.26.ffn_up.weight',
+  n_dims: 2,
+  shape: [ 1024n, 3072n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 203734016n
+}
+{
+  name: 'blk.27.attn_k.weight',
+  n_dims: 2,
+  shape: [ 1024n, 1024n ],
+  dtype: 16,
+  precision: 'IQ2_XXS',
+  offset: 204348416n
+}
+{
+  name: 'blk.27.attn_k_norm.weight',
+  n_dims: 1,
+  shape: [ 128n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 204618752n
+}
+{
+  name: 'blk.27.attn_norm.weight',
+  n_dims: 1,
+  shape: [ 1024n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 204619264n
+}
+{
+  name: 'blk.27.attn_output.weight',
+  n_dims: 2,
+  shape: [ 2048n, 1024n ],
+  dtype: 16,
+  precision: 'IQ2_XXS',
+  offset: 204623360n
+}
+{
+  name: 'blk.27.attn_q.weight',
+  n_dims: 2,
+  shape: [ 1024n, 2048n ],
+  dtype: 16,
+  precision: 'IQ2_XXS',
+  offset: 205164032n
+}
+{
+  name: 'blk.27.attn_q_norm.weight',
+  n_dims: 1,
+  shape: [ 128n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 205704704n
+}
+{
+  name: 'blk.27.attn_v.weight',
+  n_dims: 2,
+  shape: [ 1024n, 1024n ],
+  dtype: 18,
+  precision: 'IQ3_XXS',
+  offset: 205705216n
+}
+{
+  name: 'blk.27.ffn_down.weight',
+  n_dims: 2,
+  shape: [ 3072n, 1024n ],
+  dtype: 21,
+  precision: 'IQ3_S',
+  offset: 206106624n
+}
+{
+  name: 'blk.27.ffn_gate.weight',
+  n_dims: 2,
+  shape: [ 1024n, 3072n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 207458304n
+}
+{
+  name: 'blk.27.ffn_norm.weight',
+  n_dims: 1,
+  shape: [ 1024n ],
+  dtype: 0,
+  precision: 'F32',
+  offset: 208072704n
+}
+{
+  name: 'blk.27.ffn_up.weight',
+  n_dims: 2,
+  shape: [ 1024n, 3072n ],
+  dtype: 19,
+  precision: 'IQ1_S',
+  offset: 208076800n
+}

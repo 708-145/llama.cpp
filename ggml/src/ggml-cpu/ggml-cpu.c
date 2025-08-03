@@ -15,6 +15,8 @@
 #include "ops.h"
 #include "ggml.h"
 
+#include "ggml-smarterquant-types.h"
+
 #if defined(_MSC_VER) || defined(__MINGW32__)
 #include <malloc.h> // using malloc.h with MSC/MINGW
 #elif !defined(__FreeBSD__) && !defined(__NetBSD__) && !defined(__OpenBSD__)
@@ -343,6 +345,18 @@ static const struct ggml_type_traits_cpu type_traits_cpu[GGML_TYPE_COUNT] = {
     [GGML_TYPE_IQ4_XS] = {
         .from_float               = quantize_row_iq4_xs,
         .vec_dot                  = ggml_vec_dot_iq4_xs_q8_K,
+        .vec_dot_type             = GGML_TYPE_Q8_K,
+        .nrows                    = 1,
+    },
+    [GGML_TYPE_NF4_XS] = {
+        .from_float               = quantize_row_nf4_xs,
+        .vec_dot                  = ggml_vec_dot_nf4_xs_q8_K,
+        .vec_dot_type             = GGML_TYPE_Q8_K,
+        .nrows                    = 1,
+    },
+    [GGML_TYPE_FP4_XS] = {
+        .from_float               = quantize_row_fp4_xs,
+        .vec_dot                  = ggml_vec_dot_fp4_xs_q8_K,
         .vec_dot_type             = GGML_TYPE_Q8_K,
         .nrows                    = 1,
     },
@@ -1193,12 +1207,72 @@ static void ggml_compute_forward_mul_mat_one_chunk(
     }
 }
 
+static void ggml_compute_forward_mul_mat_smarterquant(
+    const struct ggml_compute_params* params,
+    struct ggml_tensor* dst) {
+    const struct ggml_tensor* src0 = dst->src[0];
+    const struct ggml_tensor* src1 = dst->src[1];
+    struct SmarterQuantTensorInfo* sq_info = (struct SmarterQuantTensorInfo*)src0->extra;
+
+    const int64_t ne00 = src0->ne[0]; // K
+    const int64_t ne01 = src0->ne[1]; // N
+    const int64_t ne10 = src1->ne[0]; // K
+    const int64_t ne11 = src1->ne[1]; // M
+    const int64_t ne1 = dst->ne[1];   // M
+
+    const int ith = params->ith;
+    const int nth = params->nth;
+
+    float* dst_data = (float*)dst->data;
+    const float* src1_data = (const float*)src1->data;
+
+    // Allocate temporary buffers for permuted input and output
+    float* src1_permuted = (float*)params->wdata;
+    float* dst_permuted = (float*)(params->wdata) + ne10;
+
+    for (int64_t i1 = ith; i1 < ne11; i1 += nth) {
+        // Permute the input vector (a row of src1)
+        for (int64_t i = 0; i < ne10; ++i) {
+            src1_permuted[i] = src1_data[i1 * ne10 + sq_info->column_permutation[i]];
+        }
+
+        // Perform matrix multiplication with permuted input
+        for (int64_t i0 = 0; i0 < ne01; ++i0) {
+            float sum = 0.0f;
+            const char* src0_row = (const char*)src0->data + i0 * src0->nb[1];
+
+            for (int64_t j = 0; j < ne00; j += 256) {
+                const enum ggml_type block_type = sq_info->compression_types[j / 256];
+                ggml_vec_dot_t vec_dot = type_traits_cpu[block_type].vec_dot;
+                if (vec_dot == NULL) {
+                    // Fallback for types without a vec_dot function
+                    // This should ideally not happen if all block types are supported
+                    continue;
+                }
+                float block_sum;
+                vec_dot(256, &block_sum, 0, src0_row + j * ggml_type_size(block_type) / ggml_blck_size(block_type), 0, src1_permuted + j, 0, 1);
+                sum += block_sum;
+            }
+            dst_permuted[i0] = sum;
+        }
+
+        // Un-permute the result vector
+        for (int64_t i = 0; i < ne01; ++i) {
+            dst_data[i1 * ne1 + sq_info->column_permutation[i]] = dst_permuted[i];
+        }
+    }
+}
 void ggml_compute_forward_mul_mat(
         const struct ggml_compute_params * params,
               struct ggml_tensor * dst) {
 
     const struct ggml_tensor * src0 = dst->src[0];
     const struct ggml_tensor * src1 = dst->src[1];
+
+    if (src0->extra != NULL) {
+        ggml_compute_forward_mul_mat_smarterquant(params, dst);
+        return;
+    }
 
     GGML_TENSOR_BINARY_OP_LOCALS
 

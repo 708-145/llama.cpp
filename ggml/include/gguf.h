@@ -152,14 +152,21 @@ extern "C" {
     GGML_API void gguf_set_kv(struct gguf_context * ctx, const struct gguf_context * src);
 
     // add tensor to GGUF context, tensor name must be unique
-    GGML_API void gguf_add_tensor(struct gguf_context * ctx, const struct ggml_tensor * tensor);
+    GGML_API void gguf_add_tensor(
+             struct gguf_context * ctx,
+        const struct ggml_tensor * tensor);
 
     // after changing a tensor's type, the offsets of all tensors with higher indices are immediately recalculated
     //   in such a way that the tensor data remains as one contiguous block (except for padding)
     GGML_API void gguf_set_tensor_type(struct gguf_context * ctx, const char * name, enum ggml_type type);
+    GGML_API void gguf_set_tensor_offset(struct gguf_context * ctx, const char * name, size_t offset);
 
     // assumes that at least gguf_get_tensor_size bytes can be read from data
     GGML_API void gguf_set_tensor_data(struct gguf_context * ctx, const char * name, const void * data);
+
+    // after changing a tensor's actual size, the offsets of all tensors with higher indices are immediately recalculated
+    //   in such a way that the tensor data remains as one contiguous block (except for padding)
+    GGML_API void gguf_set_tensor_actual_size(struct gguf_context * ctx, const char * name, size_t actual_size);
 
     // writing gguf files can be done in 3 ways:
     //

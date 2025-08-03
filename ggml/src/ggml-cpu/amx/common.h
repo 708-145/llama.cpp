@@ -1,11 +1,12 @@
 #pragma once
 
 #include "ggml.h"
-#include "ggml-cpu-impl.h"
+#include "../ggml-cpu-impl.h"
 
 #include <algorithm>
 #include <memory>
 #include <type_traits>
+#include <thread>
 
 #if defined(GGML_USE_OPENMP)
 #include <omp.h>
@@ -56,18 +57,35 @@ inline void balance211(T n, T nth, T ith, T& n_start, T& n_end) {
 }
 
 template <typename func_t>
-inline void parallel_for(int n, const func_t& f) {
+inline void parallel_for(int n, const func_t& f, int nthread = 0) {
 #if defined(GGML_USE_OPENMP)
+    if (nthread > 0) {
+        omp_set_num_threads(nthread);
+    }
 #pragma omp parallel
-{
-    int nth = omp_get_num_threads();
-    int ith = omp_get_thread_num();
-    int tbegin, tend;
-    balance211(n, nth, ith, tbegin, tend);
-    f(tbegin, tend);
-}
+    {
+        int nth = omp_get_num_threads();
+        int ith = omp_get_thread_num();
+        int tbegin, tend;
+        balance211(n, nth, ith, tbegin, tend);
+        f(tbegin, tend);
+    }
 #else
-    f(0, n);
+    if (nthread > 1) {
+        std::vector<std::thread> threads(nthread);
+        for (int ith = 0; ith < nthread; ++ith) {
+            threads[ith] = std::thread([&, ith]() {
+                int tbegin, tend;
+                balance211(n, nthread, ith, tbegin, tend);
+                f(tbegin, tend);
+            });
+        }
+        for (int ith = 0; ith < nthread; ++ith) {
+            threads[ith].join();
+        }
+    } else {
+        f(0, n);
+    }
 #endif
 }
 

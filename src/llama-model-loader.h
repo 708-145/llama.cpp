@@ -3,6 +3,7 @@
 #include "llama.h"
 
 #include "llama-impl.h"
+#include "llama-quant.h"
 #include "llama-arch.h"
 #include "llama-mmap.h"
 
@@ -38,6 +39,8 @@ struct llama_model_loader {
             }
 
             offs = gguf_get_data_offset(gguf_ctx) + gguf_get_tensor_offset(gguf_ctx, tensor_idx);
+            //LLAMA_LOG_WARN("%s: load tensor '%s' offset: %zu, data offset: %zu, file size: %zu\n",
+            //    __func__, ggml_get_name(tensor), offs, gguf_get_data_offset(gguf_ctx), file->size());
             if (offs + ggml_nbytes(tensor) < offs || offs + ggml_nbytes(tensor) > file->size()) {
                 throw std::runtime_error(format("tensor '%s' data is not within the file bounds, model is corrupted or incomplete", ggml_get_name(tensor)));
             }
@@ -78,6 +81,7 @@ struct llama_model_loader {
     llama_mmaps mappings;
 
     std::map<std::string, llama_tensor_weight, weight_name_comparer> weights_map;
+    std::map<std::string, SmarterQuantTensorInfo> smarter_quant_info;
     std::unordered_map<std::string, llama_model_kv_override> kv_overrides;
     const llama_model_tensor_buft_override * tensor_buft_overrides;
 

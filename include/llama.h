@@ -147,6 +147,8 @@ extern "C" {
         LLAMA_FTYPE_MOSTLY_IQ4_XS        = 30, // except 1d tensors
         LLAMA_FTYPE_MOSTLY_IQ1_M         = 31, // except 1d tensors
         LLAMA_FTYPE_MOSTLY_BF16          = 32, // except 1d tensors
+        LLAMA_FTYPE_MOSTLY_NF4_XS        = 33, // except 1d tensors
+        LLAMA_FTYPE_MOSTLY_FP4_XS        = 34, // except 1d tensors
         //LLAMA_FTYPE_MOSTLY_Q4_0_4_4      = 33, // removed from gguf files, use Q4_0 and runtime repack
         //LLAMA_FTYPE_MOSTLY_Q4_0_4_8      = 34, // removed from gguf files, use Q4_0 and runtime repack
         //LLAMA_FTYPE_MOSTLY_Q4_0_8_8      = 35, // removed from gguf files, use Q4_0 and runtime repack
@@ -353,6 +355,8 @@ extern "C" {
         bool pure;                            // quantize all tensors to the default type
         bool keep_split;                      // quantize to the same number of shards
         void * imatrix;                       // pointer to importance matrix data
+        void * smarter_quant_config;         // pointer to smarter quant config (map<string, SmarterQuantTensorInfo>)
+        void * smart_quant_config;           // pointer to smart quant config (map<string, ggml_type>)
         void * kv_overrides;                  // pointer to vector containing overrides
         void * tensor_types;                  // pointer to vector containing tensor types
         void * prune_layers;                  // pointer to vector containing layer indices to prune

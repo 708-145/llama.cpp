@@ -1,6 +1,7 @@
 #include "llama-model-loader.h"
 
 #include "ggml.h"
+#include "../vendor/nlohmann/json.hpp"
 
 #include <array>
 #include <cinttypes>
@@ -57,6 +58,8 @@ static std::string llama_model_ftype_name(llama_ftype ftype) {
         case LLAMA_FTYPE_MOSTLY_IQ1_M:    return "IQ1_M - 1.75 bpw";
         case LLAMA_FTYPE_MOSTLY_IQ4_NL:   return "IQ4_NL - 4.5 bpw";
         case LLAMA_FTYPE_MOSTLY_IQ4_XS:   return "IQ4_XS - 4.25 bpw";
+        case LLAMA_FTYPE_MOSTLY_NF4_XS:   return "NF4_XS - 4.25 bpw";
+        case LLAMA_FTYPE_MOSTLY_FP4_XS:   return "FP4_XS - 4.25 bpw";
         case LLAMA_FTYPE_MOSTLY_IQ3_S:    return "IQ3_S - 3.4375 bpw";
         case LLAMA_FTYPE_MOSTLY_IQ3_M:    return "IQ3_S mix - 3.66 bpw";
 
@@ -515,6 +518,40 @@ llama_model_loader::llama_model_loader(
         n_elements += ggml_nelements(cur);
         n_bytes    += ggml_nbytes(cur);
         weights_map.emplace(tensor_name, llama_tensor_weight(files.back().get(), 0, meta.get(), cur));
+
+        // Check for and load SmarterQuant metadata
+        bool sq_enabled = false;
+        get_key(tensor_name + ".smarterquant.enabled", sq_enabled, false);
+        if (sq_enabled) {
+            SmarterQuantTensorInfo sq_info;
+            sq_info.enabled = true;
+
+            std::string perm_str;
+            if (get_key(tensor_name + ".smarterquant.permutation", perm_str, true)) {
+                auto perm_json = nlohmann::json::parse(perm_str);
+                std::vector<int32_t> perm = perm_json.get<std::vector<int32_t>>();
+                if (!perm.empty()) {
+                    sq_info.column_permutation = new int32_t[perm.size()];
+                    std::copy(perm.begin(), perm.end(), sq_info.column_permutation);
+                    sq_info.n_cols_for_permutation = perm.size();
+                }
+            }
+
+            std::string block_types_str;
+            if (get_key(tensor_name + ".smarterquant.block_types", block_types_str, true)) {
+                auto block_types_json = nlohmann::json::parse(block_types_str);
+                std::vector<int8_t> block_types = block_types_json.get<std::vector<int8_t>>();
+                GGML_ASSERT(block_types.size() == 4);
+                std::copy(block_types.begin(), block_types.end(), sq_info.compression_types);
+            }
+
+            // Validate tensor size against block types
+            size_t expected_size_from_metadata = 0;
+            get_key(tensor_name + ".actual_size", expected_size_from_metadata, false);
+            // TODO: sq_info.actual_size = expected_size_from_metadata;
+
+            smarter_quant_info[tensor_name] = sq_info;
+        }
     }
     uint16_t n_split = 0;
     get_key(llm_kv(LLM_KV_SPLIT_COUNT), n_split, false);
@@ -651,6 +688,8 @@ llama_model_loader::llama_model_loader(
             case GGML_TYPE_TQ1_0:   ftype = LLAMA_FTYPE_MOSTLY_TQ1_0;   break;
             case GGML_TYPE_TQ2_0:   ftype = LLAMA_FTYPE_MOSTLY_TQ2_0;   break;
             case GGML_TYPE_IQ2_XXS: ftype = LLAMA_FTYPE_MOSTLY_IQ2_XXS; break;
+            case GGML_TYPE_NF4_XS:  ftype = LLAMA_FTYPE_MOSTLY_NF4_XS;  break;
+            case GGML_TYPE_FP4_XS:  ftype = LLAMA_FTYPE_MOSTLY_FP4_XS;  break;
             case GGML_TYPE_IQ2_XS:  ftype = LLAMA_FTYPE_MOSTLY_IQ2_XS;  break;
             case GGML_TYPE_IQ2_S:   ftype = LLAMA_FTYPE_MOSTLY_IQ2_S;   break;
             case GGML_TYPE_IQ3_XXS: ftype = LLAMA_FTYPE_MOSTLY_IQ3_XXS; break;
@@ -895,22 +934,45 @@ void llama_model_loader::get_mapping_range(size_t * first, size_t * last, void *
 void llama_model_loader::load_data_for(struct ggml_tensor * cur) const {
     const auto & w = require_weight(ggml_get_name(cur));
 
+    // Check if this tensor has SmarterQuant metadata
+    auto sq_it = smarter_quant_info.find(std::string(ggml_get_name(cur)));
+    size_t load_size = ggml_nbytes(cur);
+
+    if (sq_it != smarter_quant_info.end() && sq_it->second.enabled) {
+        // If SmarterQuant is enabled, calculate the actual size from metadata
+        size_t calculated_expected_size = 0;
+        const int64_t n_rows = cur->ne[1];
+        const int64_t n_cols = cur->ne[0];
+        const auto& sq_info = sq_it->second;
+        
+        for (int64_t i = 0; i < n_cols; i += 256) {
+            ggml_type type;
+            if (i < 256) type = (ggml_type)sq_info.compression_types[1];
+            else if (i < 512) type = (ggml_type)sq_info.compression_types[2];
+            else if (i < 768) type = (ggml_type)sq_info.compression_types[3];
+            else type = (ggml_type)sq_info.compression_types[0];
+            calculated_expected_size += ggml_type_size(type) * n_rows * std::min((int64_t)256, n_cols - i) / ggml_blck_size(type);
+        }
+
+        load_size = calculated_expected_size;
+    }
+
     if (use_mmap) {
         const auto & mapping = mappings.at(w.idx);
         if (cur->data == nullptr) {
             cur->data = (uint8_t *)mapping->addr() + w.offs;
         } else {
-            memcpy(cur->data, (uint8_t *)mapping->addr() + w.offs, ggml_nbytes(cur));
+            memcpy(cur->data, (uint8_t *)mapping->addr() + w.offs, load_size);
         }
     } else {
         GGML_ASSERT(cur->data != nullptr);
         GGML_ASSERT(w.idx < files.size());
         const auto & file = files.at(w.idx);
         file->seek(w.offs, SEEK_SET);
-        file->read_raw(cur->data, ggml_nbytes(cur));
+        file->read_raw(cur->data, load_size);
     }
 
-    if (check_tensors && !ggml_validate_row_data(cur->type, cur->data, ggml_nbytes(cur))) {
+    if (check_tensors && !ggml_validate_row_data(cur->type, cur->data, load_size)) {
         throw std::runtime_error(format("tensor '%s' has invalid data", ggml_get_name(cur)));
     }
 }

@@ -387,6 +387,8 @@ extern "C" {
         GGML_TYPE_F64     = 28,
         GGML_TYPE_IQ1_M   = 29,
         GGML_TYPE_BF16    = 30,
+        GGML_TYPE_NF4_XS  = 31, 
+        GGML_TYPE_FP4_XS  = 32,
         // GGML_TYPE_Q4_0_4_4 = 31, support has been removed from gguf files
         // GGML_TYPE_Q4_0_4_8 = 32,
         // GGML_TYPE_Q4_0_8_8 = 33,
@@ -430,6 +432,8 @@ extern "C" {
         GGML_FTYPE_MOSTLY_IQ4_XS  = 22, // except 1d tensors
         GGML_FTYPE_MOSTLY_IQ1_M   = 23, // except 1d tensors
         GGML_FTYPE_MOSTLY_BF16    = 24, // except 1d tensors
+        GGML_FTYPE_MOSTLY_NF4_XS  = 25, // except 1d tensors
+        GGML_FTYPE_MOSTLY_FP4_XS  = 26, // except 1d tensors
     };
 
     // available tensor operations:
@@ -596,6 +600,7 @@ extern "C" {
     // n-dimensional tensor
     struct ggml_tensor {
         enum ggml_type type;
+        size_t actual_size;
 
         struct ggml_backend_buffer * buffer;
 
@@ -625,7 +630,7 @@ extern "C" {
 
         void * extra; // extra things e.g. for ggml-cuda.cu
 
-        char padding[8];
+        // char padding[8]; // removed due to actual_size
     };
 
     static const size_t GGML_TENSOR_SIZE = sizeof(struct ggml_tensor);

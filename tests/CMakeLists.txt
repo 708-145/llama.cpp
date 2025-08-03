@@ -205,6 +205,8 @@ if (NOT GGML_BACKEND_DL)
     llama_build_and_test(test-quantize-fns.cpp)
     llama_build_and_test(test-quantize-perf.cpp)
     llama_build_and_test(test-rope.cpp)
+    add_executable(test-quantize-smarter-blocks test-quantize-smarter-blocks.cpp)
+    target_link_libraries(test-quantize-smarter-blocks PRIVATE llama)
 endif()
 
 # libmtmd
