@@ -7,6 +7,7 @@
 #include <cinttypes>
 #include <cstring>
 #include <future>
+#include <regex>
 
 static const size_t kiB = 1024;
 static const size_t MiB = 1024*kiB;
@@ -732,7 +733,9 @@ llama_model_loader::llama_model_loader(
             }
             replace_all(value, "\n", "\\n");
 
-            LLAMA_LOG_INFO("%s: - kv %3d: %42s %-16s = %s\n", __func__, i, name, type_name.c_str(), value.c_str());
+            if (!std::regex_search(name, std::regex("smarterquant|actual_size|checksum"))) {
+                LLAMA_LOG_INFO("%s: - kv %3d: %42s %-16s = %s\n", __func__, i, name, type_name.c_str(), value.c_str());
+            } 
         }
 
         // print type counts
