@@ -489,16 +489,6 @@ struct gguf_context * gguf_init_from_file_impl(FILE * file, struct gguf_init_par
     // gr. current position
     GGML_LOG_WARN("%s: filepos = %zu\n", __func__, ftell(file));
 
-    // Helper function to calculate a simple 64-bit checksum
-    auto calculate_checksum = [](const void *data, size_t size) -> uint64_t {
-        uint64_t checksum = 0;
-        const uint8_t *bytes = (const uint8_t *)data;
-        for (size_t i = 0; i < size; ++i) {
-            checksum += bytes[i];
-        }
-        return checksum;
-    };
-
     // read the tensor info
     for (int64_t i = 0; ok && i < n_tensors; ++i) {
         struct gguf_tensor_info info;
@@ -777,7 +767,7 @@ struct gguf_context * gguf_init_from_file_impl(FILE * file, struct gguf_init_par
 
                 if (!params.no_alloc) {
                     // Data is already in memory (not mmap'd)
-                    calculated_checksum = calculate_checksum(cur->data, actual_size);
+                    calculated_checksum = gguf_calculate_checksum(cur->data, actual_size);
                 } else {
                     // Data is mmap'd or not loaded, read directly from file for checksum
                     // Temporarily seek and read for checksum
@@ -786,7 +776,7 @@ struct gguf_context * gguf_init_from_file_impl(FILE * file, struct gguf_init_par
                     seek_pos = ftell(file);
                     std::vector<char> temp_buffer(actual_size);
                     if (gr.read(temp_buffer.data(), actual_size)) {
-                        calculated_checksum = calculate_checksum(temp_buffer.data(), actual_size);
+                        calculated_checksum = gguf_calculate_checksum(temp_buffer.data(), actual_size);
                     } else {
                         GGML_LOG_ERROR("%s: Failed to read tensor data for checksum for tensor '%s'\n", __func__, info.t.name);
                         ok = false;
@@ -1496,4 +1486,13 @@ void gguf_get_meta_data(const struct gguf_context * ctx, void * data) {
     std::vector<int8_t> buf;
     gguf_write_to_buf(ctx, buf, /*only_meta =*/ true);
     memcpy(data, buf.data(), buf.size());
+}
+
+uint64_t gguf_calculate_checksum(const void * data, size_t size) {
+    uint64_t checksum = 0;
+    const uint8_t * bytes = (const uint8_t *)data;
+    for (size_t i = 0; i < size; ++i) {
+        checksum += bytes[i];
+    }
+    return checksum;
 }

@@ -37,6 +37,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <inttypes.h>
 
 #define GGUF_MAGIC   "GGUF"
 #define GGUF_VERSION 3
@@ -199,7 +200,11 @@ extern "C" {
     GGML_API bool gguf_write_to_file(const struct gguf_context * ctx, const char * fname, bool only_meta);
 
     // get the size in bytes of the meta data (header, kv pairs, tensor info) including padding
+    // get the size in bytes of the meta data (header, kv pairs, tensor info) including padding
     GGML_API size_t gguf_get_meta_size(const struct gguf_context * ctx);
+
+    // calculate a simple 64-bit checksum of the given data
+    GGML_API uint64_t gguf_calculate_checksum(const void * data, size_t size);
 
     // writes the meta data to pointer "data"
     GGML_API void   gguf_get_meta_data(const struct gguf_context * ctx, void * data);

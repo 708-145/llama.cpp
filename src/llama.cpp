@@ -6,6 +6,7 @@
 #include "llama-model-loader.h"
 #include "llama-model-saver.h"
 #include "llama-model.h"
+#include "gguf.h"
 
 #include "ggml.h"
 #include "ggml-backend.h"
@@ -132,6 +133,24 @@ static int llama_model_load(const std::string & fname, std::vector<std::string> 
     }
 
     // TB: check if the model is loaded correctly by checking the tensor checksums
+    if (params.check_tensors) {
+        for (size_t i = 0; i < model.tensors_by_name.size(); ++i) {
+            ggml_tensor * tensor = model.tensors_by_name[i].second;
+            std::string checksum_key = std::string(tensor->name) + ".checksum";
+            int64_t checksum_key_id = gguf_find_key(model.gguf_ctx, checksum_key.c_str());
+
+            if (checksum_key_id != -1) {
+                uint64_t stored_checksum = gguf_get_val_u64(model.gguf_ctx, checksum_key_id);
+                uint64_t calculated_checksum = gguf_calculate_checksum(tensor->data, ggml_nbytes(tensor));
+
+                if (stored_checksum != calculated_checksum) {
+                    LLAMA_LOG_ERROR("%s: Checksum mismatch for tensor '%s'. Stored: %" PRIu64 ", Calculated: %" PRIu64 "\n",
+                                   __func__, tensor->name, stored_checksum, calculated_checksum);
+                    return -1;
+                }
+            }
+        }
+    }
 
     return 0;
 }
