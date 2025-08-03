@@ -983,10 +983,47 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
                 most_common_type = pair.first;
             }
         }
-        LLAMA_LOG_INFO("SmarterQuant: most common type is %s (%d occurrences)\n", ggml_type_name((ggml_type)most_common_type), max_count);
-        // smarterquant_ftype = most_common_type; // TODO: translate to llama_ftype
-        // Set the smarterquant file type in the general context
-        //gguf_set_val_u32(ctx_out.get(), "general.file_type", smarterquant_ftype); // TB: smarterquant file_type
+        smarterquant_ftype = most_common_type;
+        LLAMA_LOG_INFO("SmarterQuant: most common type is %s (%d occurrences)\n", ggml_type_name((ggml_type)smarterquant_ftype), max_count);
+        // Convert ggml_type to llama_ftype
+        llama_ftype sq_ftype = LLAMA_FTYPE_UNKNOWN;
+        switch ((ggml_type)smarterquant_ftype) {
+            case GGML_TYPE_Q4_0:    sq_ftype = LLAMA_FTYPE_MOSTLY_Q4_0;    break;
+            case GGML_TYPE_Q4_1:    sq_ftype = LLAMA_FTYPE_MOSTLY_Q4_1;    break;
+            case GGML_TYPE_Q5_0:    sq_ftype = LLAMA_FTYPE_MOSTLY_Q5_0;    break;
+            case GGML_TYPE_Q5_1:    sq_ftype = LLAMA_FTYPE_MOSTLY_Q5_1;    break;
+            case GGML_TYPE_Q8_0:    sq_ftype = LLAMA_FTYPE_MOSTLY_Q8_0;    break;
+            case GGML_TYPE_F16:     sq_ftype = LLAMA_FTYPE_MOSTLY_F16;     break;
+            case GGML_TYPE_BF16:    sq_ftype = LLAMA_FTYPE_MOSTLY_BF16;    break;
+            case GGML_TYPE_F32:     sq_ftype = LLAMA_FTYPE_ALL_F32;        break;
+            case GGML_TYPE_Q2_K:    sq_ftype = LLAMA_FTYPE_MOSTLY_Q2_K;    break;
+            case GGML_TYPE_Q3_K:    sq_ftype = LLAMA_FTYPE_MOSTLY_Q3_K_M;  break; // Assuming Q3_K_M as a common Q3_K type
+            case GGML_TYPE_Q4_K:    sq_ftype = LLAMA_FTYPE_MOSTLY_Q4_K_M;  break; // Assuming Q4_K_M as a common Q4_K type
+            case GGML_TYPE_Q5_K:    sq_ftype = LLAMA_FTYPE_MOSTLY_Q5_K_M;  break; // Assuming Q5_K_M as a common Q5_K type
+            case GGML_TYPE_Q6_K:    sq_ftype = LLAMA_FTYPE_MOSTLY_Q6_K;    break;
+            case GGML_TYPE_TQ1_0:   sq_ftype = LLAMA_FTYPE_MOSTLY_TQ1_0;   break;
+            case GGML_TYPE_TQ2_0:   sq_ftype = LLAMA_FTYPE_MOSTLY_TQ2_0;   break;
+            case GGML_TYPE_IQ2_XXS: sq_ftype = LLAMA_FTYPE_MOSTLY_IQ2_XXS; break;
+            case GGML_TYPE_IQ2_XS:  sq_ftype = LLAMA_FTYPE_MOSTLY_IQ2_XS;  break;
+            case GGML_TYPE_IQ2_S:   sq_ftype = LLAMA_FTYPE_MOSTLY_IQ2_S;   break;
+            
+            case GGML_TYPE_IQ3_XXS: sq_ftype = LLAMA_FTYPE_MOSTLY_IQ3_XXS; break;
+            case GGML_TYPE_IQ1_S:   sq_ftype = LLAMA_FTYPE_MOSTLY_IQ1_S;   break;
+            case GGML_TYPE_IQ1_M:   sq_ftype = LLAMA_FTYPE_MOSTLY_IQ1_M;   break;
+            case GGML_TYPE_IQ4_NL:  sq_ftype = LLAMA_FTYPE_MOSTLY_IQ4_NL;  break;
+            case GGML_TYPE_IQ4_XS:  sq_ftype = LLAMA_FTYPE_MOSTLY_IQ4_XS;  break;
+            case GGML_TYPE_NF4_XS:  sq_ftype = LLAMA_FTYPE_MOSTLY_NF4_XS;  break;
+            case GGML_TYPE_FP4_XS:  sq_ftype = LLAMA_FTYPE_MOSTLY_FP4_XS;  break;
+            case GGML_TYPE_IQ3_S:   sq_ftype = LLAMA_FTYPE_MOSTLY_IQ3_S;   break;
+            
+            default: sq_ftype = LLAMA_FTYPE_UNKNOWN; break;
+        }
+        if (sq_ftype != LLAMA_FTYPE_UNKNOWN) {
+            LLAMA_LOG_INFO("SmarterQuant: setting general file type to %s.\n", llama_model_ftype_name(sq_ftype).c_str());
+            gguf_set_val_u32(ctx_outs[0].get(), "general.file_type", sq_ftype); // Set on the primary context
+        } else {
+            LLAMA_LOG_WARN("SmarterQuant: Could not convert most common ggml_type %s to llama_ftype. general.file_type will not be set by smarterquant.", ggml_type_name((ggml_type)smarterquant_ftype));
+        }
     }
 
 

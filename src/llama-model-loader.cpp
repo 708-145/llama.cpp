@@ -23,7 +23,7 @@ const char * llama_file_version_name(llama_fver version) {
     return "unknown";
 }
 
-static std::string llama_model_ftype_name(llama_ftype ftype) {
+std::string llama_model_ftype_name(llama_ftype ftype) {
     if (ftype & LLAMA_FTYPE_GUESSED) {
         return llama_model_ftype_name((enum llama_ftype) (ftype & ~LLAMA_FTYPE_GUESSED)) + " (guessed)";
     }

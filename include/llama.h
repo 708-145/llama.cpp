@@ -8,6 +8,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <string>
 #include <stdio.h>
 #include <stdbool.h>
 
@@ -154,6 +155,8 @@ extern "C" {
         //LLAMA_FTYPE_MOSTLY_Q4_0_8_8      = 35, // removed from gguf files, use Q4_0 and runtime repack
         LLAMA_FTYPE_MOSTLY_TQ1_0         = 36, // except 1d tensors
         LLAMA_FTYPE_MOSTLY_TQ2_0         = 37, // except 1d tensors
+
+        LLAMA_FTYPE_UNKNOWN = 9999, // for currently unknown or invalid ftype
 
         LLAMA_FTYPE_GUESSED = 1024, // not specified in the model file
     };
@@ -550,6 +553,8 @@ extern "C" {
             const char * fname_inp,
             const char * fname_out,
             const llama_model_quantize_params * params);
+
+    LLAMA_API std::string llama_model_ftype_name(llama_ftype ftype);
 
     //
     // Adapters
