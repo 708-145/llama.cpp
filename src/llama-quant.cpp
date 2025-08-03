@@ -930,9 +930,10 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
     }
 
     // write smarterquant metadata here: loop through json, with info about tensor dimensions and quant bpw
-    uint32_t smarterquant_ftype = 0;
+    uint32_t smarterquant_ftype = 7;
     if (params->smarter_quant_config) {
         const auto & smarter_quant_config = *static_cast<const std::map<std::string, SmarterQuantTensorInfo>*>(params->smarter_quant_config);
+        std::map<uint32_t, int> type_counts;
         for (const auto * it : tensors) {
             const auto & weight = *it;
             ggml_tensor * tensor = weight.tensor;
@@ -970,10 +971,21 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
                 }
                 gguf_set_val_u64(ctx_outs[i_split].get(), (name + ".actual_size").c_str(), actual_size);
                 dict_actual_size[name] = actual_size;
+                // record which is the most often used compression_types[1]
+                type_counts[(uint32_t)sq_it->second.compression_types[1]]++;
             }
-            // TB: record which is the most often used compression_types[1] and set smarterquant_ftype to that
-            //smarterquant_ftype = (uint32_t)sq_it->second.compression_types[1]; // fix the type to the most common one
         }
+        uint32_t most_common_type = 0;
+        int max_count = 0;
+        for (const auto & pair : type_counts) {
+            if (pair.second > max_count) {
+                max_count = pair.second;
+                most_common_type = pair.first;
+            }
+        }
+        LLAMA_LOG_INFO("SmarterQuant: most common type is %s (%d occurrences)\n", ggml_type_name((ggml_type)most_common_type), max_count);
+        // smarterquant_ftype = most_common_type; // TODO: translate to llama_ftype
+        // Set the smarterquant file type in the general context
         //gguf_set_val_u32(ctx_out.get(), "general.file_type", smarterquant_ftype); // TB: smarterquant file_type
     }
 
