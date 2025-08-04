@@ -8,6 +8,7 @@
 #include "common.h"
 #include "log.h"
 #include "llama.h"
+#include "llama-model.h"
 
 #include <algorithm>
 #include <cinttypes>
@@ -918,9 +919,44 @@ struct common_init_result common_init_from_params(common_params & params) {
         return iparams;
     }
 
-    LOG_WRN("%s: Model is loaded. Starting Checksum comparisons.\n", __func__);
     // TB: Checksum comparisons
-    LOG_WRN("%s: Checksum comparisons done.\n", __func__);
+    if (params.check_tensors) {
+        LOG_INF("%s: Verifying tensor checksums...\n", __func__);
+        bool checksums_found = false;
+        bool all_correct = true;
+        for (const auto & kv : model->tensors_by_name) {
+            ggml_tensor * tensor = kv.second;
+            std::string checksum_key = std::string(tensor->name) + ".checksum";
+            const int64_t checksum_key_id = gguf_find_key(model->gguf_ctx, checksum_key.c_str());
+
+            if (checksum_key_id != -1) {
+                checksums_found = true;
+                const uint64_t stored_checksum = gguf_get_val_u64(model->gguf_ctx, checksum_key_id);
+                if (tensor->data == nullptr) {
+                    LOG_WRN("%s: Cannot calculate checksum for tensor '%s' because it is not in memory.\n", __func__, tensor->name);
+                    all_correct = false;
+                    continue;
+                }
+                const uint64_t calculated_checksum = gguf_calculate_checksum(tensor->data, ggml_nbytes(tensor));
+
+                if (stored_checksum != calculated_checksum) {
+                    LOG_WRN("%s: Checksum mismatch for tensor '%s'. Stored: %" PRIu64 ", Calculated: %" PRIu64 "\n",
+                                   __func__, tensor->name, stored_checksum, calculated_checksum);
+                    all_correct = false;
+                }
+            }
+        }
+
+        if (checksums_found) {
+            if (all_correct) {
+                LOG_INF("%s: All tensor checksums verified successfully.\n", __func__);
+            } else {
+                LOG_WRN("%s: Some tensor checksums could not be verified or were incorrect.\n", __func__);
+            }
+        } else {
+            LOG_INF("%s: No tensor checksums found in the model file to verify.\n", __func__);
+        }
+    }
 
     const llama_vocab * vocab = llama_model_get_vocab(model);
 

@@ -132,34 +132,6 @@ static int llama_model_load(const std::string & fname, std::vector<std::string> 
         return -1;
     }
 
-    // TB: check if the model is loaded correctly by checking the tensor checksums
-    bool checksums_found = false;
-    if (false) {
-        for (size_t i = 0; i < 2; ++i) { // i < model.tensors_by_name.size();
-            ggml_tensor * tensor = model.tensors_by_name[i].second;
-            std::string checksum_key = std::string(tensor->name) + ".checksum";
-            int64_t checksum_key_id = gguf_find_key(model.gguf_ctx, checksum_key.c_str());
-
-            if (checksum_key_id != -1) {
-                checksums_found = true;
-                uint64_t stored_checksum = gguf_get_val_u64(model.gguf_ctx, checksum_key_id);
-                uint64_t calculated_checksum = gguf_calculate_checksum(tensor->data, ggml_nbytes(tensor));
-
-                if (stored_checksum != calculated_checksum) {
-                    LLAMA_LOG_WARN("%s: Checksum mismatch for tensor '%s'. Stored: %" PRIu64 ", Calculated: %" PRIu64 "\n",
-                                   __func__, tensor->name, stored_checksum, calculated_checksum);
-                } else {
-                    LLAMA_LOG_WARN("%s: Checksum for tensor '%s' is correct.\n", __func__, tensor->name);
-                }
-            }
-        }
-    }
-    if (checksums_found) {
-        LLAMA_LOG_INFO("%s: All tensor checksums verified successfully.\n", __func__);
-    } else {
-        LLAMA_LOG_INFO("%s: No tensor checksums found in the model to verify.\n", __func__);
-    }
-
     return 0;
 }
 
