@@ -96,6 +96,8 @@ static int llama_model_load(const std::string & fname, std::vector<std::string> 
     try {
         llama_model_loader ml(fname, splits, params.use_mmap, params.check_tensors, params.kv_overrides, params.tensor_buft_overrides);
 
+        model.gguf_ctx = ml.meta.get();
+
         ml.print_info();
 
         model.hparams.vocab_only = params.vocab_only;

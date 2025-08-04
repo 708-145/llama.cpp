@@ -940,6 +940,7 @@ struct common_init_result common_init_from_params(common_params & params) {
             LOG_INF("%s: Picked Tensor %s with size %zu\n", __func__, tensor->name, ggml_nbytes(tensor));
 
             std::string checksum_key = std::string(tensor->name) + ".checksum";
+            LOG_INF("%s: Looking for checksum key '%s'\n", __func__, checksum_key.c_str());
             const int64_t checksum_key_id = gguf_find_key(model->gguf_ctx, checksum_key.c_str());
             LOG_INF("%s: Got checksum key id %s\n", __func__, checksum_key.c_str());
 
