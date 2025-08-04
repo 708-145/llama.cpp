@@ -920,14 +920,17 @@ struct common_init_result common_init_from_params(common_params & params) {
     }
 
     // TB: Checksum comparisons
-    if (params.check_tensors) {
+    if (true) { // params.check_tensors is for something else, the checksum check is independent
         LOG_INF("%s: Verifying tensor checksums...\n", __func__);
         bool checksums_found = false;
         bool all_correct = true;
         for (const auto & kv : model->tensors_by_name) {
             ggml_tensor * tensor = kv.second;
+            LOG_INF("%s: Picked Tensor %s with size %zu\n", __func__, tensor->name, ggml_nbytes(tensor));
+
             std::string checksum_key = std::string(tensor->name) + ".checksum";
             const int64_t checksum_key_id = gguf_find_key(model->gguf_ctx, checksum_key.c_str());
+            LOG_INF("%s: Got checksum key id %s\n", __func__, checksum_key.c_str());
 
             if (checksum_key_id != -1) {
                 checksums_found = true;
@@ -937,6 +940,8 @@ struct common_init_result common_init_from_params(common_params & params) {
                     all_correct = false;
                     continue;
                 }
+                LOG_INF("%s: Verifying checksum for tensor '%s' with size %" PRIu64 "\n",
+                                   __func__, tensor->name, ggml_nbytes(tensor));
                 const uint64_t calculated_checksum = gguf_calculate_checksum(tensor->data, ggml_nbytes(tensor));
 
                 if (stored_checksum != calculated_checksum) {
