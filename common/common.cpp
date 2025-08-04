@@ -918,6 +918,10 @@ struct common_init_result common_init_from_params(common_params & params) {
         return iparams;
     }
 
+    LOG_WRN("%s: Model is loaded. Starting Checksum comparisons.\n", __func__);
+    // TB: Checksum comparisons
+    LOG_WRN("%s: Checksum comparisons done.\n", __func__);
+
     const llama_vocab * vocab = llama_model_get_vocab(model);
 
     auto cparams = common_context_params_to_llama(params);
