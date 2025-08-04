@@ -934,14 +934,21 @@ struct common_init_result common_init_from_params(common_params & params) {
 
             if (checksum_key_id != -1) {
                 checksums_found = true;
+                enum gguf_type checksum_type = gguf_get_val_type(model->gguf_ctx, checksum_key_id);
+                if (checksum_type != GGUF_TYPE_U64) {
+                    LOG_WRN("%s: Checksum for tensor '%s' is not of type U64. Skipping verification.\n", __func__, tensor->name);
+                    all_correct = false;
+                    continue;
+                }
                 const uint64_t stored_checksum = gguf_get_val_u64(model->gguf_ctx, checksum_key_id);
+                LOG_INF("%s: Found stored checksum for tensor '%s': %" PRIu64 "\n", __func__, tensor->name, stored_checksum);
                 if (tensor->data == nullptr) {
                     LOG_WRN("%s: Cannot calculate checksum for tensor '%s' because it is not in memory.\n", __func__, tensor->name);
                     all_correct = false;
                     continue;
                 }
-                LOG_INF("%s: Verifying checksum for tensor '%s' with size %" PRIu64 "\n",
-                                   __func__, tensor->name, ggml_nbytes(tensor));
+                LOG_INF("%s: Verifying checksum for tensor '%s' with size %" PRIu64 " at address %p\n",
+                                   __func__, tensor->name, ggml_nbytes(tensor), tensor->data);
                 const uint64_t calculated_checksum = gguf_calculate_checksum(tensor->data, ggml_nbytes(tensor));
 
                 if (stored_checksum != calculated_checksum) {
