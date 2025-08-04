@@ -733,7 +733,7 @@ llama_model_loader::llama_model_loader(
             }
             replace_all(value, "\n", "\\n");
 
-            if (!std::regex_search(name, std::regex("smarterquant|actual_size|checksum"))) {
+            if (true || !std::regex_search(name, std::regex("smarterquant|actual_size|checksum"))) { // TB: skip some keys
                 LLAMA_LOG_INFO("%s: - kv %3d: %42s %-16s = %s\n", __func__, i, name, type_name.c_str(), value.c_str());
             } 
         }
