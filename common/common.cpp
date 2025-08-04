@@ -919,8 +919,19 @@ struct common_init_result common_init_from_params(common_params & params) {
         return iparams;
     }
 
+    const llama_vocab * vocab = llama_model_get_vocab(model);
+
+    auto cparams = common_context_params_to_llama(params);
+
+    llama_context * lctx = llama_init_from_model(model, cparams);
+    if (lctx == NULL) {
+        LOG_ERR("%s: failed to create context with model '%s'\n", __func__, params.model.path.c_str());
+        llama_model_free(model);
+        return iparams;
+    }
+
     // TB: Checksum comparisons
-    if (true) { // params.check_tensors is for something else, the checksum check is independent
+    if (true) { // always check checksums for now
         LOG_INF("%s: Verifying tensor checksums...\n", __func__);
         bool checksums_found = false;
         bool all_correct = true;
@@ -934,8 +945,8 @@ struct common_init_result common_init_from_params(common_params & params) {
 
             if (checksum_key_id != -1) {
                 checksums_found = true;
-                enum gguf_type checksum_type = gguf_get_val_type(model->gguf_ctx, checksum_key_id);
-                if (checksum_type != GGUF_TYPE_U64) {
+                enum gguf_type checksum_type = gguf_get_kv_type(model->gguf_ctx, checksum_key_id);
+                if (checksum_type != GGUF_TYPE_UINT64) {
                     LOG_WRN("%s: Checksum for tensor '%s' is not of type U64. Skipping verification.\n", __func__, tensor->name);
                     all_correct = false;
                     continue;
@@ -955,6 +966,8 @@ struct common_init_result common_init_from_params(common_params & params) {
                     LOG_WRN("%s: Checksum mismatch for tensor '%s'. Stored: %" PRIu64 ", Calculated: %" PRIu64 "\n",
                                    __func__, tensor->name, stored_checksum, calculated_checksum);
                     all_correct = false;
+                } else {
+                    LOG_INF("%s: Checksum for tensor '%s' is correct.\n", __func__, tensor->name);
                 }
             }
         }
@@ -968,17 +981,6 @@ struct common_init_result common_init_from_params(common_params & params) {
         } else {
             LOG_INF("%s: No tensor checksums found in the model file to verify.\n", __func__);
         }
-    }
-
-    const llama_vocab * vocab = llama_model_get_vocab(model);
-
-    auto cparams = common_context_params_to_llama(params);
-
-    llama_context * lctx = llama_init_from_model(model, cparams);
-    if (lctx == NULL) {
-        LOG_ERR("%s: failed to create context with model '%s'\n", __func__, params.model.path.c_str());
-        llama_model_free(model);
-        return iparams;
     }
 
     if (params.ctx_shift && !llama_memory_can_shift(llama_get_memory(lctx))) {
