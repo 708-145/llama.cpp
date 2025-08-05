@@ -919,6 +919,58 @@ struct common_init_result common_init_from_params(common_params & params) {
         return iparams;
     }
 
+    // TB: Checksum comparisons
+    LOG_INF("%s: Verifying tensor checksums...\n", __func__);
+    bool checksums_found = false;
+    bool all_correct = true;
+    for (const auto & kv : model->tensors_by_name) {
+        ggml_tensor * tensor = kv.second;
+        LOG_INF("%s: Picked Tensor %s with size %zu, ", __func__, tensor->name, ggml_nbytes(tensor));
+
+        std::string checksum_key = std::string(tensor->name) + ".checksum";
+        //LOG_INF("%s: Looking for checksum key '%s'\n", __func__, checksum_key.c_str());
+        const int64_t checksum_key_id = gguf_find_key(model->gguf_ctx, checksum_key.c_str());
+        LOG_INF("checksum key '%s', checksum key id %ld.\n", checksum_key.c_str(), checksum_key_id);
+
+        if (checksum_key_id != -1) {
+            checksums_found = true;
+            LOG_INF("%s: Start checksum verification for tensor '%s'.\n", __func__, tensor->name);
+            enum gguf_type checksum_type = gguf_get_kv_type(model->gguf_ctx, checksum_key_id);
+            if (checksum_type != GGUF_TYPE_UINT64) {
+                LOG_WRN("%s: Checksum for tensor '%s' is not of type U64. Skipping verification.\n", __func__, tensor->name);
+                all_correct = false;
+                continue;
+            }
+            const uint64_t stored_checksum = gguf_get_val_u64(model->gguf_ctx, checksum_key_id);
+            LOG_INF("%s: Found stored checksum for tensor '%s': %" PRIu64 "\n", __func__, tensor->name, stored_checksum);
+            if (tensor->data == nullptr) {
+                LOG_WRN("%s: Cannot calculate checksum for tensor '%s' because it is not in memory.\n", __func__, tensor->name);
+                all_correct = false;
+                continue;
+            }
+            LOG_INF("%s: Verifying checksum for tensor '%s' with size %" PRIu64 " at address %p\n",
+                               __func__, tensor->name, ggml_nbytes(tensor), tensor->data);
+            const uint64_t calculated_checksum = gguf_calculate_checksum(tensor->data, ggml_nbytes(tensor));
+
+            if (stored_checksum != calculated_checksum) {
+                LOG_WRN("%s: Checksum mismatch for tensor '%s'. Stored: %" PRIu64 ", Calculated: %" PRIu64 "\n",
+                           __func__, tensor->name, stored_checksum, calculated_checksum);
+                all_correct = false;
+            } else {
+                LOG_INF("%s: Checksum for tensor '%s' is correct.\n", __func__, tensor->name);
+            }
+        }
+    }
+    if (!checksums_found) {
+        LOG_INF("%s: No checksums found in model file. Skipping verification.\n", __func__);
+    } else if (all_correct) {
+        LOG_INF("%s: All checksums are correct.\n", __func__);
+    } else {
+        LOG_ERR("%s: Some checksums are incorrect.\n", __func__);
+        return iparams;
+    }
+    // TB: End of checksum comparisons
+
     const llama_vocab * vocab = llama_model_get_vocab(model);
 
     auto cparams = common_context_params_to_llama(params);
@@ -1074,59 +1126,6 @@ struct common_init_result common_init_from_params(common_params & params) {
         }
         llama_memory_clear(llama_get_memory(lctx), true);
         llama_synchronize(lctx);
-
-        // TB: Checksum comparisons
-        LOG_INF("%s: Verifying tensor checksums...\n", __func__);
-        bool checksums_found = false;
-        bool all_correct = true;
-        for (const auto & kv : model->tensors_by_name) {
-            ggml_tensor * tensor = kv.second;
-            LOG_INF("%s: Picked Tensor %s with size %zu, ", __func__, tensor->name, ggml_nbytes(tensor));
-
-            std::string checksum_key = std::string(tensor->name) + ".checksum";
-            //LOG_INF("%s: Looking for checksum key '%s'\n", __func__, checksum_key.c_str());
-            const int64_t checksum_key_id = gguf_find_key(model->gguf_ctx, checksum_key.c_str());
-            LOG_INF("checksum key '%s', checksum key id %" PRId64 ".\n", checksum_key.c_str(), checksum_key_id);
-
-            if (checksum_key_id != -1) {
-                checksums_found = true;
-                LOG_INF("%s: Start checksum verification for tensor '%s'.\n", __func__, tensor->name);
-                enum gguf_type checksum_type = gguf_get_kv_type(model->gguf_ctx, checksum_key_id);
-                if (checksum_type != GGUF_TYPE_UINT64) {
-                    LOG_WRN("%s: Checksum for tensor '%s' is not of type U64. Skipping verification.\n", __func__, tensor->name);
-                    all_correct = false;
-                    continue;
-                }
-                const uint64_t stored_checksum = gguf_get_val_u64(model->gguf_ctx, checksum_key_id);
-                LOG_INF("%s: Found stored checksum for tensor '%s': %" PRIu64 "\n", __func__, tensor->name, stored_checksum);
-                if (tensor->data == nullptr) {
-                    LOG_WRN("%s: Cannot calculate checksum for tensor '%s' because it is not in memory.\n", __func__, tensor->name);
-                    all_correct = false;
-                    continue;
-                }
-                LOG_INF("%s: Verifying checksum for tensor '%s' with size %" PRIu64 " at address %p\n",
-                                   __func__, tensor->name, ggml_nbytes(tensor), tensor->data);
-                const uint64_t calculated_checksum = gguf_calculate_checksum(tensor->data, ggml_nbytes(tensor));
-
-                if (stored_checksum != calculated_checksum) {
-                    LOG_WRN("%s: Checksum mismatch for tensor '%s'. Stored: %" PRIu64 ", Calculated: %" PRIu64 "\n",
-                               __func__, tensor->name, stored_checksum, calculated_checksum);
-                    all_correct = false;
-                } else {
-                    LOG_INF("%s: Checksum for tensor '%s' is correct.\n", __func__, tensor->name);
-                }
-            }
-        }
-        if (!checksums_found) {
-            LOG_INF("%s: No checksums found in model file. Skipping verification.\n", __func__);
-        } else if (all_correct) {
-            LOG_INF("%s: All checksums are correct.\n", __func__);
-        } else {
-            LOG_ERR("%s: Some checksums are incorrect.\n", __func__);
-            return iparams;
-        }
-        // TB: End of checksum comparisons
-
         llama_perf_context_reset(lctx);
         llama_set_warmup(lctx, false);
     }
