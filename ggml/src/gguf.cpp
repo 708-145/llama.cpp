@@ -756,7 +756,7 @@ struct gguf_context * gguf_init_from_file_impl(FILE * file, struct gguf_init_par
                 cur->data = (char *) data->data + info.offset;
             }
 
-            // Verify checksum if available
+            // TB: Verify tensor checksums in the GGUF
             uint64_t seek_pos = ftell(file);
             std::string checksum_key = std::string(info.t.name) + ".checksum";
             int64_t checksum_key_id = gguf_find_key(ctx, checksum_key.c_str());
@@ -789,8 +789,8 @@ struct gguf_context * gguf_init_from_file_impl(FILE * file, struct gguf_init_par
                                    __func__, info.t.name, stored_checksum, calculated_checksum);
                     ok = false;
                 } else {
-                    GGML_LOG_INFO("%s: Checksum verified for tensor '%s': Stored %" PRIu64 ", Calculated %" PRIu64 "\n",
-                                  __func__, info.t.name, stored_checksum, calculated_checksum);
+                    //GGML_LOG_INFO("%s: Checksum verified for tensor '%s': Stored %" PRIu64 ", Calculated %" PRIu64 "\n",
+                    //              __func__, info.t.name, stored_checksum, calculated_checksum);
                 }
             }
 

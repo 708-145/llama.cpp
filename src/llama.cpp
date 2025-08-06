@@ -131,22 +131,22 @@ static int llama_model_load(const std::string & fname, std::vector<std::string> 
             return -2;
         }
 
-        // TB: Checksum comparisons
+        // TB: Verify tensor checksums after loading
         LLAMA_LOG_INFO("%s: Verifying tensor checksums...\n", __func__);
         bool checksums_found = false;
         bool all_correct = true;
         for (const auto & kv : model.tensors_by_name) {
             ggml_tensor * tensor = kv.second;
-            LOG_INF("%s: Picked Tensor %s with size %zu, ", __func__, tensor->name, ggml_nbytes(tensor));
+            //LOG_INF("%s: Picked Tensor %s with size %zu, ", __func__, tensor->name, ggml_nbytes(tensor));
 
             std::string checksum_key = std::string(tensor->name) + ".checksum";
             //LOG_INF("%s: Looking for checksum key '%s'\n", __func__, checksum_key.c_str());
             const int64_t checksum_key_id = gguf_find_key(model.gguf_ctx, checksum_key.c_str());
-            LOG_INF("checksum key '%s', checksum key id %" PRId64 ".\n", checksum_key.c_str(), checksum_key_id);
+            //LOG_INF("checksum key '%s', checksum key id %" PRId64 ".\n", checksum_key.c_str(), checksum_key_id);
 
             if (checksum_key_id != -1) {
                 checksums_found = true;
-                LOG_INF("%s: Start checksum verification for tensor '%s'.\n", __func__, tensor->name);
+                //LOG_INF("%s: Start checksum verification for tensor '%s'.\n", __func__, tensor->name);
                 enum gguf_type checksum_type = gguf_get_kv_type(model.gguf_ctx, checksum_key_id);
                 if (checksum_type != GGUF_TYPE_UINT64) {
                     LOG_WRN("%s: Checksum for tensor '%s' is not of type U64. Skipping verification.\n", __func__, tensor->name);
@@ -154,14 +154,14 @@ static int llama_model_load(const std::string & fname, std::vector<std::string> 
                     continue;
                 }
                 const uint64_t stored_checksum = gguf_get_val_u64(model.gguf_ctx, checksum_key_id);
-                LOG_INF("%s: Found stored checksum for tensor '%s': %" PRIu64 ".\n", __func__, tensor->name, stored_checksum);
+                //LOG_INF("%s: Found stored checksum for tensor '%s': %" PRIu64 ".\n", __func__, tensor->name, stored_checksum);
                 if (tensor->data == nullptr) {
                     LOG_WRN("%s: Cannot calculate checksum for tensor '%s' because it is not in memory.\n", __func__, tensor->name);
                     all_correct = false;
                     continue;
                 }
-                LOG_INF("%s: Verifying checksum for tensor '%s' with size %" PRIu64 " at address %p\n",
-                                   __func__, tensor->name, ggml_nbytes(tensor), tensor->data);
+                //LOG_INF("%s: Verifying checksum for tensor '%s' with size %" PRIu64 " at address %p\n",
+                //                   __func__, tensor->name, ggml_nbytes(tensor), tensor->data);
                 const uint64_t calculated_checksum = gguf_calculate_checksum(tensor->data, ggml_nbytes(tensor));
 
                 if (stored_checksum != calculated_checksum) {
@@ -169,7 +169,9 @@ static int llama_model_load(const std::string & fname, std::vector<std::string> 
                                __func__, tensor->name, stored_checksum, calculated_checksum);
                     all_correct = false;
                 } else {
-                    LOG_INF("%s: Checksum for tensor '%s' is correct.\n", __func__, tensor->name);
+                    //LOG_INF("%s: Checksum correct for tensor '%s'. Stored: %" PRIu64 ", Calculated: %" PRIu64 "\n",
+                    //           __func__, tensor->name, stored_checksum, calculated_checksum);
+                    //LOG_INF("%s: Checksum for tensor '%s' is correct.\n", __func__, tensor->name);
                 }            }
         }
         if (!checksums_found) {
@@ -178,7 +180,7 @@ static int llama_model_load(const std::string & fname, std::vector<std::string> 
             LOG_ERR("%s: Some checksums are incorrect.\n", __func__);
             return -1;
         }
-        // TB: End of checksum comparisons
+
     } catch (const std::exception & err) {
         LLAMA_LOG_ERROR("%s: error loading model: %s\n", __func__, err.what());
         return -1;
