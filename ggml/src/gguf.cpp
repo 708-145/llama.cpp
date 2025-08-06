@@ -788,6 +788,9 @@ struct gguf_context * gguf_init_from_file_impl(FILE * file, struct gguf_init_par
                     GGML_LOG_ERROR("%s: Checksum mismatch for tensor '%s'. Stored: %" PRIu64 ", Calculated: %" PRIu64 "\n",
                                    __func__, info.t.name, stored_checksum, calculated_checksum);
                     ok = false;
+                } else {
+                    GGML_LOG_INFO("%s: Checksum verified for tensor '%s': Stored %" PRIu64 ", Calculated %" PRIu64 "\n",
+                                  __func__, info.t.name, stored_checksum, calculated_checksum);
                 }
             }
 
