@@ -96,7 +96,7 @@ static std::vector<std::string> llama_get_list_splits(const std::string & path, 
 }
 
 namespace GGUFMeta {
-    template <typename T, gguf_type gt_, T (*gfun)(const gguf_context *, const int64_t)>
+    template <typename T, gguf_type gt_, T (*gfun)(const gguf_context *, const int64_t)> 
     struct GKV_Base_Type {
         static constexpr gguf_type gt = gt_;
 
@@ -178,13 +178,13 @@ namespace GGUFMeta {
                 LLAMA_LOG_INFO("%s: Using metadata override (%5s) '%s' = ",
                     __func__, override_type_to_str(ovrd->tag), ovrd->key);
                 switch (ovrd->tag) {
-                    case LLAMA_KV_OVERRIDE_TYPE_BOOL:  {
-                        LLAMA_LOG_INFO("%s\n", ovrd->val_bool ? "true" : "false");
+                    case LLAMA_KV_OVERRIDE_TYPE_BOOL:  { 
+                        LLAMA_LOG_INFO("%s\n", ovrd->val_bool ? "true" : "false"); 
                     } break;
-                    case LLAMA_KV_OVERRIDE_TYPE_INT:   {
+                    case LLAMA_KV_OVERRIDE_TYPE_INT:   { 
                         LLAMA_LOG_INFO("%" PRId64 "\n", ovrd->val_i64);
                     } break;
-                    case LLAMA_KV_OVERRIDE_TYPE_FLOAT: {
+                    case LLAMA_KV_OVERRIDE_TYPE_FLOAT: { 
                         LLAMA_LOG_INFO("%.6f\n", ovrd->val_f64);
                     } break;
                     case LLAMA_KV_OVERRIDE_TYPE_STR: {
@@ -204,7 +204,7 @@ namespace GGUFMeta {
         }
 
         template<typename OT>
-        static typename std::enable_if<std::is_same<OT, bool>::value, bool>::type
+        static typename std::enable_if<std::is_same<OT, bool>::value, bool>::type 
         try_override(OT & target, const struct llama_model_kv_override * ovrd) {
             if (validate_override(LLAMA_KV_OVERRIDE_TYPE_BOOL, ovrd)) {
                 target = ovrd->val_bool;
@@ -214,7 +214,7 @@ namespace GGUFMeta {
         }
 
         template<typename OT>
-        static typename std::enable_if<!std::is_same<OT, bool>::value && std::is_integral<OT>::value, bool>::type
+        static typename std::enable_if<!std::is_same<OT, bool>::value && std::is_integral<OT>::value, bool>::type 
         try_override(OT & target, const struct llama_model_kv_override * ovrd) {
             if (validate_override(LLAMA_KV_OVERRIDE_TYPE_INT, ovrd)) {
                 target = ovrd->val_i64;
@@ -224,7 +224,7 @@ namespace GGUFMeta {
         }
 
         template<typename OT>
-        static typename std::enable_if<std::is_floating_point<OT>::value, bool>::type
+        static typename std::enable_if<std::is_floating_point<OT>::value, bool>::type 
         try_override(T & target, const struct llama_model_kv_override * ovrd) {
             if (validate_override(LLAMA_KV_OVERRIDE_TYPE_FLOAT, ovrd)) {
                 target = ovrd->val_f64;
@@ -234,7 +234,7 @@ namespace GGUFMeta {
         }
 
         template<typename OT>
-        static typename std::enable_if<std::is_same<OT, std::string>::value, bool>::type
+        static typename std::enable_if<std::is_same<OT, std::string>::value, bool>::type 
         try_override(T & target, const struct llama_model_kv_override * ovrd) {
             if (validate_override(LLAMA_KV_OVERRIDE_TYPE_STR, ovrd)) {
                 target = ovrd->val_str;
@@ -263,7 +263,7 @@ namespace GGUFMeta {
 }
 
     template<typename T>
-    typename std::enable_if<std::is_integral<T>::value, bool>::type
+    typename std::enable_if<std::is_integral<T>::value, bool>::type 
     llama_model_loader::get_arr_n(const std::string & key, T & result, bool required) {
         const int kid = gguf_find_key(meta.get(), key.c_str());
 
@@ -274,7 +274,7 @@ namespace GGUFMeta {
             return false;
         }
 
-        struct GGUFMeta::ArrayInfo arr_info =
+        struct GGUFMeta::ArrayInfo arr_info = 
             GGUFMeta::GKV<GGUFMeta::ArrayInfo>::get_kv(meta.get(), kid);
 
 
@@ -283,7 +283,7 @@ namespace GGUFMeta {
     }
 
     template<typename T>
-    typename std::enable_if<std::is_integral<T>::value, bool>::type
+    typename std::enable_if<std::is_integral<T>::value, bool>::type 
     llama_model_loader::get_arr_n(enum llm_kv kid, T & result, bool required) {
         return get_arr_n(llm_kv(kid), result, required);
     }
@@ -302,12 +302,12 @@ namespace GGUFMeta {
             return false;
         }
 
-        struct GGUFMeta::ArrayInfo arr_info =
+        struct GGUFMeta::ArrayInfo arr_info = 
             GGUFMeta::GKV<GGUFMeta::ArrayInfo>::get_kv(ctx, kid);
 
         switch (arr_info.gt) {
             case GGUF_TYPE_UINT32:
-            case GGUF_TYPE_INT32:   GGML_ASSERT((std::is_same<T,     int32_t>::value) ||
+            case GGUF_TYPE_INT32:   GGML_ASSERT((std::is_same<T,     int32_t>::value) || 
                                                 (std::is_same<T,    uint32_t>::value)); break;
             case GGUF_TYPE_FLOAT32: GGML_ASSERT((std::is_same<T,       float>::value)); break;
             case GGUF_TYPE_STRING:  GGML_ASSERT((std::is_same<T, std::string>::value)); break;
@@ -343,12 +343,12 @@ namespace GGUFMeta {
             return false;
         }
 
-        struct GGUFMeta::ArrayInfo arr_info =
+        struct GGUFMeta::ArrayInfo arr_info = 
             GGUFMeta::GKV<GGUFMeta::ArrayInfo>::get_kv(ctx, kid);
 
         switch (arr_info.gt) {
             case GGUF_TYPE_UINT32:
-            case GGUF_TYPE_INT32:   GGML_ASSERT((std::is_same<T,     int32_t>::value) ||
+            case GGUF_TYPE_INT32:   GGML_ASSERT((std::is_same<T,     int32_t>::value) || 
                                                 (std::is_same<T,    uint32_t>::value)); break;
             case GGUF_TYPE_FLOAT32: GGML_ASSERT((std::is_same<T,       float>::value)); break;
             case GGUF_TYPE_STRING:  GGML_ASSERT((std::is_same<T, std::string>::value)); break;
@@ -385,7 +385,7 @@ namespace GGUFMeta {
     bool llama_model_loader::get_key(const std::string & key, T & result, bool required) {
         auto it = kv_overrides.find(key);
 
-        const struct llama_model_kv_override * override =
+        const struct llama_model_kv_override * override = 
             it != kv_overrides.end() ? &it->second : nullptr;
 
         const bool found = GGUFMeta::GKV<T>::set(meta.get(), key, result, override);
@@ -436,7 +436,7 @@ namespace GGUFMeta {
         }
 
         if (gguf_get_kv_type(meta.get(), kid) == GGUF_TYPE_ARRAY) {
-            struct GGUFMeta::ArrayInfo arr_info =
+            struct GGUFMeta::ArrayInfo arr_info = 
                 GGUFMeta::GKV<GGUFMeta::ArrayInfo>::get_kv(meta.get(), kid);
 
             if (n != arr_info.length) {
@@ -548,8 +548,8 @@ llama_model_loader::llama_model_loader(
 
             // Validate tensor size against block types
             size_t expected_size_from_metadata = 0;
-            get_key(tensor_name + ".actual_size", expected_size_from_metadata, false);
-            // TODO: sq_info.actual_size = expected_size_from_metadata;
+            get_key(tensor_name + ".actual_size", expected_size_from_metadata, true);
+            cur->actual_size = expected_size_from_metadata;
 
             smarter_quant_info[tensor_name] = sq_info;
         }
@@ -938,26 +938,10 @@ void llama_model_loader::load_data_for(struct ggml_tensor * cur) const {
     const auto & w = require_weight(ggml_get_name(cur));
 
     // Check if this tensor has SmarterQuant metadata
-    auto sq_it = smarter_quant_info.find(std::string(ggml_get_name(cur)));
     size_t load_size = ggml_nbytes(cur);
 
-    if (sq_it != smarter_quant_info.end() && sq_it->second.enabled) {
-        // If SmarterQuant is enabled, calculate the actual size from metadata
-        size_t calculated_expected_size = 0;
-        const int64_t n_rows = cur->ne[1];
-        const int64_t n_cols = cur->ne[0];
-        const auto& sq_info = sq_it->second;
-        
-        for (int64_t i = 0; i < n_cols; i += 256) {
-            ggml_type type;
-            if (i < 256) type = (ggml_type)sq_info.compression_types[1];
-            else if (i < 512) type = (ggml_type)sq_info.compression_types[2];
-            else if (i < 768) type = (ggml_type)sq_info.compression_types[3];
-            else type = (ggml_type)sq_info.compression_types[0];
-            calculated_expected_size += ggml_type_size(type) * n_rows * std::min((int64_t)256, n_cols - i) / ggml_blck_size(type);
-        }
-
-        load_size = calculated_expected_size;
+    if (cur->actual_size > 0) {
+        load_size = cur->actual_size;
     }
 
     if (use_mmap) {
