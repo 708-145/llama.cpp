@@ -795,6 +795,7 @@ struct gguf_context * gguf_init_from_file_impl(FILE * file, struct gguf_init_par
             }
 
             // Debug printing of tensor offsets
+            /*
             printf("Tensor %zu: Name='%s', Offset=%" PRIu64 ", Size=%zu, Type=%d, FilePos=%ld\n",
                    i,
                    info.t.name,
@@ -802,6 +803,7 @@ struct gguf_context * gguf_init_from_file_impl(FILE * file, struct gguf_init_par
                    actual_size,
                    info.t.type,
                    seek_pos);
+            */
         }
 
         if (!ok) {
