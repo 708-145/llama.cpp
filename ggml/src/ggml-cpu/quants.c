@@ -58,6 +58,7 @@ void quantize_row_q2_K(const float * GGML_RESTRICT x, void * GGML_RESTRICT vy, i
 
 //========================= 3-bit (de)-quantization
 
+// TB: Q3
 void quantize_row_q3_K(const float * GGML_RESTRICT x, void * GGML_RESTRICT vy, int64_t k) {
     quantize_row_q3_K_ref(x, vy, k);
 }
@@ -433,6 +434,7 @@ void ggml_vec_dot_q2_K_q8_K_generic(int n, float * GGML_RESTRICT s, size_t bs, c
     *s = sumf;
 }
 
+// TB: Q3
 void ggml_vec_dot_q3_K_q8_K_generic(int n, float * GGML_RESTRICT s, size_t bs, const void * GGML_RESTRICT vx, size_t bx, const void * GGML_RESTRICT vy, size_t by, int nrc) {
     assert(n % QK_K == 0);
     assert(nrc == 1);

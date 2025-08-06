@@ -61,6 +61,7 @@ static mmq_q8_1_ds_layout mmq_get_q8_1_ds_layout(const ggml_type type_x) {
         case GGML_TYPE_Q2_K:
             return MMQ_Q8_1_DS_LAYOUT_D2S6;
         case GGML_TYPE_Q3_K:
+            // TB: Q3
             return MMQ_Q8_1_DS_LAYOUT_D4;
         case GGML_TYPE_Q4_K:
         case GGML_TYPE_Q5_K:
@@ -171,7 +172,8 @@ static constexpr __host__ __device__ tile_x_sizes mmq_get_dp4a_tile_x_sizes(ggml
         case GGML_TYPE_Q5_1:    return MMQ_DP4A_TXS_Q8_1;
         case GGML_TYPE_Q8_0:    return MMQ_DP4A_TXS_Q8_0;
         case GGML_TYPE_Q2_K:    return MMQ_DP4A_TXS_Q2_K;
-        case GGML_TYPE_Q3_K:    return MMQ_DP4A_TXS_Q3_K;
+        case GGML_TYPE_Q3_K:    // TB: Q3
+                                return MMQ_DP4A_TXS_Q3_K;
         case GGML_TYPE_Q4_K:    return MMQ_DP4A_TXS_Q4_K;
         case GGML_TYPE_Q5_K:    return MMQ_DP4A_TXS_Q5_K;
         case GGML_TYPE_Q6_K:    return MMQ_DP4A_TXS_Q6_K;
@@ -207,7 +209,8 @@ static constexpr __host__ __device__ int mmq_get_mma_tile_x_k(ggml_type type) {
         case GGML_TYPE_Q5_1:    return MMQ_MMA_TILE_X_K_Q8_1;
         case GGML_TYPE_Q8_0:    return MMQ_MMA_TILE_X_K_Q8_0;
         case GGML_TYPE_Q2_K:    return MMQ_MMA_TILE_X_K_Q2_K;
-        case GGML_TYPE_Q3_K:    return MMQ_MMA_TILE_X_K_Q3_K;
+        case GGML_TYPE_Q3_K:    // TB: Q3
+                                return MMQ_MMA_TILE_X_K_Q3_K;
         case GGML_TYPE_Q4_K:    return MMQ_MMA_TILE_X_K_Q8_1;
         case GGML_TYPE_Q5_K:    return MMQ_MMA_TILE_X_K_Q8_1;
         case GGML_TYPE_Q6_K:    return MMQ_MMA_TILE_X_K_Q6_K;
@@ -1057,6 +1060,7 @@ static __device__ __forceinline__ void vec_dot_q8_0_16_q8_1_dp4a(
 }
 
 // Used for Q3_K, IQ2_S, and IQ2_XS:
+// TB: Q3
 template <int mmq_x, int mmq_y>
 static __device__ __forceinline__ void vec_dot_q8_0_16_q8_1_mma(
     const int * __restrict__ x, const int * __restrict__ y, float * __restrict__ sum, const int k00) {
@@ -1508,6 +1512,7 @@ static __device__ __forceinline__ void vec_dot_q2_K_q8_1_mma(
 #endif // AMD_MFMA_AVAILABLE
 }
 
+// TB: Q3
 template <int mmq_y, bool need_check> static __device__ __forceinline__ void load_tiles_q3_K(
     const char * __restrict__ x, int * __restrict__ x_tile, const int kbx0, const int i_max, const int stride) {
     constexpr int nwarps = mmq_get_nwarps_device();
@@ -1609,6 +1614,7 @@ template <int mmq_y, bool need_check> static __device__ __forceinline__ void loa
 #endif // !(defined(AMD_MFMA_AVAILABLE) || defined(NEW_MMA_AVAILABLE))
 }
 
+// TB: Q3
 template <int mmq_x, int mmq_y>
 static __device__ __forceinline__ void vec_dot_q3_K_q8_1_dp4a(
     const int * __restrict__ x, const int * __restrict__ y, float * __restrict__ sum, const int k00) {
@@ -2871,6 +2877,7 @@ struct mmq_type_traits<mmq_x, mmq_y, need_check, GGML_TYPE_Q2_K> {
     static constexpr vec_dot_mmq_t    vec_dot_dp4a = vec_dot_q2_K_q8_1_dp4a<mmq_x, mmq_y>;
 };
 
+// TB: Q3
 template <int mmq_x, int mmq_y, bool need_check>
 struct mmq_type_traits<mmq_x, mmq_y, need_check, GGML_TYPE_Q3_K> {
     static constexpr int              vdr          = VDR_Q3_K_Q8_1_MMQ;
