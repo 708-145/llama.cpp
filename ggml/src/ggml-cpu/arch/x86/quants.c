@@ -1389,6 +1389,8 @@ void ggml_vec_dot_q3_K_q8_K(int n, float * GGML_RESTRICT s, size_t bs, const voi
 
 #if defined __AVX2__
 
+    // SmarterQuant: permute input vector y here
+
     const __m256i m3 = _mm256_set1_epi8(3);
     const __m256i mone = _mm256_set1_epi8(1);
     const __m128i m32 = _mm_set1_epi8(32);
@@ -1489,9 +1491,12 @@ void ggml_vec_dot_q3_K_q8_K(int n, float * GGML_RESTRICT s, size_t bs, const voi
 
     }
 
+    // SmarterQuant: unpermute output vector s here
     *s = hsum_float_8(acc);
 
 #elif defined __AVX__
+
+    // SmarterQuant: permute input vector y here
 
     const __m128i m3 = _mm_set1_epi8(3);
     const __m128i mone = _mm_set1_epi8(1);
@@ -1631,6 +1636,7 @@ void ggml_vec_dot_q3_K_q8_K(int n, float * GGML_RESTRICT s, size_t bs, const voi
 
     }
 
+    // SmarterQuant: unpermute output vector s here
     *s = hsum_float_8(acc);
 
 #else
