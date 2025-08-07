@@ -971,7 +971,7 @@ size_t quantize_q2_K(const float * GGML_RESTRICT src, void * GGML_RESTRICT dst, 
 
 //========================= 3-bit (de)-quantization
 
-// TB: Q3
+// TB: Q3 permute
 void quantize_row_q3_K_ref(const float * GGML_RESTRICT x, block_q3_K * GGML_RESTRICT y, int64_t k) {
     assert(k % QK_K == 0);
     const int nb = k / QK_K;
@@ -1048,7 +1048,7 @@ void quantize_row_q3_K_ref(const float * GGML_RESTRICT x, block_q3_K * GGML_REST
     }
 }
 
-// TB: Q3
+// TB: Q3 unpermute
 void dequantize_row_q3_K(const block_q3_K * GGML_RESTRICT x, float * GGML_RESTRICT y, int64_t k) {
     assert(k % QK_K == 0);
     const int nb = k / QK_K;
@@ -1099,7 +1099,7 @@ void dequantize_row_q3_K(const block_q3_K * GGML_RESTRICT x, float * GGML_RESTRI
     }
 }
 
-// TB: Q3
+
 static void quantize_row_q3_K_impl(const float * GGML_RESTRICT x, block_q3_K * GGML_RESTRICT y, int64_t n_per_row, const float * GGML_RESTRICT quant_weights) {
     assert(n_per_row % QK_K == 0);
     const int nb = n_per_row / QK_K;
@@ -1184,6 +1184,7 @@ static void quantize_row_q3_K_impl(const float * GGML_RESTRICT x, block_q3_K * G
     }
 }
 
+// TB: Q3 permute
 size_t quantize_q3_K(const float * GGML_RESTRICT src, void * GGML_RESTRICT dst, int64_t nrow, int64_t n_per_row, const float * quant_weights) {
     size_t row_size = ggml_row_size(GGML_TYPE_Q3_K, n_per_row);
     if (!quant_weights) {
