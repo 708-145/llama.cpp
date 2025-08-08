@@ -1,0 +1,41 @@
+Background:
+The basic idea of T3 mode is to sort the tensor data by importance based on imatrix values and quantize the important parts with more bits than the less important ones. The tensor data stays in that mixed-quant form during inference.
+The input vector is permuted before matmul to match the column order of the tensor. 
+The output vector is unpermuted to get the same order as if the multiplication happened with a regular quant.
+Each tensor is split after permutation into three subtensors t1, t2, t3 where t1 has a width of 256, t2 of 512 and t3 the rest.
+The permutation is specified in a smarterquant.json file as command line parameter to llama-quantize. It is then stored as metadata in the GGUF along with the 3 subtensors for each original tensor. Use a suffix of ".t1", ".t2" and ".t3".
+The quantization type is also specified in that json file. Use the first value for t1, the second value for t2 and the fourth value fot t3. The third value is unused.
+Use vendor/nlohmann/ for JSON parsing. Look at the given smarterquant.json to find out format.
+
+compile with cmake --build build --config Release -j8 --target llama-quantize llama-cli
+quantize with ./llama-quantize --allow-requantize --smarterquant Tiny-Moe.smarterquant.json --imatrix Tiny-Moe.imatrix Tiny-Moe.IQ4_XS.gguf Tiny-Moe.IQ4_XS_T3.gguf IQ4_NL
+run with ./llama-cli -m Tiny-Moe.IQ4_XS_T3.gguf -p "hi" -n 10 --no-mmap 
+
+Download Tiny Moe mradermacher/Tiny-Moe-GGUF as example:
+wget https://huggingface.co/mradermacher/Tiny-Moe-GGUF/resolve/main/Tiny-Moe.IQ4_XS.gguf
+
+Quantization:
+Read smarterquant json into internal data structure
+For each tensor to quantize, permute the columns, split by first dimension, Quantize to 3 tensors, append tensor name suffix, write all three tensors.
+Write metadata for permutation.
+
+Inference:
+Add t3 Mode in architecture for all models, start with Tiny-Moe as example
+If tensor variants with suffix t1, t2 , t3 exist in the GGUF then use new mode else existing code.
+Read permute metadata to permute input and output vector, update model definition in src/llama-model.cpp to permute the inputs of ggml_mul_mat.
+Also split the single ggml_mul_mat into one for each subtensor t1, t2, t3 and concatenate the results before unpermute.
+
+--
+info file:
+node gguf_info.js https://huggingface.co/mradermacher/Tiny-Moe-GGUF/resolve/main/Tiny-Moe.IQ4_XS.gguf >Tiny-Moe.info
+
+imatrix file:
+../llama.cpp/llama-imatrix -m ~/llama.cpp/Tiny-Moe.IQ4_XS.gguf -f wikitext_wikitext-2_test.txt -o Tiny-Moe.imatrix --chunks 60
+
+json file:
+python3 SmartQuantPlus.py Tiny-Moe.imatrix Tiny-Moe.info
+
+Branch from master: t3
+
+Test?
+--
