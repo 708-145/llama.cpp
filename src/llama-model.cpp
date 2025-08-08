@@ -6001,45 +6001,21 @@ struct llm_build_llama : public llm_graph_context {
                 ggml_tensor * rope_factors = model.get_rope_factors(cparams, il);
 
                 // compute Q and K and RoPE them
-                auto apply_t3 = [&](ggml_tensor * w, ggml_tensor* cur) -> ggml_tensor* {
-                    if (model.t3_tensors_map.count(w->name)) {
-                        const auto & t3_info = model.t3_tensors_map.at(w->name);
-                        const int t1_width = 256;
-                        const int t2_width = 512;
-                        const int t3_width = cur->ne[0] - t1_width - t2_width;
-
-                        ggml_tensor * perm_tensor = ggml_new_tensor_1d(ctx0, GGML_TYPE_I32, t3_info.perm.size());
-                        memcpy(perm_tensor->data, t3_info.perm.data(), ggml_nbytes(perm_tensor));
-
-                        ggml_tensor * permuted_cur = ggml_permute_vec(ctx0, cur, perm_tensor, false);
-                        ggml_tensor * cur_t1 = ggml_view_1d(ctx0, permuted_cur, t1_width * n_tokens, 0);
-                        ggml_tensor * cur_t2 = ggml_view_1d(ctx0, permuted_cur, t2_width * n_tokens, t1_width * n_tokens * ggml_element_size(permuted_cur));
-                        ggml_tensor * cur_t3 = ggml_view_1d(ctx0, permuted_cur, t3_width * n_tokens, (t1_width + t2_width) * n_tokens * ggml_element_size(permuted_cur));
-
-                        ggml_tensor* r1 = build_lora_mm(t3_info.t1, cur_t1);
-                        ggml_tensor* r2 = build_lora_mm(t3_info.t2, cur_t2);
-                        ggml_tensor* r3 = build_lora_mm(t3_info.t3, cur_t3);
-                        ggml_tensor* result = ggml_concat(ctx0, ggml_concat(ctx0, r1, r2, 0), r3, 0);
-                        return ggml_permute_vec(ctx0, result, perm_tensor, true);
-                    }
-                    return build_lora_mm(w, cur);
-                };
-
-                ggml_tensor * Qcur = apply_t3(model.layers[il].wq, cur);
+                ggml_tensor * Qcur = build_lora_mm(model.layers[il].wq, cur);
                 cb(Qcur, "Qcur", il);
                 if (model.layers[il].bq) {
                     Qcur = ggml_add(ctx0, Qcur, model.layers[il].bq);
                     cb(Qcur, "Qcur", il);
                 }
 
-                ggml_tensor * Kcur = apply_t3(model.layers[il].wk, cur);
+                ggml_tensor * Kcur = build_lora_mm(model.layers[il].wk, cur);
                 cb(Kcur, "Kcur", il);
                 if (model.layers[il].bk) {
                     Kcur = ggml_add(ctx0, Kcur, model.layers[il].bk);
                     cb(Kcur, "Kcur", il);
                 }
 
-                ggml_tensor * Vcur = apply_t3(model.layers[il].wv, cur);
+                ggml_tensor * Vcur = build_lora_mm(model.layers[il].wv, cur);
                 cb(Vcur, "Vcur", il);
                 if (model.layers[il].bv) {
                     Vcur = ggml_add(ctx0, Vcur, model.layers[il].bv);
@@ -18168,9 +18144,6 @@ llama_memory_i * llama_model::create_memory(const llama_memory_params & params, 
 }
 
 ggml_cgraph * llama_model::build_graph(const llm_graph_params & params) const {
-    llm_graph_params params_with_model = params;
-    params_with_model.model = this;
-
     std::unique_ptr<llm_graph_context> llm;
 
     switch (arch) {

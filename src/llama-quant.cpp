@@ -13,41 +13,11 @@
 #include <thread>
 #include <unordered_map>
 
-#include "ggml/include/vendor/nlohmann/json.hpp"
-
 // Quantization types. Changes to this struct must be replicated in quantize.cpp
 struct tensor_quantization {
     std::string name;
     ggml_type quant = GGML_TYPE_COUNT;
 };
-
-static ggml_type ftype_to_ggml_type(llama_ftype ftype) {
-    switch (ftype) {
-        case LLAMA_FTYPE_MOSTLY_Q4_0: return GGML_TYPE_Q4_0;
-        case LLAMA_FTYPE_MOSTLY_Q4_1: return GGML_TYPE_Q4_1;
-        case LLAMA_FTYPE_MOSTLY_Q5_0: return GGML_TYPE_Q5_0;
-        case LLAMA_FTYPE_MOSTLY_Q5_1: return GGML_TYPE_Q5_1;
-        case LLAMA_FTYPE_MOSTLY_Q8_0: return GGML_TYPE_Q8_0;
-        case LLAMA_FTYPE_MOSTLY_F16:  return GGML_TYPE_F16;
-        case LLAMA_FTYPE_MOSTLY_BF16: return GGML_TYPE_BF16;
-        case LLAMA_FTYPE_ALL_F32:     return GGML_TYPE_F32;
-        case LLAMA_FTYPE_MOSTLY_Q2_K: return GGML_TYPE_Q2_K;
-        case LLAMA_FTYPE_MOSTLY_Q3_K: return GGML_TYPE_Q3_K;
-        case LLAMA_FTYPE_MOSTLY_Q4_K: return GGML_TYPE_Q4_K;
-        case LLAMA_FTYPE_MOSTLY_Q5_K: return GGML_TYPE_Q5_K;
-        case LLAMA_FTYPE_MOSTLY_Q6_K: return GGML_TYPE_Q6_K;
-        case LLAMA_FTYPE_MOSTLY_IQ2_XXS: return GGML_TYPE_IQ2_XXS;
-        case LLAMA_FTYPE_MOSTLY_IQ2_XS: return GGML_TYPE_IQ2_XS;
-        case LLAMA_FTYPE_MOSTLY_IQ3_XXS: return GGML_TYPE_IQ3_XXS;
-        case LLAMA_FTYPE_MOSTLY_IQ1_S: return GGML_TYPE_IQ1_S;
-        case LLAMA_FTYPE_MOSTLY_IQ4_NL: return GGML_TYPE_IQ4_NL;
-        case LLAMA_FTYPE_MOSTLY_IQ3_S: return GGML_TYPE_IQ3_S;
-        case LLAMA_FTYPE_MOSTLY_IQ2_S: return GGML_TYPE_IQ2_S;
-        case LLAMA_FTYPE_MOSTLY_Q4_K_S: return GGML_TYPE_Q4_K;
-        case LLAMA_FTYPE_MOSTLY_Q5_K_S: return GGML_TYPE_Q5_K;
-        default: throw std::runtime_error(format("invalid ftype %d", ftype));
-    }
-}
 
 static void zeros(std::ofstream & file, size_t n) {
     char zero = 0;
@@ -640,16 +610,6 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
     if (params->only_copy) {
         ftype = ml.ftype;
     }
-
-    using json = nlohmann::json;
-    json smarterquant_data;
-    if (params->smarterquant_file) {
-        std::ifstream f(params->smarterquant_file);
-        if (!f) {
-            throw std::runtime_error(format("failed to open smarterquant file %s", params->smarterquant_file));
-        }
-        smarterquant_data = json::parse(f);
-    }
     const std::unordered_map<std::string, std::vector<float>> * imatrix_data = nullptr;
     if (params->imatrix) {
         imatrix_data = static_cast<const std::unordered_map<std::string, std::vector<float>>*>(params->imatrix);
@@ -923,87 +883,7 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
         void * new_data;
         size_t new_size;
 
-        if (smarterquant_data.count(name) > 0) {
-            // T3 quantization
-            const auto& sq_info = smarterquant_data[name];
-            const std::vector<int> perm = sq_info[3];
-            const int t1_width = 256;
-            const int t2_width = 512;
-
-            ggml_type t1_type, t2_type, t3_type;
-            llama_ftype ftype_t1, ftype_t2, ftype_t3;
-            std::string ftype_str;
-            if (!try_parse_ftype(sq_info[0], ftype_t1, ftype_str)) {
-                throw std::runtime_error(format("invalid ftype '%s' for tensor %s", sq_info[0].get<std::string>().c_str(), name.c_str()));
-            }
-            if (!try_parse_ftype(sq_info[1], ftype_t2, ftype_str)) {
-                throw std::runtime_error(format("invalid ftype '%s' for tensor %s", sq_info[1].get<std::string>().c_str(), name.c_str()));
-            }
-            if (!try_parse_ftype(sq_info[2], ftype_t3, ftype_str)) {
-                throw std::runtime_error(format("invalid ftype '%s' for tensor %s", sq_info[2].get<std::string>().c_str(), name.c_str()));
-            }
-            t1_type = ftype_to_ggml_type(ftype_t1);
-            t2_type = ftype_to_ggml_type(ftype_t2);
-            t3_type = ftype_to_ggml_type(ftype_t3);
-
-
-            const int64_t nelements = ggml_nelements(tensor);
-            float* f32_data;
-            if (tensor->type == GGML_TYPE_F32) {
-                f32_data = (float*)tensor->data;
-            } else {
-                llama_tensor_dequantize_impl(tensor, f32_conv_buf, workers, nelements, nthread);
-                f32_data = (float*)f32_conv_buf.data();
-            }
-
-            const int64_t n_per_row = tensor->ne[0];
-            const int64_t nrows = tensor->ne[1];
-            std::vector<float> permuted_data(nelements);
-            for (int j = 0; j < nrows; j++) {
-                for (int i = 0; i < n_per_row; i++) {
-                    permuted_data[j * n_per_row + i] = f32_data[j * n_per_row + perm[i]];
-                }
-            }
-
-            const int t3_width = n_per_row - t1_width - t2_width;
-
-            auto quantize_and_write = [&](const std::string& suffix, ggml_type type, int width, int offset) {
-                std::string t_name = name + suffix;
-                std::vector<float> t_data(width * nrows);
-                for (int j = 0; j < nrows; j++) {
-                    for (int i = 0; i < width; i++) {
-                        t_data[j * width + i] = permuted_data[j * n_per_row + offset + i];
-                    }
-                }
-
-                if (work.size() < (size_t)width * nrows * 4) {
-                    work.resize(width * nrows * 4);
-                }
-                void* t_new_data = work.data();
-
-                size_t t_new_size = llama_tensor_quantize_impl(type, t_data.data(), t_new_data, width, nrows, width, nullptr, workers, nthread);
-
-                struct ggml_tensor * new_tensor = ggml_init_tensor_2d(nullptr, type, width, nrows);
-                gguf_add_tensor(ctx_outs[cur_split].get(), new_tensor);
-                gguf_set_tensor_name(ctx_outs[cur_split].get(), t_name.c_str());
-                gguf_set_tensor_data(ctx_outs[cur_split].get(), t_name.c_str(), t_new_data, t_new_size);
-                fout.write((const char*)t_new_data, t_new_size);
-                zeros(fout, GGML_PAD(t_new_size, align) - t_new_size);
-                total_size_new += t_new_size;
-            };
-
-            quantize_and_write(".t1", t1_type, t1_width, 0);
-            quantize_and_write(".t2", t2_type, t2_width, t1_width);
-            quantize_and_write(".t3", t3_type, t3_width, t1_width + t2_width);
-
-            gguf_set_arr_data(ctx_outs[cur_split].get(), (name + ".permutation").c_str(), GGUF_TYPE_INT32, perm.data(), perm.size());
-
-            total_size_org += ggml_nbytes(tensor);
-            gguf_remove_key(ctx_outs[cur_split].get(), name.c_str());
-
-            continue;
-
-        } else if (quantize) {
+        if (quantize) {
             new_type = default_type;
 
             // get more optimal quantization type based on the tensor shape, layer, etc.
@@ -1184,8 +1064,7 @@ llama_model_quantize_params llama_model_quantize_default_params() {
         /*.imatrix                     =*/ nullptr,
         /*.kv_overrides                =*/ nullptr,
         /*.tensor_type                 =*/ nullptr,
-        /*.prune_layers                =*/ nullptr,
-        /*.smarterquant_file           =*/ nullptr
+        /*.prune_layers                =*/ nullptr
     };
 
     return result;

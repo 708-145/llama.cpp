@@ -959,8 +959,6 @@ static const char * GGML_OP_NAME[GGML_OP_COUNT] = {
     "RESHAPE",
     "VIEW",
     "PERMUTE",
-    "UNPERMUTE",
-    "PERMUTE_VEC",
     "TRANSPOSE",
     "GET_ROWS",
     "GET_ROWS_BACK",
@@ -1018,7 +1016,7 @@ static const char * GGML_OP_NAME[GGML_OP_COUNT] = {
     "GLU",
 };
 
-static_assert(GGML_OP_COUNT == 89, "GGML_OP_COUNT != 89");
+static_assert(GGML_OP_COUNT == 87, "GGML_OP_COUNT != 87");
 
 static const char * GGML_OP_SYMBOL[GGML_OP_COUNT] = {
     "none",
@@ -1062,8 +1060,6 @@ static const char * GGML_OP_SYMBOL[GGML_OP_COUNT] = {
     "reshape(x)",
     "view(x)",
     "permute(x)",
-    "unpermute(x)",
-    "permute_vec(x)",
     "transpose(x)",
     "get_rows(x)",
     "get_rows_back(x)",
@@ -1121,7 +1117,7 @@ static const char * GGML_OP_SYMBOL[GGML_OP_COUNT] = {
     "glu(x)",
 };
 
-static_assert(GGML_OP_COUNT == 89, "GGML_OP_COUNT != 89");
+static_assert(GGML_OP_COUNT == 87, "GGML_OP_COUNT != 87");
 
 static_assert(GGML_OP_POOL_COUNT == 2, "GGML_OP_POOL_COUNT != 2");
 
@@ -3595,84 +3591,6 @@ struct ggml_tensor * ggml_permute(
     return result;
 }
 
-// ggml_unpermute
-
-struct ggml_tensor * ggml_unpermute(
-        struct ggml_context * ctx,
-        struct ggml_tensor  * a,
-        int                   axis0,
-        int                   axis1,
-        int                   axis2,
-        int                   axis3) {
-    GGML_ASSERT(axis0 >= 0 && axis0 < GGML_MAX_DIMS);
-    GGML_ASSERT(axis1 >= 0 && axis1 < GGML_MAX_DIMS);
-    GGML_ASSERT(axis2 >= 0 && axis2 < GGML_MAX_DIMS);
-    GGML_ASSERT(axis3 >= 0 && axis3 < GGML_MAX_DIMS);
-
-    GGML_ASSERT(axis0 != axis1);
-    GGML_ASSERT(axis0 != axis2);
-    GGML_ASSERT(axis0 != axis3);
-    GGML_ASSERT(axis1 != axis2);
-    GGML_ASSERT(axis1 != axis3);
-    GGML_ASSERT(axis2 != axis3);
-
-    struct ggml_tensor * result = ggml_view_tensor(ctx, a);
-    ggml_format_name(result, "%s (unpermuted)", a->name);
-
-    int ne[GGML_MAX_DIMS];
-    int nb[GGML_MAX_DIMS];
-
-    ne[0] = a->ne[axis0];
-    ne[1] = a->ne[axis1];
-    ne[2] = a->ne[axis2];
-    ne[3] = a->ne[axis3];
-
-    nb[0] = a->nb[axis0];
-    nb[1] = a->nb[axis1];
-    nb[2] = a->nb[axis2];
-    nb[3] = a->nb[axis3];
-
-    result->ne[0] = ne[0];
-    result->ne[1] = ne[1];
-    result->ne[2] = ne[2];
-    result->ne[3] = ne[3];
-
-    result->nb[0] = nb[0];
-    result->nb[1] = nb[1];
-    result->nb[2] = nb[2];
-    result->nb[3] = nb[3];
-
-    result->op     = GGML_OP_UNPERMUTE;
-    result->src[0] = a;
-
-    int32_t params[] = { axis0, axis1, axis2, axis3 };
-    ggml_set_op_params(result, params, sizeof(params));
-
-    return result;
-}
-
-// ggml_permute_vec
-
-struct ggml_tensor * ggml_permute_vec(
-        struct ggml_context * ctx,
-        struct ggml_tensor  * a,
-        struct ggml_tensor  * p,
-        bool                  is_unpermute) {
-    GGML_ASSERT(a->ne[0] == p->ne[0]);
-    GGML_ASSERT(p->type == GGML_TYPE_I32);
-
-    struct ggml_tensor * result = ggml_dup_tensor(ctx, a);
-
-    int32_t params[] = { is_unpermute ? 1 : 0 };
-    ggml_set_op_params(result, params, sizeof(params));
-
-    result->op     = GGML_OP_PERMUTE_VEC;
-    result->src[0] = a;
-    result->src[1] = p;
-
-    return result;
-}
-
 // ggml_transpose
 
 struct ggml_tensor * ggml_transpose(
@@ -6127,22 +6045,6 @@ static void ggml_compute_backward(
                 axb[axis2] = 2;
                 axb[axis3] = 3;
                 ggml_add_or_set(ctx, cgraph, isrc0, ggml_permute(ctx, grad, axb[0], axb[1], axb[2], axb[3]));
-            }
-        } break;
-        case GGML_OP_UNPERMUTE: {
-            if (src0_needs_grads) {
-                const int32_t * axes = (const int32_t *) tensor->op_params;
-                const int axis0 = axes[0] & 0x3;
-                const int axis1 = axes[1] & 0x3;
-                const int axis2 = axes[2] & 0x3;
-                const int axis3 = axes[3] & 0x3;
-                ggml_add_or_set(ctx, cgraph, isrc0, ggml_permute(ctx, grad, axis0, axis1, axis2, axis3));
-            }
-        } break;
-        case GGML_OP_PERMUTE_VEC: {
-            if (src0_needs_grads) {
-                const bool is_unpermute = ggml_get_op_params_i32(tensor, 0) != 0;
-                ggml_add_or_set(ctx, cgraph, isrc0, ggml_permute_vec(ctx, grad, src1, !is_unpermute));
             }
         } break;
         case GGML_OP_TRANSPOSE: {
