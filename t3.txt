@@ -14,8 +14,6 @@ run with ./llama-cli -m Tiny-Moe.IQ4_XS_T3.gguf -p "hi" -n 10 --no-mmap
 Download Tiny Moe mradermacher/Tiny-Moe-GGUF as example:
 wget https://huggingface.co/mradermacher/Tiny-Moe-GGUF/resolve/main/Tiny-Moe.IQ4_XS.gguf
 
-Branch from master: t3
-
 Quantization:
 Read smarterquant json into internal data structure
 For each tensor to quantize, permute the columns, split by first dimension, Quantize to 3 tensors, append tensor name suffix, write all three tensors.
@@ -26,3 +24,18 @@ Add t3 Mode in architecture for all models, start with Tiny-Moe as example
 If tensor variants with suffix t1, t2 , t3 exist in the GGUF then use new mode else existing code.
 Read permute metadata to permute input and output vector, update model definition in src/llama-model.cpp to permute the inputs of ggml_mul_mat.
 Also split the single ggml_mul_mat into one for each subtensor t1, t2, t3 and concatenate the results before unpermute.
+
+--
+info file:
+node gguf_info.js https://huggingface.co/mradermacher/Tiny-Moe-GGUF/resolve/main/Tiny-Moe.IQ4_XS.gguf >Tiny-Moe.info
+
+imatrix file:
+
+
+json file:
+python3 SmartQuantPlus.py Tiny-Moe.imatrix Tiny-Moe.info
+
+Branch from master: t3
+
+Test?
+--
