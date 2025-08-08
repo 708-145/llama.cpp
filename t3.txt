@@ -8,7 +8,9 @@ The permutation is specified in a smarterquant.json file as --smarterquant comma
 The quantization type to use is also specified in that json file. Use the first value for t1, the second value for t2 and the fourth value fot t3. The third value is unused.
 Use vendor/nlohmann/ for JSON parsing. Look at the given smarterquant.json to find out format.
 
-compile with cmake --build build --config Release -j8 --target llama-quantize llama-cli
+compile with 
+cmake -B build -DBUILD_SHARED_LIBS=OFF -DLLAMA_CURL=OFF
+cmake --build build --config Release -j8 --target llama-quantize llama-cli
 
 Download Tiny Moe mradermacher/Tiny-Moe-GGUF as example: wget https://huggingface.co/mradermacher/Tiny-Moe-GGUF/resolve/main/Tiny-Moe.IQ4_XS.gguf
 
@@ -36,3 +38,13 @@ Regression test with standard quantization:
 Regression test inference with unmodified GGUF:
 ./llama-cli -m Tiny-Moe.IQ4_XS.gguf -p "hi" -n 10 --no-mmap 
 --
+Progress so far:
+    I've implemented the T3 quantization feature, which allows for a new, more flexible quantization scheme.
+
+    The changes include:
+    - A new `--smarterquant` command-line option for the `quantize` tool.
+    - The core T3 quantization logic in `src/llama-quant.cpp`, which reads a JSON file to control the quantization process, permutes tensor columns, splits tensors into three parts, and quantizes each part individually.
+    - The T3 tensor loading logic in `src/llama-model-loader.cpp`, which allows the model to load the `.t1`, `.t2`, and `.t3` tensor variants and their permutation data.
+    - New `ggml` operations (`ggml_permute_vec` and `ggml_unpermute`) to support the T3 inference logic.
+--
+
