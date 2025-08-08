@@ -30,7 +30,7 @@ info file:
 node gguf_info.js https://huggingface.co/mradermacher/Tiny-Moe-GGUF/resolve/main/Tiny-Moe.IQ4_XS.gguf >Tiny-Moe.info
 
 imatrix file:
-
+../llama.cpp/llama-imatrix -m ~/llama.cpp/Tiny-Moe.IQ4_XS.gguf -f wikitext_wikitext-2_test.txt -o Tiny-Moe.imatrix --chunks 60
 
 json file:
 python3 SmartQuantPlus.py Tiny-Moe.imatrix Tiny-Moe.info
