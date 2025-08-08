@@ -487,6 +487,8 @@ extern "C" {
         GGML_OP_RESHAPE,
         GGML_OP_VIEW,
         GGML_OP_PERMUTE,
+        GGML_OP_UNPERMUTE,
+        GGML_OP_PERMUTE_VEC,
         GGML_OP_TRANSPOSE,
         GGML_OP_GET_ROWS,
         GGML_OP_GET_ROWS_BACK,
@@ -1510,6 +1512,20 @@ extern "C" {
             int                   axis1,
             int                   axis2,
             int                   axis3);
+
+    GGML_API struct ggml_tensor * ggml_unpermute(
+            struct ggml_context * ctx,
+            struct ggml_tensor  * a,
+            int                   axis0,
+            int                   axis1,
+            int                   axis2,
+            int                   axis3);
+
+    GGML_API struct ggml_tensor * ggml_permute_vec(
+            struct ggml_context * ctx,
+            struct ggml_tensor  * a,
+            struct ggml_tensor  * p,
+            bool                  is_unpermute);
 
     // alias for ggml_permute(ctx, a, 1, 0, 2, 3)
     GGML_API struct ggml_tensor * ggml_transpose(

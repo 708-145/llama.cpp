@@ -525,6 +525,7 @@ struct llm_graph_context {
     const llm_arch arch;
 
     const llama_hparams & hparams;
+    const llama_model & model;
     const llama_cparams & cparams;
     const llama_ubatch  & ubatch;
 

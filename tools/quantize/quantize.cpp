@@ -117,12 +117,13 @@ static bool try_parse_ftype(const std::string & ftype_str_in, llama_ftype & ftyp
 
 [[noreturn]]
 static void usage(const char * executable) {
-    printf("usage: %s [--help] [--allow-requantize] [--leave-output-tensor] [--pure] [--imatrix] [--include-weights]\n", executable);
+    printf("usage: %s [--help] [--allow-requantize] [--leave-output-tensor] [--pure] [--imatrix] [--smarterquant] [--include-weights]\n", executable);
     printf("       [--exclude-weights] [--output-tensor-type] [--token-embedding-type] [--tensor-type] [--prune-layers] [--keep-split] [--override-kv]\n");
     printf("       model-f32.gguf [model-quant.gguf] type [nthreads]\n\n");
     printf("  --allow-requantize: Allows requantizing tensors that have already been quantized. Warning: This can severely reduce quality compared to quantizing from 16bit or 32bit\n");
     printf("  --leave-output-tensor: Will leave output.weight un(re)quantized. Increases model size but may also increase quality, especially when requantizing\n");
     printf("  --pure: Disable k-quant mixtures and quantize all tensors to the same type\n");
+    printf("  --smarterquant file_name: quantize using a smarter scheme based on the provided JSON file\n");
     printf("  --imatrix file_name: use data in file_name as importance matrix for quant optimizations\n");
     printf("  --include-weights tensor_name: use importance matrix for this/these tensor(s)\n");
     printf("  --exclude-weights tensor_name: use importance matrix for this/these tensor(s)\n");
@@ -491,6 +492,12 @@ int main(int argc, char ** argv) {
             params.allow_requantize = true;
         } else if (strcmp(argv[arg_idx], "--pure") == 0) {
             params.pure = true;
+        } else if (strcmp(argv[arg_idx], "--smarterquant") == 0) {
+            if (arg_idx < argc - 1) {
+                smarterquant_file = argv[++arg_idx];
+            } else {
+                usage(argv[0]);
+            }
         } else if (strcmp(argv[arg_idx], "--imatrix") == 0) {
             if (arg_idx < argc-1) {
                 imatrix_file = argv[++arg_idx];
