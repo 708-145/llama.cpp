@@ -9,6 +9,7 @@
 #include "llama-memory-hybrid.h"
 #include "llama-memory-recurrent.h"
 
+#include <vector>
 #include <cassert>
 #include <cmath>
 #include <cstring>

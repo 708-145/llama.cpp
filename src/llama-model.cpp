@@ -12,6 +12,7 @@
 #include "llama-memory-recurrent.h"
 
 #include "ggml-cpp.h"
+#include "ggml/ggml-smarterquant.h"
 
 #include <algorithm>
 #include <cassert>
@@ -2111,7 +2112,14 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
                     return t;
                 }
             }
-            return ml.create_tensor(ctx, tn, ne, flags);
+            ggml_tensor * tensor = ml.create_tensor(ctx, tn, ne, flags);
+            if (tensor) {
+                auto it = ml.smarter_quant_perms.find(tn.str());
+                if (it != ml.smarter_quant_perms.end()) {
+                    tensor->extra = &it->second;
+                }
+            }
+            return tensor;
         };
 
         layers.resize(n_layer);
@@ -5808,6 +5816,9 @@ struct llm_build_llama : public llm_graph_context {
 
                 // compute Q and K and RoPE them
                 ggml_tensor * Qcur = build_lora_mm(model.layers[il].wq, cur);
+                if (model.layers[il].wq->extra) {
+                    Qcur = ggml_sq_unpermute(ctx0, Qcur);
+                }
                 cb(Qcur, "Qcur", il);
                 if (model.layers[il].bq) {
                     Qcur = ggml_add(ctx0, Qcur, model.layers[il].bq);
@@ -5815,6 +5826,9 @@ struct llm_build_llama : public llm_graph_context {
                 }
 
                 ggml_tensor * Kcur = build_lora_mm(model.layers[il].wk, cur);
+                if (model.layers[il].wk->extra) {
+                    Kcur = ggml_sq_unpermute(ctx0, Kcur);
+                }
                 cb(Kcur, "Kcur", il);
                 if (model.layers[il].bk) {
                     Kcur = ggml_add(ctx0, Kcur, model.layers[il].bk);
@@ -5822,6 +5836,9 @@ struct llm_build_llama : public llm_graph_context {
                 }
 
                 ggml_tensor * Vcur = build_lora_mm(model.layers[il].wv, cur);
+                if (model.layers[il].wv->extra) {
+                    Vcur = ggml_sq_unpermute(ctx0, Vcur);
+                }
                 cb(Vcur, "Vcur", il);
                 if (model.layers[il].bv) {
                     Vcur = ggml_add(ctx0, Vcur, model.layers[il].bv);
@@ -5851,6 +5868,9 @@ struct llm_build_llama : public llm_graph_context {
                 cur = build_attn(inp_attn,
                         model.layers[il].wo, model.layers[il].bo,
                         Qcur, Kcur, Vcur, nullptr, nullptr, kq_scale, il);
+                if (model.layers[il].wo->extra) {
+                    cur = ggml_sq_unpermute(ctx0, cur);
+                }
                 cb(cur, "attn_out", il);
             }
 
@@ -5876,6 +5896,9 @@ struct llm_build_llama : public llm_graph_context {
                         model.layers[il].ffn_down, model.layers[il].ffn_down_b, NULL,
                         NULL,
                         LLM_FFN_SILU, LLM_FFN_PAR, il);
+                if (model.layers[il].ffn_down->extra) {
+                    cur = ggml_sq_unpermute(ctx0, cur);
+                }
                 cb(cur, "ffn_out", il);
             } else {
                 // MoE branch
@@ -5895,6 +5918,9 @@ struct llm_build_llama : public llm_graph_context {
                         false, 0.0,
                         LLAMA_EXPERT_GATING_FUNC_TYPE_SOFTMAX,
                         il);
+                if (model.layers[il].ffn_down_exps && model.layers[il].ffn_down_exps->extra) {
+                    cur = ggml_sq_unpermute(ctx0, cur);
+                }
                 cb(cur, "ffn_moe_out", il);
             }
 
@@ -5919,6 +5945,9 @@ struct llm_build_llama : public llm_graph_context {
 
         // lm_head
         cur = build_lora_mm(model.output, cur);
+        if (model.output->extra) {
+            cur = ggml_sq_unpermute(ctx0, cur);
+        }
 
         cb(cur, "result_output", -1);
         res->t_logits = cur;
@@ -5970,6 +5999,9 @@ struct llm_build_llama_iswa : public llm_graph_context {
 
                 // compute Q and K and RoPE them
                 ggml_tensor * Qcur = build_lora_mm(model.layers[il].wq, cur);
+                if (model.layers[il].wq->extra) {
+                    Qcur = ggml_sq_unpermute(ctx0, Qcur);
+                }
                 cb(Qcur, "Qcur", il);
                 if (model.layers[il].bq) {
                     Qcur = ggml_add(ctx0, Qcur, model.layers[il].bq);
@@ -5977,6 +6009,9 @@ struct llm_build_llama_iswa : public llm_graph_context {
                 }
 
                 ggml_tensor * Kcur = build_lora_mm(model.layers[il].wk, cur);
+                if (model.layers[il].wk->extra) {
+                    Kcur = ggml_sq_unpermute(ctx0, Kcur);
+                }
                 cb(Kcur, "Kcur", il);
                 if (model.layers[il].bk) {
                     Kcur = ggml_add(ctx0, Kcur, model.layers[il].bk);
@@ -5984,6 +6019,9 @@ struct llm_build_llama_iswa : public llm_graph_context {
                 }
 
                 ggml_tensor * Vcur = build_lora_mm(model.layers[il].wv, cur);
+                if (model.layers[il].wv->extra) {
+                    Vcur = ggml_sq_unpermute(ctx0, Vcur);
+                }
                 cb(Vcur, "Vcur", il);
                 if (model.layers[il].bv) {
                     Vcur = ggml_add(ctx0, Vcur, model.layers[il].bv);
@@ -6025,6 +6063,9 @@ struct llm_build_llama_iswa : public llm_graph_context {
                 cur = build_attn(inp_attn,
                         model.layers[il].wo, model.layers[il].bo,
                         Qcur, Kcur, Vcur, nullptr, nullptr, kq_scale, il);
+                if (model.layers[il].wo && model.layers[il].wo->extra) {
+                    cur = ggml_sq_unpermute(ctx0, cur);
+                }
                 cb(cur, "attn_out", il);
             }
 
@@ -6102,6 +6143,9 @@ struct llm_build_llama_iswa : public llm_graph_context {
 
         // lm_head
         cur = build_lora_mm(model.output, cur);
+        if (model.output->extra) {
+            cur = ggml_sq_unpermute(ctx0, cur);
+        }
 
         cb(cur, "result_output", -1);
         res->t_logits = cur;
@@ -6296,12 +6340,21 @@ struct llm_build_baichuan : public llm_graph_context {
             // self-attention
             {
                 ggml_tensor * Qcur = build_lora_mm(model.layers[il].wq, cur);
+                if (model.layers[il].wq->extra) {
+                    Qcur = ggml_sq_unpermute(ctx0, Qcur);
+                }
                 cb(Qcur, "Qcur", il);
 
                 ggml_tensor * Kcur = build_lora_mm(model.layers[il].wk, cur);
+                if (model.layers[il].wk->extra) {
+                    Kcur = ggml_sq_unpermute(ctx0, Kcur);
+                }
                 cb(Kcur, "Kcur", il);
 
                 ggml_tensor * Vcur = build_lora_mm(model.layers[il].wv, cur);
+                if (model.layers[il].wv->extra) {
+                    Vcur = ggml_sq_unpermute(ctx0, Vcur);
+                }
                 cb(Vcur, "Vcur", il);
 
                 Qcur = ggml_reshape_3d(ctx0, Qcur, n_embd_head, n_head,    n_tokens);
@@ -6357,6 +6410,9 @@ struct llm_build_baichuan : public llm_graph_context {
                         model.layers[il].ffn_down, NULL, NULL,
                         NULL,
                         LLM_FFN_SILU, LLM_FFN_PAR, il);
+                if (model.layers[il].ffn_down && model.layers[il].ffn_down->extra) {
+                    cur = ggml_sq_unpermute(ctx0, cur);
+                }
                 cb(cur, "ffn_out", il);
             }
 
@@ -6380,6 +6436,9 @@ struct llm_build_baichuan : public llm_graph_context {
 
         // lm_head
         cur = build_lora_mm(model.output, cur);
+        if (model.output && model.output->extra) {
+            cur = ggml_sq_unpermute(ctx0, cur);
+        }
 
         cb(cur, "result_output", -1);
         res->t_logits = cur;
@@ -6965,6 +7024,9 @@ struct llm_build_starcoder : public llm_graph_context {
                 cur = build_attn(inp_attn,
                         model.layers[il].wo, model.layers[il].bo,
                         Qcur, Kcur, Vcur, nullptr, nullptr, 1.0f/sqrtf(float(n_embd_head)), il);
+                if (model.layers[il].wo->extra) {
+                    cur = ggml_sq_unpermute(ctx0, cur);
+                }
             }
 
             if (il == n_layer - 1 && inp_out_ids) {
@@ -8022,6 +8084,9 @@ struct llm_build_qwen2 : public llm_graph_context {
                     model.layers[il].ffn_down, NULL, NULL,
                     NULL,
                     LLM_FFN_SILU, LLM_FFN_PAR, il);
+            if (model.layers[il].ffn_down->extra) {
+                cur = ggml_sq_unpermute(ctx0, cur);
+            }
             cb(cur, "ffn_out", il);
 
             cur = ggml_add(ctx0, cur, ffn_inp);

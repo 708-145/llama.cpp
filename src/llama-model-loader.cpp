@@ -524,34 +524,20 @@ llama_model_loader::llama_model_loader(
         bool sq_enabled = false;
         get_key(tensor_name + ".smarterquant.enabled", sq_enabled, false);
         if (sq_enabled) {
-            SmarterQuantTensorInfo sq_info;
-            sq_info.enabled = true;
+            smarterquant_permutation perm_info;
 
             std::string perm_str;
             if (get_key(tensor_name + ".smarterquant.permutation", perm_str, true)) {
                 auto perm_json = nlohmann::json::parse(perm_str);
-                std::vector<int32_t> perm = perm_json.get<std::vector<int32_t>>();
-                if (!perm.empty()) {
-                    sq_info.column_permutation = new int32_t[perm.size()];
-                    std::copy(perm.begin(), perm.end(), sq_info.column_permutation);
-                    sq_info.n_cols_for_permutation = perm.size();
+                perm_info.perm = perm_json.get<std::vector<int>>();
+                if (!perm_info.perm.empty()) {
+                    perm_info.iperm.resize(perm_info.perm.size());
+                    for (size_t i = 0; i < perm_info.perm.size(); ++i) {
+                        perm_info.iperm[perm_info.perm[i]] = i;
+                    }
                 }
             }
-
-            std::string block_types_str;
-            if (get_key(tensor_name + ".smarterquant.block_types", block_types_str, true)) {
-                auto block_types_json = nlohmann::json::parse(block_types_str);
-                std::vector<int8_t> block_types = block_types_json.get<std::vector<int8_t>>();
-                GGML_ASSERT(block_types.size() == 4);
-                std::copy(block_types.begin(), block_types.end(), sq_info.compression_types);
-            }
-
-            // Validate tensor size against block types
-            size_t expected_size_from_metadata = 0;
-            get_key(tensor_name + ".actual_size", expected_size_from_metadata, true);
-            cur->actual_size = expected_size_from_metadata;
-
-            smarter_quant_info[tensor_name] = sq_info;
+            smarter_quant_perms[tensor_name] = perm_info;
         }
     }
     uint16_t n_split = 0;
@@ -619,6 +605,28 @@ llama_model_loader::llama_model_loader(
                 n_elements += ggml_nelements(cur);
                 n_bytes    += ggml_nbytes(cur);
                 weights_map.emplace(tensor_name, llama_tensor_weight(files.back().get(), idx, ctx_gguf.get(), cur));
+
+                // Check for and load SmarterQuant metadata
+                bool sq_enabled = false;
+                get_key(tensor_name + ".smarterquant.enabled", sq_enabled, false);
+                if (sq_enabled) {
+                    if (smarter_quant_perms.find(tensor_name) == smarter_quant_perms.end()) {
+                        smarterquant_permutation perm_info;
+
+                        std::string perm_str;
+                        if (get_key(tensor_name + ".smarterquant.permutation", perm_str, true)) {
+                            auto perm_json = nlohmann::json::parse(perm_str);
+                            perm_info.perm = perm_json.get<std::vector<int>>();
+                            if (!perm_info.perm.empty()) {
+                                perm_info.iperm.resize(perm_info.perm.size());
+                                for (size_t i = 0; i < perm_info.perm.size(); ++i) {
+                                    perm_info.iperm[perm_info.perm[i]] = i;
+                                }
+                            }
+                        }
+                        smarter_quant_perms[tensor_name] = perm_info;
+                    }
+                }
             }
         }
 

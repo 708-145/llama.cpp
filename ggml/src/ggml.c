@@ -6,6 +6,7 @@
 #include "ggml-threading.h"
 #include "ggml-cpu.h"
 #include "ggml.h"
+#include "ggml/ggml-smarterquant.h"
 
 // FIXME: required here for quantization functions
 #include "ggml-quants.h"
@@ -999,6 +1000,8 @@ static const char * GGML_OP_NAME[GGML_OP_COUNT] = {
     "GATED_LINEAR_ATTN",
     "RWKV_WKV7",
 
+    "SQ_UNPERMUTE",
+
     "UNARY",
 
     "MAP_CUSTOM1",
@@ -1014,7 +1017,7 @@ static const char * GGML_OP_NAME[GGML_OP_COUNT] = {
     "GLU",
 };
 
-static_assert(GGML_OP_COUNT == 86, "GGML_OP_COUNT != 86");
+static_assert(GGML_OP_COUNT == 87, "GGML_OP_COUNT != 87");
 
 static const char * GGML_OP_SYMBOL[GGML_OP_COUNT] = {
     "none",
@@ -1099,6 +1102,8 @@ static const char * GGML_OP_SYMBOL[GGML_OP_COUNT] = {
     "gated_linear_attn(k, v, q, gate, s)",
     "rwkv_wkv7(r, w, k, v, a, b, s)",
 
+    "sq_unpermute(x)",
+
     "unary(x)",
 
     "map_custom(x)",
@@ -1114,7 +1119,7 @@ static const char * GGML_OP_SYMBOL[GGML_OP_COUNT] = {
     "glu(x)",
 };
 
-static_assert(GGML_OP_COUNT == 86, "GGML_OP_COUNT != 86");
+static_assert(GGML_OP_COUNT == 87, "GGML_OP_COUNT != 87");
 
 static_assert(GGML_OP_POOL_COUNT == 2, "GGML_OP_POOL_COUNT != 2");
 
@@ -1749,6 +1754,7 @@ void * ggml_new_buffer(struct ggml_context * ctx, size_t nbytes) {
 struct ggml_tensor * ggml_dup_tensor(struct ggml_context * ctx, const struct ggml_tensor * src) {
     struct ggml_tensor * result = ggml_new_tensor(ctx, src->type, GGML_MAX_DIMS, src->ne);
     result->actual_size = src->actual_size;
+    result->extra = src->extra;
     return result;
 }
 
@@ -5312,6 +5318,19 @@ struct ggml_tensor * ggml_map_custom1_inplace(
         int                        n_tasks,
         void                     * userdata) {
     return ggml_map_custom1_impl(ctx, a, fun, n_tasks, userdata, true);
+}
+
+// ggml_sq_unpermute
+
+struct ggml_tensor * ggml_sq_unpermute(
+        struct ggml_context * ctx,
+        struct ggml_tensor  * a) {
+    struct ggml_tensor * result = ggml_dup_tensor(ctx, a);
+
+    result->op     = GGML_OP_SQ_UNPERMUTE;
+    result->src[0] = a;
+
+    return result;
 }
 
 // ggml_map_custom2

@@ -459,8 +459,6 @@ void ggml_vec_dot_q3_K_q8_K_generic(int n, float * GGML_RESTRICT s, size_t bs, c
     // automatically produce the best possible set of machine instructions, instead of us having to manually
     // write vectorized versions for AVX, ARM_NEON, etc.
 
-    // SmarterQuant: permute input vector y here
-
     int8_t  aux8[QK_K];
     int16_t aux16[8];
     float   sums [8];

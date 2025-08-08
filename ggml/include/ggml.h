@@ -520,6 +520,8 @@ extern "C" {
         GGML_OP_GATED_LINEAR_ATTN,
         GGML_OP_RWKV_WKV7,
 
+        GGML_OP_SQ_UNPERMUTE,
+
         GGML_OP_UNARY,
 
         GGML_OP_MAP_CUSTOM1,
@@ -1725,6 +1727,10 @@ extern "C" {
             float                 attn_factor,
             float                 beta_fast,
             float                 beta_slow);
+
+    GGML_API struct ggml_tensor * ggml_sq_unpermute(
+        struct ggml_context * ctx,
+        struct ggml_tensor  * a);
 
 
     // clamp

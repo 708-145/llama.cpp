@@ -203,6 +203,7 @@ add_library(ggml-base
             ggml-threading.h
             ggml-quants.c
             ggml-quants.h
+            ggml-smarterquant.cpp
             gguf.cpp)
 
 target_include_directories(ggml-base PRIVATE .)
@@ -375,6 +376,7 @@ ggml_add_backend(OpenCL)
 
 foreach (target ggml-base ggml)
     target_include_directories(${target} PUBLIC    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../include> $<INSTALL_INTERFACE:include> $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}}>)
+    target_include_directories(${target} PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../src>)
     target_compile_features   (${target} PRIVATE c_std_11 cxx_std_17) # don't bump
 endforeach()
 

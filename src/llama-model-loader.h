@@ -9,6 +9,7 @@
 
 #include "ggml-cpp.h"
 
+#include "llama-impl.h"
 #include <cstddef>
 #include <map>
 #include <stdexcept>
@@ -81,7 +82,7 @@ struct llama_model_loader {
     llama_mmaps mappings;
 
     std::map<std::string, llama_tensor_weight, weight_name_comparer> weights_map;
-    std::map<std::string, SmarterQuantTensorInfo> smarter_quant_info;
+    std::map<std::string, smarterquant_permutation> smarter_quant_perms;
     std::unordered_map<std::string, llama_model_kv_override> kv_overrides;
     const llama_model_tensor_buft_override * tensor_buft_overrides;
 

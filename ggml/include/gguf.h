@@ -47,6 +47,13 @@
 #define GGUF_DEFAULT_ALIGNMENT 32
 
 #ifdef  __cplusplus
+#include <vector>
+
+struct smarterquant_permutation {
+    std::vector<int> perm;
+    std::vector<int> iperm;
+};
+
 extern "C" {
 #endif
 
