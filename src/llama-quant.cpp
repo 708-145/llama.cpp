@@ -80,6 +80,7 @@ static bool try_parse_ftype(const std::string & ftype_str_in, llama_ftype & ftyp
 }
 
 static ggml_type ftype_to_ggml_type(llama_ftype ftype) {
+    LLAMA_LOG_INFO("ftype_to_ggml_type: received ftype = %d\n", ftype);
     switch (ftype) {
         case LLAMA_FTYPE_MOSTLY_Q4_0: return GGML_TYPE_Q4_0;
         case LLAMA_FTYPE_MOSTLY_Q4_1: return GGML_TYPE_Q4_1;
@@ -90,8 +91,12 @@ static ggml_type ftype_to_ggml_type(llama_ftype ftype) {
         case LLAMA_FTYPE_MOSTLY_BF16: return GGML_TYPE_BF16;
         case LLAMA_FTYPE_ALL_F32:     return GGML_TYPE_F32;
         case LLAMA_FTYPE_MOSTLY_Q2_K: return GGML_TYPE_Q2_K;
+        case LLAMA_FTYPE_MOSTLY_Q3_K_S: return GGML_TYPE_Q3_K;
         case LLAMA_FTYPE_MOSTLY_Q3_K_M: return GGML_TYPE_Q3_K;
+        case LLAMA_FTYPE_MOSTLY_Q3_K_L: return GGML_TYPE_Q5_K; // Corrected mapping
+        case LLAMA_FTYPE_MOSTLY_Q4_K_S: return GGML_TYPE_Q4_K;
         case LLAMA_FTYPE_MOSTLY_Q4_K_M: return GGML_TYPE_Q4_K;
+        case LLAMA_FTYPE_MOSTLY_Q5_K_S: return GGML_TYPE_Q5_K;
         case LLAMA_FTYPE_MOSTLY_Q5_K_M: return GGML_TYPE_Q5_K;
         case LLAMA_FTYPE_MOSTLY_Q6_K: return GGML_TYPE_Q6_K;
         case LLAMA_FTYPE_MOSTLY_IQ2_XXS: return GGML_TYPE_IQ2_XXS;
@@ -101,8 +106,12 @@ static ggml_type ftype_to_ggml_type(llama_ftype ftype) {
         case LLAMA_FTYPE_MOSTLY_IQ4_NL: return GGML_TYPE_IQ4_NL;
         case LLAMA_FTYPE_MOSTLY_IQ3_S: return GGML_TYPE_IQ3_S;
         case LLAMA_FTYPE_MOSTLY_IQ2_S: return GGML_TYPE_IQ2_S;
-        case LLAMA_FTYPE_MOSTLY_Q4_K_S: return GGML_TYPE_Q4_K;
-        case LLAMA_FTYPE_MOSTLY_Q5_K_S: return GGML_TYPE_Q5_K;
+        case LLAMA_FTYPE_MOSTLY_IQ4_XS: return GGML_TYPE_IQ4_XS; // Corrected mapping
+        case LLAMA_FTYPE_MOSTLY_IQ1_M: return GGML_TYPE_IQ1_M;
+        case LLAMA_FTYPE_MOSTLY_BF16: return GGML_TYPE_BF16;
+        case LLAMA_FTYPE_MOSTLY_TQ1_0: return GGML_TYPE_TQ1_0;
+        case LLAMA_FTYPE_MOSTLY_TQ2_0: return GGML_TYPE_TQ2_0;
+        case LLAMA_FTYPE_MOSTLY_MXFP4_MOE: return GGML_TYPE_MXFP4;
         default: throw std::runtime_error(format("invalid ftype %d", ftype));
     }
 }

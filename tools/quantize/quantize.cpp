@@ -496,6 +496,7 @@ int main(int argc, char ** argv) {
         } else if (strcmp(argv[arg_idx], "--smarterquant") == 0) {
             if (arg_idx < argc - 1) {
                 smarterquant_file = argv[++arg_idx];
+                params.smarterquant_file = smarterquant_file.c_str();
             } else {
                 usage(argv[0]);
             }
