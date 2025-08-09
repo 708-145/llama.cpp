@@ -2,9 +2,12 @@
 #include "llama-impl.h"
 #include "llama-model.h"
 #include "llama-model-loader.h"
+#include "include/vendor/nlohmann/json.hpp"
 
 #include <algorithm>
 #include <cmath>
+
+using json = nlohmann::json;
 #include <cstring>
 #include <cinttypes>
 #include <fstream>
@@ -13,7 +16,91 @@
 #include <thread>
 #include <unordered_map>
 
-#include "ggml/include/vendor/nlohmann/json.hpp"
+struct quant_option {
+    std::string name;
+    llama_ftype ftype;
+    std::string desc;
+};
+
+static const std::vector<quant_option> QUANT_OPTIONS = {
+    { "Q4_0",     LLAMA_FTYPE_MOSTLY_Q4_0,     " 4.34G, +0.4685 ppl @ Llama-3-8B",  },
+    { "Q4_1",     LLAMA_FTYPE_MOSTLY_Q4_1,     " 4.78G, +0.4511 ppl @ Llama-3-8B",  },
+    { "MXFP4_MOE",LLAMA_FTYPE_MOSTLY_MXFP4_MOE," MXFP4 MoE",  },
+    { "Q5_0",     LLAMA_FTYPE_MOSTLY_Q5_0,     " 5.21G, +0.1316 ppl @ Llama-3-8B",  },
+    { "Q5_1",     LLAMA_FTYPE_MOSTLY_Q5_1,     " 5.65G, +0.1062 ppl @ Llama-3-8B",  },
+    { "IQ2_XXS",  LLAMA_FTYPE_MOSTLY_IQ2_XXS,  " 2.06 bpw quantization",            },
+    { "IQ2_XS",   LLAMA_FTYPE_MOSTLY_IQ2_XS,   " 2.31 bpw quantization",            },
+    { "IQ2_S",    LLAMA_FTYPE_MOSTLY_IQ2_S,    " 2.5  bpw quantization",            },
+    { "IQ2_M",    LLAMA_FTYPE_MOSTLY_IQ2_M,    " 2.7  bpw quantization",            },
+    { "IQ1_S",    LLAMA_FTYPE_MOSTLY_IQ1_S,    " 1.56 bpw quantization",            },
+    { "IQ1_M",    LLAMA_FTYPE_MOSTLY_IQ1_M,    " 1.75 bpw quantization",            },
+    { "TQ1_0",    LLAMA_FTYPE_MOSTLY_TQ1_0,    " 1.69 bpw ternarization",           },
+    { "TQ2_0",    LLAMA_FTYPE_MOSTLY_TQ2_0,    " 2.06 bpw ternarization",           },
+    { "Q2_K",     LLAMA_FTYPE_MOSTLY_Q2_K,     " 2.96G, +3.5199 ppl @ Llama-3-8B",  },
+    { "Q2_K_S",   LLAMA_FTYPE_MOSTLY_Q2_K_S,   " 2.96G, +3.1836 ppl @ Llama-3-8B",  },
+    { "IQ3_XXS",  LLAMA_FTYPE_MOSTLY_IQ3_XXS,  " 3.06 bpw quantization",            },
+    { "IQ3_S",    LLAMA_FTYPE_MOSTLY_IQ3_S,    " 3.44 bpw quantization",            },
+    { "IQ3_M",    LLAMA_FTYPE_MOSTLY_IQ3_M,    " 3.66 bpw quantization mix",        },
+    { "Q3_K",     LLAMA_FTYPE_MOSTLY_Q3_K_M,   "alias for Q3_K_M"                   },
+    { "IQ3_XS",   LLAMA_FTYPE_MOSTLY_IQ3_XS,   " 3.3 bpw quantization",             },
+    { "Q3_K_S",   LLAMA_FTYPE_MOSTLY_Q3_K_S,   " 3.41G, +1.6321 ppl @ Llama-3-8B",  },
+    { "Q3_K_M",   LLAMA_FTYPE_MOSTLY_Q3_K_M,   " 3.74G, +0.6569 ppl @ Llama-3-8B",  },
+    { "Q3_K_L",   LLAMA_FTYPE_MOSTLY_Q3_K_L,   " 4.03G, +0.5562 ppl @ Llama-3-8B",  },
+    { "IQ4_NL",   LLAMA_FTYPE_MOSTLY_IQ4_NL,   " 4.50 bpw non-linear quantization", },
+    { "IQ4_XS",   LLAMA_FTYPE_MOSTLY_IQ4_XS,   " 4.25 bpw non-linear quantization", },
+    { "Q4_K",     LLAMA_FTYPE_MOSTLY_Q4_K_M,   "alias for Q4_K_M",                  },
+    { "Q4_K_S",   LLAMA_FTYPE_MOSTLY_Q4_K_S,   " 4.37G, +0.2689 ppl @ Llama-3-8B",  },
+    { "Q4_K_M",   LLAMA_FTYPE_MOSTLY_Q4_K_M,   " 4.58G, +0.1754 ppl @ Llama-3-8B",  },
+    { "Q5_K",     LLAMA_FTYPE_MOSTLY_Q5_K_M,   "alias for Q5_K_M",                  },
+    { "Q5_K_S",   LLAMA_FTYPE_MOSTLY_Q5_K_S,   " 5.21G, +0.1049 ppl @ Llama-3-8B",  },
+    { "Q5_K_M",   LLAMA_FTYPE_MOSTLY_Q5_K_M,   " 5.33G, +0.0569 ppl @ Llama-3-8B",  },
+    { "Q6_K",     LLAMA_FTYPE_MOSTLY_Q6_K,     " 6.14G, +0.0217 ppl @ Llama-3-8B",  },
+    { "Q8_0",     LLAMA_FTYPE_MOSTLY_Q8_0,     " 7.96G, +0.0026 ppl @ Llama-3-8B",  },
+    { "F16",      LLAMA_FTYPE_MOSTLY_F16,      "14.00G, +0.0020 ppl @ Mistral-7B",  },
+    { "BF16",     LLAMA_FTYPE_MOSTLY_BF16,     "14.00G, -0.0050 ppl @ Mistral-7B",  },
+    { "F32",      LLAMA_FTYPE_ALL_F32,         "26.00G              @ 7B",          },
+    // Note: Ensure COPY comes after F32 to avoid ftype 0 from matching.
+    { "COPY",     LLAMA_FTYPE_ALL_F32,         "only copy tensors, no quantizing",  },
+};
+
+static bool striequals(const char * a, const char * b) {
+    while (*a && *b) {
+        if (std::tolower(*a) != std::tolower(*b)) {
+            return false;
+        }
+        a++; b++;
+    }
+    return *a == *b;
+}
+
+static bool try_parse_ftype(const std::string & ftype_str_in, llama_ftype & ftype, std::string & ftype_str_out) {
+    std::string ftype_str;
+
+    for (auto ch : ftype_str_in) {
+        ftype_str.push_back(std::toupper(ch));
+    }
+    for (const auto & it : QUANT_OPTIONS) {
+        if (striequals(it.name.c_str(), ftype_str.c_str())) {
+            ftype = it.ftype;
+            ftype_str_out = it.name;
+            return true;
+        }
+    }
+    try {
+        int ftype_int = std::stoi(ftype_str);
+        for (const auto & it : QUANT_OPTIONS) {
+            if (it.ftype == ftype_int) {
+                ftype = it.ftype;
+                ftype_str_out = it.name;
+                return true;
+            }
+        }
+    }
+    catch (...) {
+        // stoi failed
+    }
+    return false;
+}
 
 // Quantization types. Changes to this struct must be replicated in quantize.cpp
 struct tensor_quantization {
@@ -983,10 +1070,10 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
 
                 size_t t_new_size = llama_tensor_quantize_impl(type, t_data.data(), t_new_data, width, nrows, width, nullptr, workers, nthread);
 
-                struct ggml_tensor * new_tensor = ggml_init_tensor_2d(nullptr, type, width, nrows);
+                struct ggml_tensor * new_tensor = ggml_new_tensor_2d(nullptr, type, width, nrows);
+                ggml_set_name(new_tensor, t_name.c_str());
                 gguf_add_tensor(ctx_outs[cur_split].get(), new_tensor);
-                gguf_set_tensor_name(ctx_outs[cur_split].get(), t_name.c_str());
-                gguf_set_tensor_data(ctx_outs[cur_split].get(), t_name.c_str(), t_new_data, t_new_size);
+                gguf_set_tensor_data(ctx_outs[cur_split].get(), t_name.c_str(), t_new_data);
                 fout.write((const char*)t_new_data, t_new_size);
                 zeros(fout, GGML_PAD(t_new_size, align) - t_new_size);
                 total_size_new += t_new_size;

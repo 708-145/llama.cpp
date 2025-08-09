@@ -398,6 +398,8 @@ struct llama_model::impl {
     impl() {}
     ~impl() {}
 
+    std::map<std::string, llama_model_loader::t3_tensor_info> t3_tensors_map;
+
     uint64_t n_elements = 0;
 
     size_t n_bytes = 0;
@@ -5676,6 +5678,8 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
         }
     }
 
+    pimpl->t3_tensors_map = std::move(ml.t3_tensors_map);
+
     return true;
 }
 
@@ -6002,19 +6006,19 @@ struct llm_build_llama : public llm_graph_context {
 
                 // compute Q and K and RoPE them
                 auto apply_t3 = [&](ggml_tensor * w, ggml_tensor* cur) -> ggml_tensor* {
-                    if (model.t3_tensors_map.count(w->name)) {
-                        const auto & t3_info = model.t3_tensors_map.at(w->name);
+                    if (model.pimpl->t3_tensors_map.count(w->name)) {
+                        const auto & t3_info = model.pimpl->t3_tensors_map.at(w->name);
                         const int t1_width = 256;
                         const int t2_width = 512;
-                        const int t3_width = cur->ne[0] - t1_width - t2_width;
+                        const int t3_width = w->ne[1] - t1_width - t2_width;
 
                         ggml_tensor * perm_tensor = ggml_new_tensor_1d(ctx0, GGML_TYPE_I32, t3_info.perm.size());
                         memcpy(perm_tensor->data, t3_info.perm.data(), ggml_nbytes(perm_tensor));
 
                         ggml_tensor * permuted_cur = ggml_permute_vec(ctx0, cur, perm_tensor, false);
-                        ggml_tensor * cur_t1 = ggml_view_1d(ctx0, permuted_cur, t1_width * n_tokens, 0);
-                        ggml_tensor * cur_t2 = ggml_view_1d(ctx0, permuted_cur, t2_width * n_tokens, t1_width * n_tokens * ggml_element_size(permuted_cur));
-                        ggml_tensor * cur_t3 = ggml_view_1d(ctx0, permuted_cur, t3_width * n_tokens, (t1_width + t2_width) * n_tokens * ggml_element_size(permuted_cur));
+                        ggml_tensor * cur_t1 = ggml_view_2d(ctx0, permuted_cur, t1_width, n_tokens, permuted_cur->nb[1], 0);
+                        ggml_tensor * cur_t2 = ggml_view_2d(ctx0, permuted_cur, t2_width, n_tokens, permuted_cur->nb[1], t1_width * sizeof(float));
+                        ggml_tensor * cur_t3 = ggml_view_2d(ctx0, permuted_cur, t3_width, n_tokens, permuted_cur->nb[1], (t1_width + t2_width) * sizeof(float));
 
                         ggml_tensor* r1 = build_lora_mm(t3_info.t1, cur_t1);
                         ggml_tensor* r2 = build_lora_mm(t3_info.t2, cur_t2);

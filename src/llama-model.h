@@ -15,6 +15,7 @@
 struct llama_cparams;
 struct llama_ubatch;
 struct llama_model_loader;
+struct llm_build_llama;
 
 // available models
 enum llm_type {
@@ -377,6 +378,8 @@ struct llama_layer {
 };
 
 struct llama_model {
+    friend struct llm_build_llama;
+
     llm_type type = LLM_TYPE_UNKNOWN;
     llm_arch arch = LLM_ARCH_UNKNOWN;
 

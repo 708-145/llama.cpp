@@ -449,6 +449,7 @@ int main(int argc, char ** argv) {
     llama_model_quantize_params params = llama_model_quantize_default_params();
 
     int arg_idx = 1;
+    std::string smarterquant_file;
     std::string imatrix_file;
     std::vector<std::string> included_weights, excluded_weights;
     std::vector<llama_model_kv_override> kv_overrides;
