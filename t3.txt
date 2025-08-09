@@ -5,8 +5,10 @@ The output vector is unpermuted to get the same order as if the multiplication h
 
 For Quantization, each tensor is permuted and then split into three subtensors t1, t2, t3 where t1 has a width of 256, t2 of 512 and t3 the rest along the first dimension.
 The permutation is specified in a smarterquant.json file as --smarterquant command line parameter to llama-quantize. It is then stored as metadata in the GGUF along with the 3 sub-tensors for each original tensor. Use a suffix of ".t1", ".t2" and ".t3".
-The quantization type to use is also specified in that json file. Use the first value for t1, the second value for t2 and the fourth value fot t3. The third value is unused.
+The quantization ggml_type to use is also specified in that json file. Use the first value for t1, the second value for t2 and the fourth value fot t3. The third value is unused.
 Use vendor/nlohmann/ for JSON parsing. Look at the given smarterquant.json to find out format.
+src/llama-quant.cpp and tools/quantize/quantize.cpp are good candidates for the implementation.
+please use the ggml_type definition from ./include/llama.h instead of duplicating code.
 
 compile with 
 cmake -B build -DBUILD_SHARED_LIBS=OFF -DLLAMA_CURL=OFF
