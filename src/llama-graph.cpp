@@ -485,9 +485,10 @@ void llm_graph_result::set_params(const llm_graph_params & params) {
 // llm_graph_context
 //
 
-llm_graph_context::llm_graph_context(const llm_graph_params & params) :
+llm_graph_context::llm_graph_context(const struct llama_model & model, const llm_graph_params & params) :
     arch             (params.arch),
     hparams          (params.hparams),
+    model            (model),
     cparams          (params.cparams),
     ubatch           (params.ubatch),
     n_embd           (hparams.n_embd),

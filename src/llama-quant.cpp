@@ -13,7 +13,7 @@
 #include <thread>
 #include <unordered_map>
 
-#include "ggml/include/vendor/nlohmann/json.hpp"
+#include "vendor/nlohmann/json.hpp"
 
 // Quantization types. Changes to this struct must be replicated in quantize.cpp
 struct tensor_quantization {
@@ -626,7 +626,7 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
     }
 
     std::vector<std::string> splits = {};
-    llama_model_loader ml(fname_inp, splits, use_mmap, /*check_tensors*/ true, kv_overrides, nullptr);
+    llama_model_loader ml(fname_inp, splits, model, use_mmap, /*check_tensors*/ true, kv_overrides, nullptr);
     ml.init_mappings(false); // no prefetching
 
     llama_model model(llama_model_default_params());

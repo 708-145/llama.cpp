@@ -85,14 +85,6 @@ struct llama_model_loader {
     gguf_context_ptr meta;
     std::vector<ggml_context_ptr> contexts;
 
-    struct t3_tensor_info {
-        ggml_tensor * t1;
-        ggml_tensor * t2;
-        ggml_tensor * t3;
-        std::vector<int32_t> perm;
-    };
-    std::map<std::string, t3_tensor_info> t3_tensors_map;
-
     std::string arch_name;
     LLM_KV      llm_kv    = LLM_KV(LLM_ARCH_UNKNOWN);
 
@@ -100,9 +92,11 @@ struct llama_model_loader {
     size_t size_data = 0;
     std::vector<std::pair<size_t, size_t>> mmaps_used;
 
+    llama_model & model;
     llama_model_loader(
         const std::string & fname,
         std::vector<std::string> & splits, // optional, only need if the split does not follow naming scheme
+        llama_model & model,
         bool use_mmap,
         bool check_tensors,
         const llama_model_kv_override * param_overrides_p,

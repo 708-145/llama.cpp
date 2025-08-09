@@ -386,6 +386,8 @@ using llm_graph_cb = std::function<void(const llama_ubatch & ubatch, ggml_tensor
 class llm_graph_result;
 
 struct llm_graph_params {
+    const struct llama_model * model = nullptr;
+
     llm_arch arch = LLM_ARCH_UNKNOWN;
 
     llama_hparams hparams;
@@ -574,7 +576,7 @@ struct llm_graph_context {
     ggml_context * ctx0 = nullptr;
     ggml_cgraph  * gf   = nullptr;
 
-    llm_graph_context(const llm_graph_params & params);
+    llm_graph_context(const struct llama_model & model, const llm_graph_params & params);
     virtual ~llm_graph_context() = default;
 
     void cb(ggml_tensor * cur, const char * name, int il) const;
