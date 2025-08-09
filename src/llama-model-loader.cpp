@@ -1,4 +1,5 @@
 #include "llama-model-loader.h"
+#include "llama-model.h"
 
 #include "ggml.h"
 
@@ -726,14 +727,14 @@ llama_model_loader::llama_model_loader(
             const auto * t3_w = get_weight((base_name + ".t3").c_str());
 
             if (t2_w && t3_w) {
-                t3_tensor_info info;
+                llama_model::t3_tensor_info info;
                 info.t1 = t1_w->tensor;
                 info.t2 = t2_w->tensor;
                 info.t3 = t3_w->tensor;
 
                 const std::string perm_key = base_name + ".permutation";
                 get_arr(perm_key, info.perm, true);
-                t3_tensors_map[base_name] = info;
+                model.t3_tensors_map[base_name] = info;
             }
         }
     }
@@ -811,7 +812,7 @@ const struct ggml_tensor * llama_model_loader::check_tensor_dims(const std::stri
 }
 
 struct ggml_tensor * llama_model_loader::create_tensor(struct ggml_context * ctx, const std::string & name, const std::initializer_list<int64_t> & ne, int flags) {
-    if (t3_tensors_map.count(name)) {
+    if (model.t3_tensors_map.count(name)) {
         return NULL;
     }
     const struct ggml_tensor * cur = check_tensor_dims(name, ne, !(flags & TENSOR_NOT_REQUIRED));
@@ -836,7 +837,7 @@ struct ggml_tensor * llama_model_loader::create_tensor(struct ggml_context * ctx
 }
 
 struct ggml_tensor * llama_model_loader::create_tensor_as_view(struct ggml_context * ctx, struct ggml_tensor * base, const std::string & name, const std::initializer_list<int64_t> & ne, size_t offset, bool required) {
-    if (t3_tensors_map.count(name)) {
+    if (model.t3_tensors_map.count(name)) {
         return NULL;
     }
     const struct ggml_tensor * cur = check_tensor_dims(name, ne, required);

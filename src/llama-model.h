@@ -7,6 +7,7 @@
 #include "llama-memory.h"
 #include "llama-vocab.h"
 
+#include <map>
 #include <memory>
 #include <string>
 #include <unordered_map>

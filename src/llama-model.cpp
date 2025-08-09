@@ -9635,7 +9635,7 @@ struct llm_build_codeshell : public llm_graph_context {
 };
 
 struct llm_build_orion : public llm_graph_context {
-    llm_build_orion(const llama_model & model, const llm_graph_params & params) : llm_graph_context(params) {
+    llm_build_orion(const llama_model & model, const llm_graph_params & params) : llm_graph_context(model, params) {
         const int64_t n_embd_head = hparams.n_embd_head_v;
 
         GGML_ASSERT(n_embd_head == hparams.n_embd_head_k);
@@ -9762,7 +9762,7 @@ struct llm_build_orion : public llm_graph_context {
 };
 
 struct llm_build_internlm2 : public llm_graph_context {
-    llm_build_internlm2(const llama_model & model, const llm_graph_params & params) : llm_graph_context(params) {
+    llm_build_internlm2(const llama_model & model, const llm_graph_params & params) : llm_graph_context(model, params) {
         const int64_t n_embd_head = hparams.n_embd_head_v;
 
         GGML_ASSERT(n_embd_head == hparams.n_embd_head_k);
@@ -9889,7 +9889,7 @@ struct llm_build_internlm2 : public llm_graph_context {
 };
 
 struct llm_build_minicpm3 : public llm_graph_context {
-    llm_build_minicpm3(const llama_model & model, const llm_graph_params & params) : llm_graph_context(params) {
+    llm_build_minicpm3(const llama_model & model, const llm_graph_params & params) : llm_graph_context(model, params) {
         //TODO: if the model varies, these parameters need to be read from the model
         const int64_t n_embd_base = 256;
         const float scale_embd  = 12.0f;
@@ -10093,7 +10093,7 @@ struct llm_build_minicpm3 : public llm_graph_context {
 };
 
 struct llm_build_gemma : public llm_graph_context {
-    llm_build_gemma(const llama_model & model, const llm_graph_params & params) : llm_graph_context(params) {
+    llm_build_gemma(const llama_model & model, const llm_graph_params & params) : llm_graph_context(model, params) {
         const int64_t n_embd_head = hparams.n_embd_head_v;
 
         ggml_tensor * cur;
@@ -10209,7 +10209,7 @@ struct llm_build_gemma : public llm_graph_context {
 };
 
 struct llm_build_gemma2_iswa : public llm_graph_context {
-    llm_build_gemma2_iswa(const llama_model & model, const llm_graph_params & params) : llm_graph_context(params) {
+    llm_build_gemma2_iswa(const llama_model & model, const llm_graph_params & params) : llm_graph_context(model, params) {
         const int64_t n_embd_head = hparams.n_embd_head_k;
 
         ggml_tensor * cur;
@@ -10339,7 +10339,7 @@ struct llm_build_gemma2_iswa : public llm_graph_context {
 };
 
 struct llm_build_gemma3_iswa : public llm_graph_context {
-    llm_build_gemma3_iswa(const llama_model & model, const llm_graph_params & params) : llm_graph_context(params) {
+    llm_build_gemma3_iswa(const llama_model & model, const llm_graph_params & params) : llm_graph_context(model, params) {
         const int64_t n_embd_head = hparams.n_embd_head_k;
 
         ggml_tensor * cur;
@@ -10487,7 +10487,7 @@ struct llm_build_gemma3n_iswa : public llm_graph_context {
     const float   f_sparsity_std_mul = 1.6448533535003662f; // std_multiplier = normal_dist.icdf(0.95)
 
     llm_build_gemma3n_iswa(const llama_model & model, const llm_graph_params & params)
-            : llm_graph_context(params),
+            : llm_graph_context(model, params),
               model(model),
               n_embd_head(model.hparams.n_embd_head_k),
               n_embd_altup(model.hparams.n_embd_altup),
@@ -10901,7 +10901,7 @@ struct llm_build_gemma3n_iswa : public llm_graph_context {
 
 // TODO: move up next to build_starcoder
 struct llm_build_starcoder2 : public llm_graph_context {
-    llm_build_starcoder2(const llama_model & model, const llm_graph_params & params) : llm_graph_context(params) {
+    llm_build_starcoder2(const llama_model & model, const llm_graph_params & params) : llm_graph_context(model, params) {
         const int64_t n_embd_head = hparams.n_embd_head_v;
 
         GGML_ASSERT(n_embd_head == hparams.n_embd_head_k);
@@ -11303,7 +11303,7 @@ struct llm_graph_context_mamba : public llm_graph_context {
 };
 
 struct llm_build_mamba : public llm_graph_context_mamba {
-    llm_build_mamba(const llama_model & model, const llm_graph_params & params) : llm_graph_context_mamba(params) {
+    llm_build_mamba(const llama_model & model, const llm_graph_params & params) : llm_graph_context_mamba(model, params) {
         ggml_tensor * cur;
         ggml_tensor * inpL;
 
@@ -11360,7 +11360,7 @@ struct llm_build_mamba : public llm_graph_context_mamba {
 };
 
 struct llm_build_jamba : public llm_graph_context_mamba {
-    llm_build_jamba(const llama_model & model, const llm_graph_params & params) : llm_graph_context_mamba(params) {
+    llm_build_jamba(const llama_model & model, const llm_graph_params & params) : llm_graph_context_mamba(model, params) {
         const int64_t n_embd_head = hparams.n_embd_head_v;
 
         ggml_tensor * cur;
@@ -11469,7 +11469,7 @@ struct llm_build_jamba : public llm_graph_context_mamba {
 };
 
 struct llm_build_command_r : public llm_graph_context {
-    llm_build_command_r(const llama_model & model, const llm_graph_params & params) : llm_graph_context(params) {
+    llm_build_command_r(const llama_model & model, const llm_graph_params & params) : llm_graph_context(model, params) {
         const int64_t n_embd_head = hparams.n_embd_head_v;
 
         GGML_ASSERT(n_embd_head == hparams.n_embd_head_k);
@@ -11616,7 +11616,7 @@ struct llm_build_command_r : public llm_graph_context {
 };
 
 struct llm_build_cohere2_iswa : public llm_graph_context {
-    llm_build_cohere2_iswa(const llama_model & model, const llm_graph_params & params) : llm_graph_context(params) {
+    llm_build_cohere2_iswa(const llama_model & model, const llm_graph_params & params) : llm_graph_context(model, params) {
         const int64_t n_embd_head = hparams.n_embd_head_v;
 
         GGML_ASSERT(n_embd_head == hparams.n_embd_head_k);
@@ -11752,7 +11752,7 @@ struct llm_build_cohere2_iswa : public llm_graph_context {
 //   * removed bias
 //   * removed MoE
 struct llm_build_olmo : public llm_graph_context {
-    llm_build_olmo(const llama_model & model, const llm_graph_params & params) : llm_graph_context(params) {
+    llm_build_olmo(const llama_model & model, const llm_graph_params & params) : llm_graph_context(model, params) {
         const int64_t n_embd_head = hparams.n_embd_head_v;
 
         GGML_ASSERT(n_embd_head == hparams.n_embd_head_k);
@@ -11880,7 +11880,7 @@ struct llm_build_olmo : public llm_graph_context {
 };
 
 struct llm_build_olmo2 : public llm_graph_context {
-    llm_build_olmo2(const llama_model & model, const llm_graph_params & params) : llm_graph_context(params) {
+    llm_build_olmo2(const llama_model & model, const llm_graph_params & params) : llm_graph_context(model, params) {
         const int64_t n_embd_head = hparams.n_embd_head_v;
 
         GGML_ASSERT(n_embd_head == hparams.n_embd_head_k);
@@ -12009,7 +12009,7 @@ struct llm_build_olmo2 : public llm_graph_context {
 //   * removed bias
 //   * added q, k norm
 struct llm_build_olmoe : public llm_graph_context {
-    llm_build_olmoe(const llama_model & model, const llm_graph_params & params) : llm_graph_context(params) {
+    llm_build_olmoe(const llama_model & model, const llm_graph_params & params) : llm_graph_context(model, params) {
         const int64_t n_embd_head = hparams.n_embd_head_v;
 
         GGML_ASSERT(n_embd_head == hparams.n_embd_head_k);
@@ -12137,7 +12137,7 @@ struct llm_build_olmoe : public llm_graph_context {
 };
 
 struct llm_build_openelm : public llm_graph_context {
-    llm_build_openelm(const llama_model & model, const llm_graph_params & params) : llm_graph_context(params) {
+    llm_build_openelm(const llama_model & model, const llm_graph_params & params) : llm_graph_context(model, params) {
         const int64_t n_embd_head = hparams.n_embd_head_v;
 
         GGML_ASSERT(n_embd_head == hparams.n_embd_head_k);
@@ -12266,7 +12266,7 @@ struct llm_build_openelm : public llm_graph_context {
 };
 
 struct llm_build_gptneox : public llm_graph_context {
-    llm_build_gptneox(const llama_model & model, const llm_graph_params & params) : llm_graph_context(params) {
+    llm_build_gptneox(const llama_model & model, const llm_graph_params & params) : llm_graph_context(model, params) {
         const int64_t n_embd_head = hparams.n_embd_head_v;
         const int64_t n_embd_gqa  = hparams.n_embd_v_gqa();
 
@@ -12412,7 +12412,7 @@ struct llm_build_gptneox : public llm_graph_context {
 };
 
 struct llm_build_arctic : public llm_graph_context {
-    llm_build_arctic(const llama_model & model, const llm_graph_params & params) : llm_graph_context(params) {
+    llm_build_arctic(const llama_model & model, const llm_graph_params & params) : llm_graph_context(model, params) {
         const int64_t n_embd_head = hparams.n_embd_head_v;
 
         GGML_ASSERT(n_embd_head == hparams.n_embd_head_k);
@@ -12550,7 +12550,7 @@ struct llm_build_arctic : public llm_graph_context {
 };
 
 struct llm_build_deepseek : public llm_graph_context {
-    llm_build_deepseek(const llama_model & model, const llm_graph_params & params) : llm_graph_context(params) {
+    llm_build_deepseek(const llama_model & model, const llm_graph_params & params) : llm_graph_context(model, params) {
         const int64_t n_embd_head = hparams.n_embd_head_v;
 
         GGML_ASSERT(n_embd_head == hparams.n_embd_head_k);
@@ -12712,7 +12712,7 @@ struct llm_build_deepseek : public llm_graph_context {
 };
 
 struct llm_build_deepseek2 : public llm_graph_context {
-    llm_build_deepseek2(const llama_model & model, const llm_graph_params & params) : llm_graph_context(params) {
+    llm_build_deepseek2(const llama_model & model, const llm_graph_params & params) : llm_graph_context(model, params) {
         bool is_lite = (hparams.n_layer == 27);
 
         const bool is_mla = (hparams.n_embd_head_k_mla != 0 && hparams.n_embd_head_v_mla != 0);
@@ -12975,7 +12975,7 @@ struct llm_build_deepseek2 : public llm_graph_context {
 };
 
 struct llm_build_bitnet : public llm_graph_context {
-    llm_build_bitnet(const llama_model & model, const llm_graph_params & params) : llm_graph_context(params) {
+    llm_build_bitnet(const llama_model & model, const llm_graph_params & params) : llm_graph_context(model, params) {
         const int64_t n_embd_head = hparams.n_embd_head_v;
 
         GGML_ASSERT(n_embd_head == hparams.n_embd_head_k);
@@ -13135,7 +13135,7 @@ struct llm_build_bitnet : public llm_graph_context {
 };
 
 struct llm_build_t5_enc : public llm_graph_context {
-    llm_build_t5_enc(const llama_model & model, const llm_graph_params & params) : llm_graph_context(params) {
+    llm_build_t5_enc(const llama_model & model, const llm_graph_params & params) : llm_graph_context(model, params) {
         const int64_t n_embd_head = hparams.n_embd_head_v;
 
         GGML_ASSERT(n_embd_head == hparams.n_embd_head_k);
@@ -13236,7 +13236,7 @@ struct llm_build_t5_enc : public llm_graph_context {
 };
 
 struct llm_build_t5_dec : public llm_graph_context {
-    llm_build_t5_dec(const llama_model & model, const llm_graph_params & params) : llm_graph_context(params) {
+    llm_build_t5_dec(const llama_model & model, const llm_graph_params & params) : llm_graph_context(model, params) {
         const int64_t n_embd_head = hparams.n_embd_head_v;
         //const int64_t n_embd_gqa  = hparams.n_embd_v_gqa();
 
@@ -13406,7 +13406,7 @@ struct llm_build_t5_dec : public llm_graph_context {
 };
 
 struct llm_build_jais : public llm_graph_context {
-    llm_build_jais(const llama_model & model, const llm_graph_params & params) : llm_graph_context(params) {
+    llm_build_jais(const llama_model & model, const llm_graph_params & params) : llm_graph_context(model, params) {
         const int64_t n_embd_head = hparams.n_embd_head_v;
         const int64_t n_embd_gqa  = hparams.n_embd_v_gqa();
 
@@ -13501,7 +13501,7 @@ struct llm_build_jais : public llm_graph_context {
 };
 
 struct llm_build_chatglm : public llm_graph_context {
-    llm_build_chatglm(const llama_model & model, const llm_graph_params & params) : llm_graph_context(params) {
+    llm_build_chatglm(const llama_model & model, const llm_graph_params & params) : llm_graph_context(model, params) {
         const int64_t n_embd_head = hparams.n_embd_head_v;
         const int64_t n_embd_gqa  = hparams.n_embd_v_gqa();
 
@@ -13634,7 +13634,7 @@ struct llm_build_chatglm : public llm_graph_context {
 };
 
 struct llm_build_glm4 : public llm_graph_context {
-    llm_build_glm4(const llama_model & model, const llm_graph_params & params) : llm_graph_context(params) {
+    llm_build_glm4(const llama_model & model, const llm_graph_params & params) : llm_graph_context(model, params) {
         const int64_t n_embd_head = hparams.n_embd_head_v;
         const int64_t n_embd_gqa  = hparams.n_embd_v_gqa();
 
@@ -13785,7 +13785,7 @@ struct llm_build_glm4 : public llm_graph_context {
 };
 
 struct llm_build_glm4_moe : public llm_graph_context {
-    llm_build_glm4_moe(const llama_model & model, const llm_graph_params & params) : llm_graph_context(params) {
+    llm_build_glm4_moe(const llama_model & model, const llm_graph_params & params) : llm_graph_context(model, params) {
         const int64_t n_embd_head = hparams.n_embd_head_v;
 
         GGML_ASSERT(n_embd_head == hparams.n_embd_head_k);
@@ -13944,7 +13944,7 @@ struct llm_build_glm4_moe : public llm_graph_context {
 };
 
 struct llm_build_nemotron : public llm_graph_context {
-    llm_build_nemotron(const llama_model & model, const llm_graph_params & params) : llm_graph_context(params) {
+    llm_build_nemotron(const llama_model & model, const llm_graph_params & params) : llm_graph_context(model, params) {
         const int64_t n_embd_head = hparams.n_embd_head_v;
 
         GGML_ASSERT(n_embd_head == hparams.n_embd_head_k);
@@ -14073,7 +14073,7 @@ struct llm_build_nemotron : public llm_graph_context {
 };
 
 struct llm_build_exaone : public llm_graph_context {
-    llm_build_exaone(const llama_model & model, const llm_graph_params & params) : llm_graph_context(params) {
+    llm_build_exaone(const llama_model & model, const llm_graph_params & params) : llm_graph_context(model, params) {
         const int64_t n_embd_head = hparams.n_embd_head_v;
 
         GGML_ASSERT(n_embd_head == hparams.n_embd_head_k);
@@ -14205,7 +14205,7 @@ struct llm_build_exaone : public llm_graph_context {
 
 template <bool iswa>
 struct llm_build_exaone4 : public llm_graph_context {
-    llm_build_exaone4(const llama_model & model, const llm_graph_params & params) : llm_graph_context(params) {
+    llm_build_exaone4(const llama_model & model, const llm_graph_params & params) : llm_graph_context(model, params) {
         const int64_t n_embd_head = hparams.n_embd_head_k;
 
         GGML_ASSERT(n_embd_head == hparams.n_embd_head_v);
@@ -14342,7 +14342,7 @@ struct llm_build_exaone4 : public llm_graph_context {
 struct llm_build_rwkv6_base : public llm_graph_context {
     const llama_model & model;
 
-    llm_build_rwkv6_base(const llama_model & model, const llm_graph_params & params) : llm_graph_context(params), model(model) {
+    llm_build_rwkv6_base(const llama_model & model, const llm_graph_params & params) : llm_graph_context(model, params), model(model) {
     }
 
     ggml_tensor * build_rwkv6_channel_mix(
@@ -14738,7 +14738,7 @@ struct llm_build_rwkv6qwen2 : public llm_build_rwkv6_base {
 struct llm_build_rwkv7_base : public llm_graph_context {
     const llama_model & model;
 
-    llm_build_rwkv7_base(const llama_model & model, const llm_graph_params & params) : llm_graph_context(params), model(model) {
+    llm_build_rwkv7_base(const llama_model & model, const llm_graph_params & params) : llm_graph_context(model, params), model(model) {
     }
 
     ggml_tensor * build_rwkv7_channel_mix(
@@ -15090,7 +15090,7 @@ struct llm_build_granite : public llm_graph_context {
     llm_build_granite(
         const llama_model & model,
         const llm_graph_params & params)
-        : llm_graph_context(params) {
+        : llm_graph_context(model, params) {
 
         const int64_t n_embd_head = hparams.n_embd_head_v;
 
@@ -15526,7 +15526,7 @@ struct llm_build_granite_hybrid : public llm_graph_context_mamba {
 //   * removed bias
 //   * removed MoE
 struct llm_build_chameleon : public llm_graph_context {
-    llm_build_chameleon(const llama_model & model, const llm_graph_params & params) : llm_graph_context(params) {
+    llm_build_chameleon(const llama_model & model, const llm_graph_params & params) : llm_graph_context(model, params) {
         const int64_t n_embd_head = hparams.n_embd_head_v;
 
         GGML_ASSERT(n_embd_head == hparams.n_embd_head_k);
@@ -15703,7 +15703,7 @@ struct llm_build_chameleon : public llm_graph_context {
 };
 
 struct llm_build_wavtokenizer_dec : public llm_graph_context {
-    llm_build_wavtokenizer_dec(const llama_model & model, const llm_graph_params & params) : llm_graph_context(params) {
+    llm_build_wavtokenizer_dec(const llama_model & model, const llm_graph_params & params) : llm_graph_context(model, params) {
         ggml_tensor * cur;
         ggml_tensor * inpL;
 

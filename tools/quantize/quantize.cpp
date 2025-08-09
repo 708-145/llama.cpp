@@ -450,6 +450,7 @@ int main(int argc, char ** argv) {
 
     int arg_idx = 1;
     std::string imatrix_file;
+    std::string smarterquant_file;
     std::vector<std::string> included_weights, excluded_weights;
     std::vector<llama_model_kv_override> kv_overrides;
     std::vector<tensor_quantization> tensor_types;
