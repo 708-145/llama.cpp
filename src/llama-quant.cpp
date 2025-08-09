@@ -702,11 +702,15 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
     using json = nlohmann::json;
     json smarterquant_data;
     if (params->smarterquant_file) {
+        LLAMA_LOG_INFO("Attempting to open smarterquant file: %s\n", params->smarterquant_file);
         std::ifstream f(params->smarterquant_file);
         if (!f) {
             throw std::runtime_error(format("failed to open smarterquant file %s", params->smarterquant_file));
         }
         smarterquant_data = json::parse(f);
+        for (json::iterator it = smarterquant_data.begin(); it != smarterquant_data.end(); ++it) {
+            LLAMA_LOG_INFO("Smarterquant JSON key: %s\n", it.key().c_str());
+        }
     }
     const std::unordered_map<std::string, std::vector<float>> * imatrix_data = nullptr;
     if (params->imatrix) {
@@ -910,6 +914,7 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
         }
 
         const std::string name = ggml_get_name(tensor);
+        LLAMA_LOG_INFO("Processing tensor: %s\n", name.c_str());
 
         if (!ml.use_mmap) {
             if (read_data.size() < ggml_nbytes(tensor)) {
@@ -984,7 +989,7 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
         if (smarterquant_data.count(name) > 0) {
             // T3 quantization
             const auto& sq_info = smarterquant_data[name];
-            const std::vector<int> perm = sq_info[3];
+            const std::vector<int> perm = sq_info[4];
             const int t1_width = 256;
             const int t2_width = 512;
 
@@ -997,7 +1002,7 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
             if (!try_parse_ftype(sq_info[1], ftype_t2, ftype_str)) {
                 throw std::runtime_error(format("invalid ftype '%s' for tensor %s", sq_info[1].get<std::string>().c_str(), name.c_str()));
             }
-            if (!try_parse_ftype(sq_info[2], ftype_t3, ftype_str)) {
+            if (!try_parse_ftype(sq_info[3], ftype_t3, ftype_str)) {
                 throw std::runtime_error(format("invalid ftype '%s' for tensor %s", sq_info[2].get<std::string>().c_str(), name.c_str()));
             }
             t1_type = ftype_to_ggml_type(ftype_t1);

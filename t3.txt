@@ -29,6 +29,8 @@ outp = unpermute(perm_out)
 --
 Feature test:
 ./llama-quantize --allow-requantize --smarterquant Tiny-Moe.smarterquant.json --imatrix Tiny-Moe.imatrix Tiny-Moe.IQ4_XS.gguf Tiny-Moe.IQ4_XS_T3.gguf IQ4_NL
+python3 gguf-py/gguf/scripts/gguf_dump.py Tiny-Moe.IQ4_XS.gguf
+python3 gguf-py/gguf/scripts/gguf_dump.py Tiny-Moe.IQ4_XS_T3.gguf
 ./llama-cli -m Tiny-Moe.IQ4_XS_T3.gguf -p "hi" -n 10 --no-mmap 
 
 Regression test with standard quantization: 
