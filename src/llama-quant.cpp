@@ -1017,6 +1017,9 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
                 std::string t_name = name + suffix;
                 std::vector<float> t_data(width * nrows);
                 // permuted_data contains the data in the correct order for all three t3 tensors
+                for (int j = 0; j < nrows; j++) {
+                    memcpy(t_data.data() + j * width, permuted_data.data() + j * n_per_row + offset, width * sizeof(float));
+                }
 
                 if (work.size() < (size_t)width * nrows * 4) {
                     work.resize(width * nrows * 4);
@@ -1026,10 +1029,6 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
                 LLAMA_LOG_INFO("  Quantizing %s: type=%s, width=%d, nrows=%ld, offset=%d\n", t_name.c_str(), ggml_type_name(type), width, nrows, offset);
                 size_t t_new_size = llama_tensor_quantize_impl(type, t_data.data(), t_new_data, width, nrows, width, nullptr, workers, nthread);
 
-                // TODO: fix this
-                // work data assignment from already permuted permuted_data, no furher permutation needed
-                // quantize the data
-                // pad the data and write out tensor
                 struct ggml_tensor * new_tensor = ggml_new_tensor_2d(nullptr, type, width, nrows);
                 gguf_add_tensor(ctx_outs[cur_split].get(), new_tensor);
                 ggml_set_name(new_tensor, t_name.c_str());
