@@ -1017,7 +1017,7 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
 
             const int t3_width = n_per_row - t1_width - t2_width;
 
-            auto quantize_and_write = [&](const std::string& suffix, ggml_type type, int width, int offset) {
+            auto quantize_and_write = [&](const std::string& suffix, ggml_type type, int width, int offset, bool is_t1) {
                 if (width == 0) {
                     LLAMA_LOG_INFO("  Skipping quantization for %s%s due to zero width.\n", name.c_str(), suffix.c_str());
                     return;
@@ -1036,28 +1036,66 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
 
                 LLAMA_LOG_INFO("  Quantizing %s: type=%s, width=%d, nrows=%ld, offset=%d\n", t_name.c_str(), ggml_type_name(type), width, nrows, offset);
                 size_t t_new_size = llama_tensor_quantize_impl(type, t_data.data(), t_new_data, width, nrows, width, nullptr, workers, nthread);
-                LLAMA_LOG_INFO("  Attempting to create new tensor: type=%s, width=%d, nrows=%ld\n", ggml_type_name(type), width, nrows);
-                struct ggml_tensor * new_tensor = ggml_new_tensor_2d(gctx, type, width, nrows); // TB: What if it's a MoE tensor with 3 dimensions?
-                LLAMA_LOG_INFO("  Successfully created new tensor.\n");
-                ggml_set_name(new_tensor, t_name.c_str());
-                gguf_add_tensor(ctx_outs[cur_split].get(), new_tensor);
-                gguf_set_tensor_data(ctx_outs[cur_split].get(), t_name.c_str(), t_new_data);
+
+                // Determine dimensions for the new tensor
+                int64_t ne_new[GGML_MAX_DIMS];
+                ne_new[0] = width;
+                ne_new[1] = nrows;
+                int n_dims_new = 2;
+                if (tensor->ne[2] > 1) {
+                    ne_new[2] = tensor->ne[2];
+                    n_dims_new = 3;
+                } else {
+                    ne_new[2] = 1;
+                }
+                if (tensor->ne[3] > 1) {
+                    ne_new[3] = tensor->ne[3];
+                    n_dims_new = 4;
+                } else {
+                    ne_new[3] = 1;
+                }
+
+                LLAMA_LOG_INFO("  Attempting to create new tensor: type=%s, width=%d, nrows=%ld, n_dims=%d\n", ggml_type_name(type), width, nrows, n_dims_new);
+
+                if (is_t1) {
+                    // Modify the original tensor for .t1
+                    // Update properties of the original ggml_tensor
+                    tensor->type = type;
+                    tensor->ne[0] = ne_new[0];
+                    tensor->ne[1] = ne_new[1];
+                    tensor->ne[2] = ne_new[2];
+                    tensor->ne[3] = ne_new[3];
+                    // Recalculate strides for the modified tensor
+                    tensor->nb[0] = ggml_type_size(type);
+                    tensor->nb[1] = tensor->nb[0]*(tensor->ne[0]/ggml_blck_size(type));
+                    for (int i = 2; i < GGML_MAX_DIMS; i++) {
+                        tensor->nb[i] = tensor->nb[i - 1]*tensor->ne[i - 1];
+                    }
+                    // Update the GGUF metadata for the original tensor name
+                    gguf_set_tensor_type(ctx_outs[cur_split].get(), name.c_str(), type);
+                    gguf_set_tensor_data(ctx_outs[cur_split].get(), name.c_str(), t_new_data);
+                    ggml_set_name(tensor, t_name.c_str()); // Now set the ggml_tensor's name
+                } else {
+                    // Create a new tensor for .t2 and .t3
+                    struct ggml_tensor * new_tensor = ggml_new_tensor(gctx, type, n_dims_new, ne_new);
+                    ggml_set_name(new_tensor, t_name.c_str());
+                    gguf_add_tensor(ctx_outs[cur_split].get(), new_tensor);
+                    gguf_set_tensor_data(ctx_outs[cur_split].get(), t_name.c_str(), t_new_data);
+                }
+
                 fout.write((const char*)t_new_data, t_new_size);
                 zeros(fout, GGML_PAD(t_new_size, align) - t_new_size);
-                fprintf(stderr, "Tensor added!!!1\n");
                 total_size_new += t_new_size;
             };
 
-            quantize_and_write(".t1", t1_type, t1_width, 0);
-            quantize_and_write(".t2", t2_type, t2_width, t1_width);
-            quantize_and_write(".t3", t3_type, t3_width, t1_width + t2_width);
+            quantize_and_write(".t1", t1_type, t1_width, 0, true);
+            quantize_and_write(".t2", t2_type, t2_width, t1_width, false);
+            quantize_and_write(".t3", t3_type, t3_width, t1_width + t2_width, false);
 
             gguf_set_arr_data(ctx_outs[cur_split].get(), (name + ".permutation").c_str(), GGUF_TYPE_INT32, perm.data(), perm.size());
 
             total_size_org += ggml_nbytes(tensor);
-            gguf_remove_key(ctx_outs[cur_split].get(), name.c_str());
-
-            continue;
+            // gguf_remove_key(ctx_outs[cur_split].get(), name.c_str()); // Removed this line as it's no longer needed
 
         } else if (quantize) {
             new_type = default_type;
@@ -1102,6 +1140,7 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
 
             const float * imatrix = nullptr;
             if (imatrix_data) {
+                LLAMA_LOG_INFO("  Looking for imatrix for tensor: %s\n", remap_imatrix(tensor->name, mapped).c_str());
                 auto it = imatrix_data->find(remap_imatrix(tensor->name, mapped));
                 if (it == imatrix_data->end()) {
                     LLAMA_LOG_INFO("\n====== %s: did not find weights for %s\n", __func__, tensor->name);
