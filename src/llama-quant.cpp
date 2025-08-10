@@ -1005,9 +1005,9 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
             const int t1_width = 256;
             const int t2_width = 512;
 
-            ggml_type t1_type = static_cast<ggml_type>(sq_info[0].get<int>());
-            ggml_type t2_type = static_cast<ggml_type>(sq_info[1].get<int>());
-            ggml_type t3_type = static_cast<ggml_type>(sq_info[3].get<int>());
+            ggml_type t1_type = static_cast<ggml_type>(sq_info[1].get<int>());
+            ggml_type t2_type = static_cast<ggml_type>(sq_info[2].get<int>());
+            ggml_type t3_type = static_cast<ggml_type>(sq_info[0].get<int>());
 
 
             const int64_t nelements = ggml_nelements(tensor);
@@ -1021,16 +1021,34 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
 
             const int64_t n_per_row = tensor->ne[0];
             const int64_t nrows = tensor->ne[1];
+
+            LLAMA_LOG_INFO("T3 Quantization: Processing tensor: %s\n", name.c_str());
+            LLAMA_LOG_INFO("  Tensor dimensions: nelements=%ld, n_per_row=%ld, nrows=%ld\n", nelements, n_per_row, nrows);
+            LLAMA_LOG_INFO("  Permutation vector size: %zu\n", perm.size());
+            if (!perm.empty()) {
+                LLAMA_LOG_INFO("  Permutation vector first 5 elements: %d, %d, %d, %d, %d\n", perm[0], perm[1], perm[2], perm[3], perm[4]);
+                LLAMA_LOG_INFO("  Permutation vector last 5 elements: %d, %d, %d, %d, %d\n", perm[perm.size()-5], perm[perm.size()-4], perm[perm.size()-3], perm[perm.size()-2], perm[perm.size()-1]);
+            }
+            LLAMA_LOG_INFO("  t1_width=%d, t2_width=%d, t3_width=%ld\n", t1_width, t2_width, n_per_row - t1_width - t2_width);
+            LLAMA_LOG_INFO("  t1_type=%s, t2_type=%s, t3_type=%s\n", ggml_type_name(t1_type), ggml_type_name(t2_type), ggml_type_name(t3_type));
+
+            if (n_per_row < 768) LLAMA_LOG_ERROR("Tensor %s contains less than 768 elements, which is not recommended for T3 quantization.\n", name.c_str());
+
             std::vector<float> permuted_data(nelements);
             for (int j = 0; j < nrows; j++) {
                 for (int i = 0; i < n_per_row; i++) {
                     permuted_data[j * n_per_row + i] = f32_data[j * n_per_row + perm[i]];
                 }
             }
+            LLAMA_LOG_DEBUG("  Permuted: %s\n", name.c_str());
 
             const int t3_width = n_per_row - t1_width - t2_width;
 
             auto quantize_and_write = [&](const std::string& suffix, ggml_type type, int width, int offset) {
+                if (width == 0) {
+                    LLAMA_LOG_INFO("  Skipping quantization for %s%s due to zero width.\n", name.c_str(), suffix.c_str());
+                    return;
+                }
                 std::string t_name = name + suffix;
                 std::vector<float> t_data(width * nrows);
                 for (int j = 0; j < nrows; j++) {
@@ -1044,6 +1062,7 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
                 }
                 void* t_new_data = work.data();
 
+                LLAMA_LOG_INFO("  Quantizing %s%s: type=%s, width=%d, nrows=%ld, offset=%d\n", name.c_str(), suffix.c_str(), ggml_type_name(type), width, nrows, offset);
                 size_t t_new_size = llama_tensor_quantize_impl(type, t_data.data(), t_new_data, width, nrows, width, nullptr, workers, nthread);
 
                 struct ggml_tensor * new_tensor = ggml_new_tensor_2d(nullptr, type, width, nrows);

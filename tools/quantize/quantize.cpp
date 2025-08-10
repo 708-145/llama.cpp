@@ -1,6 +1,7 @@
 #include "common.h"
 #include "llama.h"
 #include "gguf.h"
+#include "log.h"
 
 #include <cstdio>
 #include <cstring>
@@ -447,6 +448,8 @@ int main(int argc, char ** argv) {
     }
 
     llama_model_quantize_params params = llama_model_quantize_default_params();
+
+    common_log_set_verbosity_thold(1); // Enable debug logging
 
     int arg_idx = 1;
     std::string imatrix_file;
