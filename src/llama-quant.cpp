@@ -79,41 +79,6 @@ static bool try_parse_ftype(const std::string & ftype_str_in, llama_ftype & ftyp
     return true;
 }
 
-static ggml_type ftype_to_ggml_type(llama_ftype ftype) {
-    LLAMA_LOG_INFO("ftype_to_ggml_type: received ftype = %d\n", ftype);
-    switch (ftype) {
-        case LLAMA_FTYPE_MOSTLY_Q4_0: return GGML_TYPE_Q4_0;
-        case LLAMA_FTYPE_MOSTLY_Q4_1: return GGML_TYPE_Q4_1;
-        case LLAMA_FTYPE_MOSTLY_Q5_0: return GGML_TYPE_Q5_0;
-        case LLAMA_FTYPE_MOSTLY_Q5_1: return GGML_TYPE_Q5_1;
-        case LLAMA_FTYPE_MOSTLY_Q8_0: return GGML_TYPE_Q8_0;
-        case LLAMA_FTYPE_MOSTLY_F16:  return GGML_TYPE_F16;
-        case LLAMA_FTYPE_ALL_F32:     return GGML_TYPE_F32;
-        case LLAMA_FTYPE_MOSTLY_Q2_K: return GGML_TYPE_Q2_K;
-        case LLAMA_FTYPE_MOSTLY_Q3_K_S: return GGML_TYPE_Q3_K;
-        case LLAMA_FTYPE_MOSTLY_Q3_K_M: return GGML_TYPE_Q3_K;
-        case LLAMA_FTYPE_MOSTLY_Q3_K_L: return GGML_TYPE_Q5_K; // Corrected mapping
-        case LLAMA_FTYPE_MOSTLY_Q4_K_S: return GGML_TYPE_Q4_K;
-        case LLAMA_FTYPE_MOSTLY_Q4_K_M: return GGML_TYPE_Q4_K;
-        case LLAMA_FTYPE_MOSTLY_Q5_K_S: return GGML_TYPE_Q5_K;
-        case LLAMA_FTYPE_MOSTLY_Q5_K_M: return GGML_TYPE_Q5_K;
-        case LLAMA_FTYPE_MOSTLY_Q6_K: return GGML_TYPE_Q6_K;
-        case LLAMA_FTYPE_MOSTLY_IQ2_XXS: return GGML_TYPE_IQ2_XXS;
-        case LLAMA_FTYPE_MOSTLY_IQ2_XS: return GGML_TYPE_IQ2_XS;
-        case LLAMA_FTYPE_MOSTLY_IQ3_XXS: return GGML_TYPE_IQ3_XXS;
-        case LLAMA_FTYPE_MOSTLY_IQ1_S: return GGML_TYPE_IQ1_S;
-        case LLAMA_FTYPE_MOSTLY_IQ4_NL: return GGML_TYPE_IQ4_NL;
-        case LLAMA_FTYPE_MOSTLY_IQ3_S: return GGML_TYPE_IQ3_S;
-        case LLAMA_FTYPE_MOSTLY_IQ2_S: return GGML_TYPE_IQ2_S;
-        case LLAMA_FTYPE_MOSTLY_IQ4_XS: return GGML_TYPE_IQ4_XS; // Corrected mapping
-        case LLAMA_FTYPE_MOSTLY_IQ1_M: return GGML_TYPE_IQ1_M;
-        case LLAMA_FTYPE_MOSTLY_TQ1_0: return GGML_TYPE_TQ1_0;
-        case LLAMA_FTYPE_MOSTLY_TQ2_0: return GGML_TYPE_TQ2_0;
-        case LLAMA_FTYPE_MOSTLY_MXFP4_MOE: return GGML_TYPE_MXFP4;
-        default: throw std::runtime_error(format("invalid ftype %d", ftype));
-    }
-}
-
 static void zeros(std::ofstream & file, size_t n) {
     char zero = 0;
     for (size_t i = 0; i < n; ++i) {
@@ -1030,7 +995,7 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
                 LLAMA_LOG_INFO("  Permutation vector last 5 elements: %d, %d, %d, %d, %d\n", perm[perm.size()-5], perm[perm.size()-4], perm[perm.size()-3], perm[perm.size()-2], perm[perm.size()-1]);
             }
             LLAMA_LOG_INFO("  t1_width=%d, t2_width=%d, t3_width=%ld\n", t1_width, t2_width, n_per_row - t1_width - t2_width);
-            LLAMA_LOG_INFO("  t1_type=%s, t2_type=%s, t3_type=%s\n", ggml_type_name(t1_type), ggml_type_name(t2_type), ggml_type_name(t3_type));
+            LLAMA_LOG_INFO("  t1_type=%s (%d), t2_type=%s (%d), t3_type=%s (%d)\n", ggml_type_name(t1_type), t1_type, ggml_type_name(t2_type), t2_type, ggml_type_name(t3_type), t3_type);
 
             if (n_per_row < 768) LLAMA_LOG_ERROR("Tensor %s contains less than 768 elements, which is not recommended for T3 quantization.\n", name.c_str());
 
@@ -1051,20 +1016,20 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
                 }
                 std::string t_name = name + suffix;
                 std::vector<float> t_data(width * nrows);
-                for (int j = 0; j < nrows; j++) {
-                    for (int i = 0; i < width; i++) {
-                        t_data[j * width + i] = permuted_data[j * n_per_row + offset + i];
-                    }
-                }
+                // permuted_data contains the data in the correct order for all three t3 tensors
 
                 if (work.size() < (size_t)width * nrows * 4) {
                     work.resize(width * nrows * 4);
                 }
                 void* t_new_data = work.data();
 
-                LLAMA_LOG_INFO("  Quantizing %s%s: type=%s, width=%d, nrows=%ld, offset=%d\n", name.c_str(), suffix.c_str(), ggml_type_name(type), width, nrows, offset);
+                LLAMA_LOG_INFO("  Quantizing %s: type=%s, width=%d, nrows=%ld, offset=%d\n", t_name.c_str(), ggml_type_name(type), width, nrows, offset);
                 size_t t_new_size = llama_tensor_quantize_impl(type, t_data.data(), t_new_data, width, nrows, width, nullptr, workers, nthread);
 
+                // TODO: fix this
+                // work data assignment from already permuted permuted_data, no furher permutation needed
+                // quantize the data
+                // pad the data and write out tensor
                 struct ggml_tensor * new_tensor = ggml_new_tensor_2d(nullptr, type, width, nrows);
                 gguf_add_tensor(ctx_outs[cur_split].get(), new_tensor);
                 ggml_set_name(new_tensor, t_name.c_str());
