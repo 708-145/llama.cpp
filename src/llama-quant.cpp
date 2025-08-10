@@ -1057,31 +1057,11 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
 
                 LLAMA_LOG_INFO("  Attempting to create new tensor: type=%s, width=%d, nrows=%ld, n_dims=%d\n", ggml_type_name(type), width, nrows, n_dims_new);
 
-                if (is_t1) {
-                    // Modify the original tensor for .t1
-                    // Update properties of the original ggml_tensor
-                    tensor->type = type;
-                    tensor->ne[0] = ne_new[0];
-                    tensor->ne[1] = ne_new[1];
-                    tensor->ne[2] = ne_new[2];
-                    tensor->ne[3] = ne_new[3];
-                    // Recalculate strides for the modified tensor
-                    tensor->nb[0] = ggml_type_size(type);
-                    tensor->nb[1] = tensor->nb[0]*(tensor->ne[0]/ggml_blck_size(type));
-                    for (int i = 2; i < GGML_MAX_DIMS; i++) {
-                        tensor->nb[i] = tensor->nb[i - 1]*tensor->ne[i - 1];
-                    }
-                    // Update the GGUF metadata for the original tensor name
-                    gguf_set_tensor_type(ctx_outs[cur_split].get(), name.c_str(), type);
-                    gguf_set_tensor_data(ctx_outs[cur_split].get(), name.c_str(), t_new_data);
-                    ggml_set_name(tensor, t_name.c_str()); // Now set the ggml_tensor's name
-                } else {
-                    // Create a new tensor for .t2 and .t3
-                    struct ggml_tensor * new_tensor = ggml_new_tensor(gctx, type, n_dims_new, ne_new);
-                    ggml_set_name(new_tensor, t_name.c_str());
-                    gguf_add_tensor(ctx_outs[cur_split].get(), new_tensor);
-                    gguf_set_tensor_data(ctx_outs[cur_split].get(), t_name.c_str(), t_new_data);
-                }
+                // Create a new tensor for .t1, .t2 and .t3
+                struct ggml_tensor * new_tensor = ggml_new_tensor(gctx, type, n_dims_new, ne_new);
+                ggml_set_name(new_tensor, t_name.c_str());
+                gguf_add_tensor(ctx_outs[cur_split].get(), new_tensor);
+                gguf_set_tensor_data(ctx_outs[cur_split].get(), t_name.c_str(), t_new_data);
 
                 fout.write((const char*)t_new_data, t_new_size);
                 zeros(fout, GGML_PAD(t_new_size, align) - t_new_size);
