@@ -709,6 +709,14 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
     const size_t align = GGUF_DEFAULT_ALIGNMENT;
     gguf_context_ptr ctx_out { gguf_init_empty() };
 
+    // Create a ggml_context for allocating new tensors
+    struct ggml_init_params gml_params = {
+        .mem_size   = 1024 * 1024 * 1024, // 1GB, adjust as needed
+        .mem_buffer = NULL,
+        .no_alloc   = false,
+    };
+    struct ggml_context * gctx = ggml_init(gml_params);
+
     std::vector<int> prune_list = {};
     if (params->prune_layers) {
         prune_list = *static_cast<const std::vector<int> *>(params->prune_layers);
@@ -1028,19 +1036,15 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
 
                 LLAMA_LOG_INFO("  Quantizing %s: type=%s, width=%d, nrows=%ld, offset=%d\n", t_name.c_str(), ggml_type_name(type), width, nrows, offset);
                 size_t t_new_size = llama_tensor_quantize_impl(type, t_data.data(), t_new_data, width, nrows, width, nullptr, workers, nthread);
-                fprintf(stderr, "got this far 0\n");
-
-                struct ggml_tensor * new_tensor = ggml_new_tensor_2d(nullptr, type, width, nrows); // TB: What if it's a MoE tensor with 3 dimensions?
-                fprintf(stderr, "got this far 1\n");
-                gguf_add_tensor(ctx_outs[cur_split].get(), new_tensor);
-                fprintf(stderr, "got this far 2\n");
+                LLAMA_LOG_INFO("  Attempting to create new tensor: type=%s, width=%d, nrows=%ld\n", ggml_type_name(type), width, nrows);
+                struct ggml_tensor * new_tensor = ggml_new_tensor_2d(gctx, type, width, nrows); // TB: What if it's a MoE tensor with 3 dimensions?
+                LLAMA_LOG_INFO("  Successfully created new tensor.\n");
                 ggml_set_name(new_tensor, t_name.c_str());
-                fprintf(stderr, "got this far 3\n");
+                gguf_add_tensor(ctx_outs[cur_split].get(), new_tensor);
                 gguf_set_tensor_data(ctx_outs[cur_split].get(), t_name.c_str(), t_new_data);
-                fprintf(stderr, "got this far 4\n");
                 fout.write((const char*)t_new_data, t_new_size);
-                fprintf(stderr, "got this far 5\n");
                 zeros(fout, GGML_PAD(t_new_size, align) - t_new_size);
+                fprintf(stderr, "Tensor added!!!1\n");
                 total_size_new += t_new_size;
             };
 
@@ -1216,6 +1220,8 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
         LLAMA_LOG_WARN("%s: WARNING: %d of %d tensor(s) required fallback quantization\n",
                 __func__, qs.n_fallback, qs.n_k_quantized + qs.n_fallback);
     }
+
+    ggml_free(gctx);
 }
 
 //
