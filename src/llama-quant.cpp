@@ -1028,12 +1028,18 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
 
                 LLAMA_LOG_INFO("  Quantizing %s: type=%s, width=%d, nrows=%ld, offset=%d\n", t_name.c_str(), ggml_type_name(type), width, nrows, offset);
                 size_t t_new_size = llama_tensor_quantize_impl(type, t_data.data(), t_new_data, width, nrows, width, nullptr, workers, nthread);
+                fprintf(stderr, "got this far 0\n");
 
-                struct ggml_tensor * new_tensor = ggml_new_tensor_2d(nullptr, type, width, nrows);
+                struct ggml_tensor * new_tensor = ggml_new_tensor_2d(nullptr, type, width, nrows); // TB: What if it's a MoE tensor with 3 dimensions?
+                fprintf(stderr, "got this far 1\n");
                 gguf_add_tensor(ctx_outs[cur_split].get(), new_tensor);
+                fprintf(stderr, "got this far 2\n");
                 ggml_set_name(new_tensor, t_name.c_str());
+                fprintf(stderr, "got this far 3\n");
                 gguf_set_tensor_data(ctx_outs[cur_split].get(), t_name.c_str(), t_new_data);
+                fprintf(stderr, "got this far 4\n");
                 fout.write((const char*)t_new_data, t_new_size);
+                fprintf(stderr, "got this far 5\n");
                 zeros(fout, GGML_PAD(t_new_size, align) - t_new_size);
                 total_size_new += t_new_size;
             };
