@@ -7,7 +7,7 @@ For Quantization, each tensor is permuted and then split into three subtensors t
 The permutation is specified in a smarterquant.json file as --smarterquant command line parameter to llama-quantize. It is then stored as metadata in the GGUF along with the 3 sub-tensors for each original tensor. Use a suffix of ".t1", ".t2" and ".t3".
 The quantization ggml_type to use is also specified in that json file. Use the first value for t3, the second value for t1 and the fourth value for t2. The third value is unused.
 Use vendor/nlohmann/ for JSON parsing. Look at the given smarterquant.json to find out format.
-src/llama-quant.cpp and tools/quantize/quantize.cpp are good candidates for the implementation.
+Read src/llama-quant.cpp and tools/quantize/quantize.cpp since they are good candidates for the implementation.
 please use the ggml_type definition from ./include/llama.h and ggml/include/ggml.h instead of duplicating code.
 Quantization uses a 2 phase approach where in the first phase all tensors are discovered, type and size computed and written to metadata in RAM.
 A second phase actually performs the real quantization split by split and writes metadata before the quantized output tensors to file per split.
@@ -49,7 +49,7 @@ Progress so far:
 
     The changes include:
     - A new `--smarterquant` command-line option for the `quantize` tool.
-    - The core T3 quantization logic in `src/llama-quant.cpp`, which reads a JSON file to control the quantization process, permutes tensor columns, splits tensors into three parts, and quantizes each part individually.
+    - The core T3 quantization logic in `src/llama-quant.cpp`, which reads a JSON file to control the quantization process, permutes tensor columns, splits tensors into up to three parts, and quantizes each part individually.
     - The T3 tensor loading logic in `src/llama-model-loader.cpp`, which allows the model to load the `.t1`, `.t2`, and `.t3` tensor variants and their permutation data.
     - New `ggml` operations (`ggml_permute_vec` and `ggml_unpermute`) to support the T3 inference logic.
 --
