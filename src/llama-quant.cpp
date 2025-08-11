@@ -1018,7 +1018,7 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
         void * new_data;
         size_t new_size;
 
-        if ("name is a key in smarterquant_data") {
+        if (smarterquant_data.contains(name) && smarterquant_data.at(name).size() > 4) {
                 // T3 quantization
                 const auto& sq_info = smarterquant_data[name];
                 const std::vector<int> perm = sq_info[4];
