@@ -949,7 +949,6 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
         }
 
         const std::string name = ggml_get_name(tensor);
-        LLAMA_LOG_INFO("Processing tensor: %s\n", name.c_str());
 
         if (!ml.use_mmap) {
             if (read_data.size() < ggml_nbytes(tensor)) {
@@ -1055,13 +1054,11 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
                     permuted_data[j * n_per_row + i] = f32_data[j * n_per_row + perm[i]];
                 }
             }
-            LLAMA_LOG_DEBUG("  Permuted: %s\n", name.c_str());
-
             const int t3_width = n_per_row - t1_width - t2_width;
 
             auto quantize_and_write = [&](const std::string& suffix, ggml_type type, int width, int offset) {
                 if (width == 0) {
-                    LLAMA_LOG_INFO("  Skipping quantization for %s%s due to zero width.\n", name.c_str(), suffix.c_str());
+                    LLAMA_LOG_INFO("  Skipping   %s%s due to zero width.\n", name.c_str(), suffix.c_str());
                     return;
                 }
                 std::string t_name = name + suffix;
@@ -1237,7 +1234,7 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
             zeros(fout, GGML_PAD(new_size, align) - new_size);
 
         }
-        LLAMA_LOG_INFO("size = %8.2f MiB -> %8.2f MiB\n", ggml_nbytes(tensor)/1024.0/1024.0, new_size/1024.0/1024.0);
+        LLAMA_LOG_INFO("tensor size= %8.2f MiB -> %8.2f MiB\n", ggml_nbytes(tensor)/1024.0/1024.0, new_size/1024.0/1024.0);
         total_size_org += ggml_nbytes(tensor);
         total_size_new += new_size;
         LLAMA_LOG_INFO("total size = %8.2f MiB -> %8.2f MiB\n",
