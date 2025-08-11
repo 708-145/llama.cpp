@@ -686,7 +686,7 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
         }
         smarterquant_data = json::parse(f);
         for (json::iterator it = smarterquant_data.begin(); it != smarterquant_data.end(); ++it) {
-            LLAMA_LOG_INFO("Smarterquant JSON key: %s\n", it.key().c_str());
+            //LLAMA_LOG_INFO("Smarterquant JSON key: %s\n", it.key().c_str());
         }
     }
     const std::unordered_map<std::string, std::vector<float>> * imatrix_data = nullptr;
@@ -726,9 +726,6 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
     gguf_set_kv     (ctx_out.get(), ml.meta.get());
     gguf_set_val_u32(ctx_out.get(), "general.quantization_version", GGML_QNT_VERSION);
     gguf_set_val_u32(ctx_out.get(), "general.file_type", ftype);
-
-    // Log metadata size before tensor quantization
-    LLAMA_LOG_INFO("%s: metadata size before tensor quantization = %8.2f KB\n", __func__, gguf_get_meta_size(ctx_out.get()) / 1024.0);
 
     // Remove split metadata
     gguf_remove_key(ctx_out.get(), ml.llm_kv(LLM_KV_SPLIT_NO).c_str());
@@ -790,6 +787,9 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
             return a->idx < b->idx;
         });
     }
+    
+    // Log metadata size before tensor quantization
+    LLAMA_LOG_INFO("%s: metadata size before tensor quantization = %8.2f KB\n", __func__, gguf_get_meta_size(ctx_out.get()) / 1024.0);
 
     for (const auto * it : tensors) {
         const struct ggml_tensor * tensor = it->tensor;
@@ -905,9 +905,15 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
 
             // Add permutation metadata
             gguf_set_arr_data(ctx_outs[0].get(), (name + ".permutation").c_str(), GGUF_TYPE_INT32, perm.data(), perm.size());
+            LLAMA_LOG_INFO("%s: added permutation metadata for %s.permutation\n", __func__, name.c_str());
+
+            // TB: Log metadata size before tensor quantization
+            //LLAMA_LOG_INFO("%s: metadata size before tensor quantization = %8.2f KB\n", __func__, gguf_get_meta_size(ctx_out.get()) / 1024.0);
+            // TB: write initial metadata to file here, and write offset.
+
         }
     }
-
+    
     int cur_split = -1;
     std::ofstream fout;
     auto close_ofstream = [&]() {
