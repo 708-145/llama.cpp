@@ -1,0 +1,23 @@
+Phase 1: Metadata Collection (No Data Quantization)
+
+1.  **Restore Initial `ctx_outs` Population:** Restore the loop that populates `ctx_outs` with all tensors from `ml.weights_map` using their *original* types. 
+2.  **Define `TensorProcessInfo` Structure:** Create a `struct TensorProcessInfo` to store information needed for Phase 2. This will include `original_weight`, `final_type`, `final_size`, and for T3 tensors, `t3_subtensor_info` for each subtensor. 
+3.  **Populate `all_tensor_infos`:**
+    *   Loop through all tensors in `ml.weights_map`.
+    *   Determine `final_type` and calculate `final_size` for each tensor (or its subtensors for T3).
+    *   Populate `ctx_outs` with the *final* metadata (using `gguf_add_tensor` with the correct `final_type`).
+    *   Store `TensorProcessInfo` objects in a `std::vector<TensorProcessInfo> all_tensor_infos`.
+4.  **Remove `new_ofstream` and `close_ofstream` from Main Loop:** These will be moved to Phase 2.
+5.  **Remove `fout.write` and `zeros` from Main Loop:** These will be moved to Phase 2.
+
+Phase 2: File Writing and Quantization (Data Processing)
+
+1.  **Iterate Splits:** Loop through each split (`n_split`).
+2.  **Open Output File:** Call `new_ofstream` for the current split. This will now correctly calculate `meta_size` using the fully populated `ctx_outs` for that split.
+3.  **Iterate Stored Tensor Information for Current Split:** Loop through the `TensorProcessInfo` objects that belong to the current split (using `all_tensor_infos`).
+4.  **Load, Quantize, and Write Data:** For each tensor:
+    *   Load the original tensor data using `ml.load_data_for(original_weight->tensor)`.
+    *   Perform the actual quantization using `llama_tensor_quantize_impl` to get `new_data` (in `work` buffer) and `new_size`.
+    *   Write the quantized data (`new_data`) to `fout`.
+    *   Update `total_size_org` and `total_size_new`.
+5.  **Close Output File:** Call `close_ofstream`.
