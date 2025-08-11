@@ -882,7 +882,6 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
             // Add dummy sub-tensors
             auto add_dummy_sub_tensor = [&](const std::string& suffix, ggml_type type, int width) {
                 if (width == 0) return;
-                if (it.second.tensor->ne[1] < ggml_blck_size(type)) return;
                 std::string t_name = name + suffix;
                 int64_t ne_new[GGML_MAX_DIMS] = {1, 1, 1, 1};
                 ne_new[0] = width;
