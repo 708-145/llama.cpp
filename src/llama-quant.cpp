@@ -727,6 +727,9 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
     gguf_set_val_u32(ctx_out.get(), "general.quantization_version", GGML_QNT_VERSION);
     gguf_set_val_u32(ctx_out.get(), "general.file_type", ftype);
 
+    // Log metadata size before tensor quantization
+    LLAMA_LOG_INFO("%s: metadata size before tensor quantization = %8.2f KB\n", __func__, gguf_get_meta_size(ctx_out.get()) / 1024.0);
+
     // Remove split metadata
     gguf_remove_key(ctx_out.get(), ml.llm_kv(LLM_KV_SPLIT_NO).c_str());
     gguf_remove_key(ctx_out.get(), ml.llm_kv(LLM_KV_SPLIT_COUNT).c_str());
@@ -911,7 +914,9 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
         // Write metadata and close file handler
         if (fout.is_open()) {
             fout.seekp(0);
-            std::vector<uint8_t> data(gguf_get_meta_size(ctx_outs[cur_split].get()));
+            size_t meta_size = gguf_get_meta_size(ctx_outs[cur_split].get());
+            LLAMA_LOG_INFO("%s: metadata size after tensor quantization = %8.2f KB\n", __func__, meta_size / 1024.0);
+            std::vector<uint8_t> data(meta_size);
             gguf_get_meta_data(ctx_outs[cur_split].get(), data.data());
             fout.write((const char *) data.data(), data.size());
             fout.close();
