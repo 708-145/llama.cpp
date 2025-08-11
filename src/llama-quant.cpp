@@ -859,6 +859,53 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
         }
     }
 
+    // Pre-process T3 tensors to add their metadata
+    for (const auto & it : ml.weights_map) {
+        const std::string name = it.first;
+        if (smarterquant_data.count(name) > 0 && smarterquant_data.at(name).size() > 4) {
+            const auto& sq_info = smarterquant_data[name];
+            const std::vector<int> perm = sq_info[4];
+            const int t1_width = 256;
+            const int t2_width = 512;
+
+            ggml_type t1_type = static_cast<ggml_type>(sq_info[1].get<int>());
+            ggml_type t2_type = static_cast<ggml_type>(sq_info[2].get<int>());
+            ggml_type t3_type = static_cast<ggml_type>(sq_info[0].get<int>());
+
+            const int64_t n_per_row = it.second.tensor->ne[0];
+            const int64_t nrows = it.second.tensor->ne[1];
+            const int t3_width = n_per_row - t1_width - t2_width;
+
+            // Remove original tensor entry
+            gguf_remove_key(ctx_outs[0].get(), name.c_str()); // Assuming cur_split is 0 for now
+
+            // Add dummy sub-tensors
+            auto add_dummy_sub_tensor = [&](const std::string& suffix, ggml_type type, int width) {
+                if (width == 0) return;
+                if (it.second.tensor->ne[1] < ggml_blck_size(type)) return;
+                std::string t_name = name + suffix;
+                int64_t ne_new[GGML_MAX_DIMS] = {1, 1, 1, 1};
+                ne_new[0] = width;
+                ne_new[1] = nrows;
+                int n_dims_new = ggml_n_dims(it.second.tensor);
+                for (int i = 2; i < n_dims_new; i++) {
+                    ne_new[i] = it.second.tensor->ne[i];
+                }
+                struct ggml_tensor * dummy_tensor = ggml_new_tensor(gctx, type, n_dims_new, ne_new);
+                ggml_set_name(dummy_tensor, t_name.c_str());
+                LLAMA_LOG_INFO("Adding dummy tensor: %s with dimensions: %ld, %ld, %ld, %ld\n", t_name.c_str(), ne_new[0], ne_new[1], ne_new[2], ne_new[3]);
+                gguf_add_tensor(ctx_outs[0].get(), dummy_tensor); // Assuming cur_split is 0
+            };
+
+            add_dummy_sub_tensor(".t1", t1_type, t1_width);
+            add_dummy_sub_tensor(".t2", t2_type, t2_width);
+            add_dummy_sub_tensor(".t3", t3_type, t3_width);
+
+            // Add permutation metadata
+            gguf_set_arr_data(ctx_outs[0].get(), (name + ".permutation").c_str(), GGUF_TYPE_INT32, perm.data(), perm.size());
+        }
+    }
+
     int cur_split = -1;
     std::ofstream fout;
     auto close_ofstream = [&]() {
@@ -971,113 +1018,79 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
         void * new_data;
         size_t new_size;
 
-        if (smarterquant_data.count(name) > 0) {
-            // T3 quantization
-            const auto& sq_info = smarterquant_data[name];
-            const std::vector<int> perm = sq_info[4];
-            const int t1_width = 256;
-            const int t2_width = 512;
+        if ("name is a key in smarterquant_data") {
+                // T3 quantization
+                const auto& sq_info = smarterquant_data[name];
+                const std::vector<int> perm = sq_info[4];
+                const int t1_width = 256;
+                const int t2_width = 512;
 
-            ggml_type t1_type = static_cast<ggml_type>(sq_info[1].get<int>());
-            ggml_type t2_type = static_cast<ggml_type>(sq_info[2].get<int>());
-            ggml_type t3_type = static_cast<ggml_type>(sq_info[0].get<int>());
+                ggml_type t1_type = static_cast<ggml_type>(sq_info[1].get<int>());
+                ggml_type t2_type = static_cast<ggml_type>(sq_info[2].get<int>());
+                ggml_type t3_type = static_cast<ggml_type>(sq_info[0].get<int>());
 
 
-            const int64_t nelements = ggml_nelements(tensor);
-            float* f32_data;
-            if (tensor->type == GGML_TYPE_F32) {
-                f32_data = (float*)tensor->data;
-            } else {
-                llama_tensor_dequantize_impl(tensor, f32_conv_buf, workers, nelements, nthread);
-                f32_data = (float*)f32_conv_buf.data();
-            }
-
-            const int64_t n_per_row = tensor->ne[0];
-            const int64_t nrows = tensor->ne[1];
-
-            LLAMA_LOG_INFO("T3 Quantization: Processing tensor: %s\n", name.c_str());
-            LLAMA_LOG_INFO("  Tensor dimensions: nelements=%ld, n_per_row=%ld, nrows=%ld\n", nelements, n_per_row, nrows);
-            LLAMA_LOG_INFO("  Permutation vector size: %zu\n", perm.size());
-            if (!perm.empty()) {
-                LLAMA_LOG_INFO("  Permutation vector first 5 elements: %d, %d, %d, %d, %d\n", perm[0], perm[1], perm[2], perm[3], perm[4]);
-                LLAMA_LOG_INFO("  Permutation vector last 5 elements: %d, %d, %d, %d, %d\n", perm[perm.size()-5], perm[perm.size()-4], perm[perm.size()-3], perm[perm.size()-2], perm[perm.size()-1]);
-            }
-            LLAMA_LOG_INFO("  t1_width=%d, t2_width=%d, t3_width=%ld\n", t1_width, t2_width, n_per_row - t1_width - t2_width);
-            LLAMA_LOG_INFO("  t1_type=%s (%d), t2_type=%s (%d), t3_type=%s (%d)\n", ggml_type_name(t1_type), t1_type, ggml_type_name(t2_type), t2_type, ggml_type_name(t3_type), t3_type);
-
-            if (n_per_row < 768) LLAMA_LOG_ERROR("Tensor %s contains less than 768 elements, which is not recommended for T3 quantization.\n", name.c_str());
-
-            std::vector<float> permuted_data(nelements);
-            for (int j = 0; j < nrows; j++) {
-                for (int i = 0; i < n_per_row; i++) {
-                    permuted_data[j * n_per_row + i] = f32_data[j * n_per_row + perm[i]];
+                const int64_t nelements = ggml_nelements(tensor);
+                float* f32_data;
+                if (tensor->type == GGML_TYPE_F32) {
+                    f32_data = (float*)tensor->data;
+                } else {
+                    llama_tensor_dequantize_impl(tensor, f32_conv_buf, workers, nelements, nthread);
+                    f32_data = (float*)f32_conv_buf.data();
                 }
-            }
-            LLAMA_LOG_DEBUG("  Permuted: %s\n", name.c_str());
 
-            const int t3_width = n_per_row - t1_width - t2_width;
+                const int64_t n_per_row = tensor->ne[0];
+                const int64_t nrows = tensor->ne[1];
 
-            auto quantize_and_write = [&](const std::string& suffix, ggml_type type, int width, int offset, bool is_t1) {
-                if (width == 0) {
-                    LLAMA_LOG_INFO("  Skipping quantization for %s%s due to zero width.\n", name.c_str(), suffix.c_str());
-                    return;
-                }
-                std::string t_name = name + suffix;
-                std::vector<float> t_data(width * nrows);
-                // permuted_data contains the data in the correct order for all three t3 tensors
+                LLAMA_LOG_INFO("T3 Quantization: t1_width=%d (%s), t2_width=%d (%s), t3_width=%ld (%s)\n", t1_width, ggml_type_name(t1_type), t2_width, ggml_type_name(t2_type), n_per_row - t1_width - t2_width, ggml_type_name(t3_type));
+                if (n_per_row < 768) LLAMA_LOG_ERROR("Tensor %s contains less than 768 elements, which is not supported by T3 quantization.\n", name.c_str());
+
+                std::vector<float> permuted_data(nelements);
                 for (int j = 0; j < nrows; j++) {
-                    memcpy(t_data.data() + j * width, permuted_data.data() + j * n_per_row + offset, width * sizeof(float));
+                    for (int i = 0; i < n_per_row; i++) {
+                        permuted_data[j * n_per_row + i] = f32_data[j * n_per_row + perm[i]];
+                    }
                 }
+                LLAMA_LOG_DEBUG("  Permuted: %s\n", name.c_str());
 
-                if (work.size() < (size_t)width * nrows * 4) {
-                    work.resize(width * nrows * 4);
-                }
-                void* t_new_data = work.data();
+                const int t3_width = n_per_row - t1_width - t2_width;
 
-                LLAMA_LOG_INFO("  Quantizing %s: type=%s, width=%d, nrows=%ld, offset=%d\n", t_name.c_str(), ggml_type_name(type), width, nrows, offset);
-                size_t t_new_size = llama_tensor_quantize_impl(type, t_data.data(), t_new_data, width, nrows, width, nullptr, workers, nthread);
+                auto quantize_and_write = [&](const std::string& suffix, ggml_type type, int width, int offset) {
+                    if (width == 0) {
+                        LLAMA_LOG_INFO("  Skipping quantization for %s%s due to zero width.\n", name.c_str(), suffix.c_str());
+                        return;
+                    }
+                    std::string t_name = name + suffix;
+                    std::vector<float> t_data(width * nrows);
+                    // permuted_data contains the data in the correct order for all three t3 tensors
+                    for (int j = 0; j < nrows; j++) {
+                        memcpy(t_data.data() + j * width, permuted_data.data() + j * n_per_row + offset, width * sizeof(float));
+                    }
 
-                // Determine dimensions for the new tensor
-                int64_t ne_new[GGML_MAX_DIMS];
-                ne_new[0] = width;
-                ne_new[1] = nrows;
-                int n_dims_new = 2;
-                if (tensor->ne[2] > 1) {
-                    ne_new[2] = tensor->ne[2];
-                    n_dims_new = 3;
-                } else {
-                    ne_new[2] = 1;
-                }
-                if (tensor->ne[3] > 1) {
-                    ne_new[3] = tensor->ne[3];
-                    n_dims_new = 4;
-                } else {
-                    ne_new[3] = 1;
-                }
+                    if (work.size() < (size_t)width * nrows * 4) {
+                        work.resize(width * nrows * 4);
+                    }
+                    void* t_new_data = work.data();
 
-                LLAMA_LOG_INFO("  Attempting to create new tensor: type=%s, width=%d, nrows=%ld, n_dims=%d\n", ggml_type_name(type), width, nrows, n_dims_new);
+                    LLAMA_LOG_INFO("  Quantizing %s: type=%s, width=%d, nrows=%ld, offset=%d\n", t_name.c_str(), ggml_type_name(type), width, nrows, offset);
+                    size_t t_new_size = llama_tensor_quantize_impl(type, t_data.data(), t_new_data, width * nrows, nrows, width, nullptr, workers, nthread);
 
-                // Create a new tensor for .t1, .t2 and .t3
-                struct ggml_tensor * new_tensor = ggml_new_tensor(gctx, type, n_dims_new, ne_new);
-                ggml_set_name(new_tensor, t_name.c_str());
-                gguf_add_tensor(ctx_outs[cur_split].get(), new_tensor);
-                gguf_set_tensor_data(ctx_outs[cur_split].get(), t_name.c_str(), t_new_data);
+                    // Update tensor data for .t1, .t2 and .t3
+                    // Metadata already added in pre-processing phase
+                    gguf_set_tensor_data(ctx_outs[cur_split].get(), t_name.c_str(), t_new_data);
 
-                fout.write((const char*)t_new_data, t_new_size);
-                zeros(fout, GGML_PAD(t_new_size, align) - t_new_size);
-                total_size_new += t_new_size;
-            };
+                    fout.write((const char*)t_new_data, t_new_size);
+                    zeros(fout, GGML_PAD(t_new_size, align) - t_new_size);
+                    total_size_new += t_new_size;
+                };
 
-            quantize_and_write(".t1", t1_type, t1_width, 0, true);
-            quantize_and_write(".t2", t2_type, t2_width, t1_width, false);
-            quantize_and_write(".t3", t3_type, t3_width, t1_width + t2_width, false);
+                quantize_and_write(".t1", t1_type, t1_width, 0);
+                quantize_and_write(".t2", t2_type, t2_width, t1_width);
+                quantize_and_write(".t3", t3_type, t3_width, t1_width + t2_width);
+                new_type = t1_type;
 
-            gguf_set_arr_data(ctx_outs[cur_split].get(), (name + ".permutation").c_str(), GGUF_TYPE_INT32, perm.data(), perm.size());
-
-            total_size_org += ggml_nbytes(tensor);
-            gguf_remove_key(ctx_outs[cur_split].get(), name.c_str());
-
-        } else if (quantize) {
+                total_size_org += ggml_nbytes(tensor);
+            } else if (quantize) {
             new_type = default_type;
 
             // get more optimal quantization type based on the tensor shape, layer, etc.
