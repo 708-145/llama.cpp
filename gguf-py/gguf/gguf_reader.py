@@ -365,6 +365,7 @@ class GGUFReader:
                 item_count = n_bytes
                 item_type = np.uint8
                 np_dims = quant_shape_to_byte_shape(np_dims, ggml_type)
+            print("DEBUG: Processing tensor: {}, np_dims: {}, item_count: {}, ggml_type: {}".format(tensor_name, np_dims, item_count, ggml_type.name))
             tensors.append(ReaderTensor(
                 name = tensor_name,
                 tensor_type = ggml_type,
@@ -372,7 +373,6 @@ class GGUFReader:
                 n_elements = n_elems,
                 n_bytes = n_bytes,
                 data_offset = data_offs,
-                print("DEBUG: Processing tensor")
             data = self._get(data_offs, item_type, item_count).reshape(np_dims),
                 field = field,
             ))
