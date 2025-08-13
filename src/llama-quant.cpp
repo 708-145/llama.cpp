@@ -884,7 +884,6 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
                 }
                 struct ggml_tensor * dummy_tensor = ggml_new_tensor(gctx, type, n_dims_new, ne_new);
                 ggml_set_name(dummy_tensor, t_name.c_str());
-                LLAMA_LOG_INFO("Adding dummy tensor: %s (type: %s, size: %zu bytes) with dimensions: %ld, %ld, %ld, %ld, n_dims: %d\n", t_name.c_str(), ggml_type_name(type), ggml_nbytes(dummy_tensor), ne_new[0], ne_new[1], ne_new[2], ne_new[3], n_dims_new);
                 gguf_add_tensor(ctx_outs[i_split].get(), dummy_tensor);
             };
 
@@ -894,7 +893,6 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
 
             // Add permutation metadata
             gguf_set_arr_data(ctx_outs[i_split].get(), (name + ".permutation").c_str(), GGUF_TYPE_INT32, perm.data(), perm.size());
-            LLAMA_LOG_INFO("%s: added permutation metadata for %s.permutation\n", __func__, name.c_str());
             new_type = t1_type;
         } else {
             bool quantize = name.rfind("weight") == name.size() - 6;
@@ -925,12 +923,31 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
             quantize &= name.find("time_mix_decay_w1.weight") == std::string::npos;
             quantize &= name.find("time_mix_decay_w2.weight") == std::string::npos;
             quantize &= name.find("time_mix_lerp_fused.weight") == std::string::npos;
-
-            // do not quantize relative position bias (T5)
             quantize &= name.find("attn_rel_b.weight") == std::string::npos;
 
             if (quantize) {
-                new_type = llama_tensor_get_type(qs_meta, new_type, tensor, ftype);
+                new_type = default_type;
+                if (!params->pure && ggml_is_quantized(default_type)) {
+                    int fallback = qs_meta.n_fallback;
+                    new_type = llama_tensor_get_type(qs_meta, new_type, tensor, ftype);
+                    if (params->tensor_types && qs_meta.n_fallback - fallback == 0) {
+                        const std::vector<tensor_quantization> & tensor_types = *static_cast<const std::vector<tensor_quantization> *>(params->tensor_types);
+                        const std::string tensor_name(tensor->name);
+                        for (const auto & [tname, qtype] : tensor_types) {
+                            if (std::regex pattern(tname); std::regex_search(tensor_name, pattern)) {
+                                if  (qtype != new_type) {
+                                    new_type = qtype;
+                                }
+                            }
+                        }
+                    }
+                }
+                if (params->token_embedding_type < GGML_TYPE_COUNT && strcmp(tensor->name, "token_embd.weight") == 0) {
+                    new_type = params->token_embedding_type;
+                }
+                if (params->output_tensor_type < GGML_TYPE_COUNT && strcmp(tensor->name, "output.weight") == 0) {
+                    new_type = params->output_tensor_type;
+                }
             }
 
             if (tensor->type != new_type) {
@@ -1276,22 +1293,6 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
 //
 // interface implementation
 //
-
-// Stub function to calculate the quantized size of a tensor.
-// This function should implement the logic to determine the final size of a tensor after quantization.
-// It should not perform the actual quantization.
-//
-// @param tensor The original tensor.
-// @param params The quantization parameters.
-// @return The size in bytes of the quantized tensor.
-static size_t calculate_quantized_size(const ggml_tensor * tensor, const llama_model_quantize_params * params) {
-    // TODO: Implement the logic to calculate the quantized size.
-    // This involves determining the new type of the tensor after quantization,
-    // and then calculating the size based on the new type and tensor dimensions.
-
-    // For now, returning the original size.
-    return ggml_nbytes(tensor);
-}
 
 llama_model_quantize_params llama_model_quantize_default_params() {
     llama_model_quantize_params result = {
