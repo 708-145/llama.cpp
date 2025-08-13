@@ -918,10 +918,16 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
         // TB: copy metadata to a new context first and write that one to file. This fixes the issue with the offsets.
         if (fout.is_open()) {
             fout.seekp(0);
-            size_t meta_size = gguf_get_meta_size(ctx_outs[cur_split].get());
+            gguf_context_ptr ctx_temp { gguf_init_empty() };
+            gguf_set_kv(ctx_temp.get(), ctx_outs[cur_split].get());
+            for (const auto * it : tensors) {
+                ggml_tensor * tensor = it->tensor;
+                gguf_add_tensor(ctx_temp.get(), tensor);
+            }
+            size_t meta_size = gguf_get_meta_size(ctx_temp.get());
             LLAMA_LOG_INFO("%s: metadata size after tensor quantization = %8.2f KB\n", __func__, meta_size / 1024.0);
             std::vector<uint8_t> data(meta_size);
-            gguf_get_meta_data(ctx_outs[cur_split].get(), data.data());
+            gguf_get_meta_data(ctx_temp.get(), data.data());
             fout.write((const char *) data.data(), data.size());
             fout.close();
         }
