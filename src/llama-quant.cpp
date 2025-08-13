@@ -893,8 +893,10 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
                 struct ggml_tensor * new_tensor = ggml_new_tensor(gctx, new_type, ggml_n_dims(tensor), tensor->ne);
                 ggml_set_name(new_tensor, name.c_str());
                 gguf_add_tensor(ctx_outs[i_split].get(), new_tensor);
+                LLAMA_LOG_INFO("DEBUG: Added tensor %s to ctx_outs[%d], offset: %zu\n", name.c_str(), i_split, gguf_get_tensor_offset(ctx_outs[i_split].get(), gguf_find_tensor(ctx_outs[i_split].get(), name.c_str())));
             } else {
                 gguf_add_tensor(ctx_outs[i_split].get(), tensor);
+                LLAMA_LOG_INFO("DEBUG: Added tensor %s to ctx_outs[%d], offset: %zu\n", name.c_str(), i_split, gguf_get_tensor_offset(ctx_outs[i_split].get(), gguf_find_tensor(ctx_outs[i_split].get(), name.c_str())));
             }
         }
         tensor_new_types[name] = new_type;
@@ -928,6 +930,10 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
             LLAMA_LOG_INFO("%s: metadata size after tensor quantization = %8.2f KB\n", __func__, meta_size / 1024.0);
             std::vector<uint8_t> data(meta_size);
             gguf_get_meta_data(ctx_temp.get(), data.data());
+            LLAMA_LOG_INFO("DEBUG: Tensors in ctx_temp before writing:\n");
+            for (int i = 0; i < gguf_get_n_tensors(ctx_temp.get()); ++i) {
+                LLAMA_LOG_INFO("DEBUG:   Tensor %d: %s, offset: %zu\n", i, gguf_get_tensor_name(ctx_temp.get(), i), gguf_get_tensor_offset(ctx_temp.get(), i));
+            }
             fout.write((const char *) data.data(), data.size());
             fout.close();
         }
@@ -945,6 +951,7 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
         fout = std::ofstream(fname, std::ios::binary);
         fout.exceptions(std::ofstream::failbit); // fail fast on write errors
         const size_t meta_size = gguf_get_meta_size(ctx_outs[cur_split].get());
+        LLAMA_LOG_INFO("DEBUG: meta_size in new_ofstream: %zu\n", meta_size);
         // placeholder for the meta data
         ::zeros(fout, meta_size);
     };
