@@ -893,10 +893,10 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
                 struct ggml_tensor * new_tensor = ggml_new_tensor(gctx, new_type, ggml_n_dims(tensor), tensor->ne);
                 ggml_set_name(new_tensor, name.c_str());
                 gguf_add_tensor(ctx_outs[i_split].get(), new_tensor);
-                LLAMA_LOG_INFO("DEBUG: Added tensor %s to ctx_outs[%d], offset: %zu\n", name.c_str(), i_split, gguf_get_tensor_offset(ctx_outs[i_split].get(), gguf_find_tensor(ctx_outs[i_split].get(), name.c_str())));
+                LLAMA_LOG_INFO("DEBUG1: Added tensor %s to ctx_outs[%d], offset: %zu\n", name.c_str(), i_split, gguf_get_tensor_offset(ctx_outs[i_split].get(), gguf_find_tensor(ctx_outs[i_split].get(), name.c_str())));
             } else {
                 gguf_add_tensor(ctx_outs[i_split].get(), tensor);
-                LLAMA_LOG_INFO("DEBUG: Added tensor %s to ctx_outs[%d], offset: %zu\n", name.c_str(), i_split, gguf_get_tensor_offset(ctx_outs[i_split].get(), gguf_find_tensor(ctx_outs[i_split].get(), name.c_str())));
+                LLAMA_LOG_INFO("DEBUG2: Added tensor %s to ctx_outs[%d], offset: %zu\n", name.c_str(), i_split, gguf_get_tensor_offset(ctx_outs[i_split].get(), gguf_find_tensor(ctx_outs[i_split].get(), name.c_str())));
             }
         }
         tensor_new_types[name] = new_type;
@@ -921,7 +921,7 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
         if (fout.is_open()) {
             fout.seekp(0);
             size_t meta_size = gguf_get_meta_size(ctx_outs[cur_split].get());
-            LLAMA_LOG_INFO("%s: metadata size after tensor quantization = %8.2f KB\n", __func__, meta_size / 1024.0);
+            LLAMA_LOG_INFO("%s: metadata size after tensor quantization = %zu (%8.2f KB)\n", __func__, meta_size, meta_size / 1024.0);
             std::vector<uint8_t> data(meta_size);
             gguf_get_meta_data(ctx_outs[cur_split].get(), data.data());
             LLAMA_LOG_INFO("DEBUG: Tensors in ctx_outs[cur_split] before writing:\n");
@@ -945,8 +945,12 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
         fout = std::ofstream(fname, std::ios::binary);
         fout.exceptions(std::ofstream::failbit); // fail fast on write errors
         const size_t meta_size = gguf_get_meta_size(ctx_outs[cur_split].get());
-        LLAMA_LOG_INFO("DEBUG: meta_size in new_ofstream: %zu\n", meta_size);
+        LLAMA_LOG_INFO("DEBUG: meta_size in new_ofstream: %zu (%8.2f KB)\n", meta_size, meta_size / 1024.0);
         // placeholder for the meta data
+        LLAMA_LOG_INFO("DEBUG: Tensors in ctx_outs[cur_split] before writing:\n");
+        for (int i = 0; i < gguf_get_n_tensors(ctx_outs[cur_split].get()); ++i) {
+            LLAMA_LOG_INFO("DEBUG:   Tensor %d: %s, offset: %zu\n", i, gguf_get_tensor_name(ctx_outs[cur_split].get(), i), gguf_get_tensor_offset(ctx_outs[cur_split].get(), i));
+        }
         ::zeros(fout, meta_size);
     };
 
@@ -1090,6 +1094,8 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
                 // Update tensor data for .t1, .t2 and .t3
                 // Metadata already added in pre-processing phase
                 gguf_set_tensor_data(ctx_outs[cur_split].get(), t_name.c_str(), t_new_data);
+
+                LLAMA_LOG_INFO("%s: writing tensor data for %s at offset %zu\n", __func__, t_name.c_str(), (size_t)fout.tellp());
 
                 fout.write((const char*)t_new_data, t_new_size);
                 zeros(fout, GGML_PAD(t_new_size, align) - t_new_size);
