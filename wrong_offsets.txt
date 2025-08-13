@@ -1,0 +1,1454 @@
+gguf_init_from_file_impl: invalid magic characters: '`???', expected 'GGUF'
+load_imatrix: imatrix file 'Tiny-Moe.imatrix' is using old format
+main: build = 6160 (bdf81980)
+main: built with cc (Ubuntu 11.4.0-1ubuntu1~22.04) 11.4.0 for x86_64-linux-gnu
+main: quantizing 'Tiny-Moe.IQ4_XS.gguf' to 'Tiny-Moe.IQ4_XS_T3.gguf' as IQ4_NL
+llama_model_loader: loaded meta data with 47 key-value pairs and 123 tensors from Tiny-Moe.IQ4_XS.gguf (version GGUF V3 (latest))
+llama_model_loader: Dumping metadata keys/values. Note: KV overrides do not apply in this output.
+llama_model_loader: - kv   0:                       general.architecture str              = llama
+llama_model_loader: - kv   1:                               general.type str              = model
+llama_model_loader: - kv   2:                               general.name str              = Tiny_Test
+llama_model_loader: - kv   3:                       general.organization str              = Corianas
+llama_model_loader: - kv   4:                         general.size_label str              = 2x91M
+llama_model_loader: - kv   5:                            general.license str              = cc-by-nc-4.0
+llama_model_loader: - kv   6:                   general.base_model.count u32              = 2
+llama_model_loader: - kv   7:                  general.base_model.0.name str              = Tiny_Test
+llama_model_loader: - kv   8:          general.base_model.0.organization str              = Corianas
+llama_model_loader: - kv   9:              general.base_model.0.repo_url str              = https://huggingface.co/Corianas/Tiny_...
+llama_model_loader: - kv  10:                  general.base_model.1.name str              = TinyTask Minipaca
+llama_model_loader: - kv  11:          general.base_model.1.organization str              = Corianas
+llama_model_loader: - kv  12:              general.base_model.1.repo_url str              = https://huggingface.co/Corianas/TinyT...
+llama_model_loader: - kv  13:                               general.tags arr[str,7]       = ["moe", "frankenmoe", "merge", "merge...
+llama_model_loader: - kv  14:                          llama.block_count u32              = 12
+llama_model_loader: - kv  15:                       llama.context_length u32              = 2048
+llama_model_loader: - kv  16:                     llama.embedding_length u32              = 768
+llama_model_loader: - kv  17:                  llama.feed_forward_length u32              = 2048
+llama_model_loader: - kv  18:                 llama.attention.head_count u32              = 12
+llama_model_loader: - kv  19:              llama.attention.head_count_kv u32              = 12
+llama_model_loader: - kv  20:                       llama.rope.freq_base f32              = 10000.000000
+llama_model_loader: - kv  21:     llama.attention.layer_norm_rms_epsilon f32              = 0.000010
+llama_model_loader: - kv  22:                         llama.expert_count u32              = 2
+llama_model_loader: - kv  23:                    llama.expert_used_count u32              = 2
+llama_model_loader: - kv  24:                           llama.vocab_size u32              = 4096
+llama_model_loader: - kv  25:                 llama.rope.dimension_count u32              = 64
+llama_model_loader: - kv  26:                       tokenizer.ggml.model str              = llama
+llama_model_loader: - kv  27:                         tokenizer.ggml.pre str              = default
+llama_model_loader: - kv  28:                      tokenizer.ggml.tokens arr[str,4096]    = ["<unk>", "<s>", "</s>", "<0x00>", "<...
+llama_model_loader: - kv  29:                      tokenizer.ggml.scores arr[f32,4096]    = [-1000.000000, -1000.000000, -1000.00...
+llama_model_loader: - kv  30:                  tokenizer.ggml.token_type arr[i32,4096]    = [3, 3, 3, 6, 6, 6, 6, 6, 6, 6, 6, 6, ...
+llama_model_loader: - kv  31:                tokenizer.ggml.bos_token_id u32              = 1
+llama_model_loader: - kv  32:                tokenizer.ggml.eos_token_id u32              = 2
+llama_model_loader: - kv  33:            tokenizer.ggml.unknown_token_id u32              = 0
+llama_model_loader: - kv  34:            tokenizer.ggml.padding_token_id u32              = 1
+llama_model_loader: - kv  35:               tokenizer.ggml.add_bos_token bool             = true
+llama_model_loader: - kv  36:               tokenizer.ggml.add_eos_token bool             = false
+llama_model_loader: - kv  37:            tokenizer.ggml.add_space_prefix bool             = true
+llama_model_loader: - kv  38:               general.quantization_version u32              = 2
+llama_model_loader: - kv  39:                          general.file_type u32              = 30
+llama_model_loader: - kv  40:                                general.url str              = https://huggingface.co/mradermacher/T...
+llama_model_loader: - kv  41:              mradermacher.quantize_version str              = 2
+llama_model_loader: - kv  42:                  mradermacher.quantized_by str              = mradermacher
+llama_model_loader: - kv  43:                  mradermacher.quantized_at str              = 2025-03-31T15:08:21+02:00
+llama_model_loader: - kv  44:                  mradermacher.quantized_on str              = rich1
+llama_model_loader: - kv  45:                         general.source.url str              = https://huggingface.co/Corianas/Tiny-Moe
+llama_model_loader: - kv  46:                  mradermacher.convert_type str              = hf
+llama_model_loader: - type  f32:   37 tensors
+llama_model_loader: - type q5_K:    1 tensors
+llama_model_loader: - type q6_K:    1 tensors
+llama_model_loader: - type iq4_xs:   84 tensors
+Attempting to open smarterquant file: Tiny-Moe.smarterquant.json
+================================ Have weights data with 96 entries
+llama_model_quantize_impl: metadata size before tensor quantization =    93.28 KB
+DEBUG2: Added tensor output.weight to ctx_outs[0], offset: 0
+DEBUG2: Added tensor output_norm.weight to ctx_outs[0], offset: 2580480
+DEBUG2: Added tensor token_embd.weight to ctx_outs[0], offset: 2583552
+DEBUG2: Added tensor blk.0.attn_norm.weight to ctx_outs[0], offset: 4598784
+DEBUG2: Added tensor blk.0.ffn_norm.weight to ctx_outs[0], offset: 9002880
+DEBUG2: Added tensor blk.1.attn_norm.weight to ctx_outs[0], offset: 11185024
+DEBUG2: Added tensor blk.1.ffn_norm.weight to ctx_outs[0], offset: 15589120
+DEBUG2: Added tensor blk.2.attn_norm.weight to ctx_outs[0], offset: 17771264
+DEBUG2: Added tensor blk.2.ffn_norm.weight to ctx_outs[0], offset: 22175360
+DEBUG2: Added tensor blk.3.attn_norm.weight to ctx_outs[0], offset: 24357504
+DEBUG2: Added tensor blk.3.ffn_norm.weight to ctx_outs[0], offset: 28761600
+DEBUG2: Added tensor blk.4.attn_norm.weight to ctx_outs[0], offset: 30943744
+DEBUG2: Added tensor blk.4.ffn_norm.weight to ctx_outs[0], offset: 35347840
+DEBUG2: Added tensor blk.5.attn_norm.weight to ctx_outs[0], offset: 37529984
+DEBUG2: Added tensor blk.5.ffn_norm.weight to ctx_outs[0], offset: 41934080
+DEBUG2: Added tensor blk.6.attn_norm.weight to ctx_outs[0], offset: 44116224
+DEBUG2: Added tensor blk.6.ffn_norm.weight to ctx_outs[0], offset: 48520320
+DEBUG2: Added tensor blk.7.attn_norm.weight to ctx_outs[0], offset: 50702464
+DEBUG2: Added tensor blk.7.ffn_norm.weight to ctx_outs[0], offset: 55106560
+DEBUG2: Added tensor blk.8.attn_norm.weight to ctx_outs[0], offset: 57288704
+DEBUG2: Added tensor blk.8.ffn_norm.weight to ctx_outs[0], offset: 61692800
+DEBUG2: Added tensor blk.9.attn_norm.weight to ctx_outs[0], offset: 63874944
+DEBUG2: Added tensor blk.9.ffn_norm.weight to ctx_outs[0], offset: 68279040
+DEBUG2: Added tensor blk.10.attn_norm.weight to ctx_outs[0], offset: 70461184
+DEBUG2: Added tensor blk.10.ffn_norm.weight to ctx_outs[0], offset: 74865280
+DEBUG2: Added tensor blk.11.attn_norm.weight to ctx_outs[0], offset: 77047424
+DEBUG2: Added tensor blk.11.ffn_norm.weight to ctx_outs[0], offset: 81451520
+DEBUG: meta_size in new_ofstream: 473120 (  462.03 KB)
+DEBUG: Tensors in ctx_outs[cur_split] before writing:
+DEBUG:   Tensor 0: output.weight, offset: 0
+DEBUG:   Tensor 1: output_norm.weight, offset: 2580480
+DEBUG:   Tensor 2: token_embd.weight, offset: 2583552
+DEBUG:   Tensor 3: blk.0.attn_k.weight.t1, offset: 4254720
+DEBUG:   Tensor 4: blk.0.attn_k.weight.t2, offset: 4389888
+DEBUG:   Tensor 5: blk.0.attn_norm.weight, offset: 4598784
+DEBUG:   Tensor 6: blk.0.attn_output.weight.t1, offset: 4601856
+DEBUG:   Tensor 7: blk.0.attn_output.weight.t2, offset: 4737024
+DEBUG:   Tensor 8: blk.0.attn_q.weight.t1, offset: 4945920
+DEBUG:   Tensor 9: blk.0.attn_q.weight.t2, offset: 5081088
+DEBUG:   Tensor 10: blk.0.attn_v.weight.t1, offset: 5289984
+DEBUG:   Tensor 11: blk.0.attn_v.weight.t2, offset: 5425152
+DEBUG:   Tensor 12: blk.0.ffn_down_exps.weight.t1, offset: 5634048
+DEBUG:   Tensor 13: blk.0.ffn_down_exps.weight.t2, offset: 5904384
+DEBUG:   Tensor 14: blk.0.ffn_down_exps.weight.t3, offset: 6322176
+DEBUG:   Tensor 15: blk.0.ffn_gate_exps.weight.t1, offset: 7166976
+DEBUG:   Tensor 16: blk.0.ffn_gate_exps.weight.t2, offset: 7887872
+DEBUG:   Tensor 17: blk.0.ffn_gate_inp.weight.t1, offset: 9001984
+DEBUG:   Tensor 18: blk.0.ffn_gate_inp.weight.t2, offset: 9002336
+DEBUG:   Tensor 19: blk.0.ffn_norm.weight, offset: 9002880
+DEBUG:   Tensor 20: blk.0.ffn_up_exps.weight.t1, offset: 9005952
+DEBUG:   Tensor 21: blk.0.ffn_up_exps.weight.t2, offset: 9726848
+DEBUG:   Tensor 22: blk.1.attn_k.weight.t1, offset: 10840960
+DEBUG:   Tensor 23: blk.1.attn_k.weight.t2, offset: 10976128
+DEBUG:   Tensor 24: blk.1.attn_norm.weight, offset: 11185024
+DEBUG:   Tensor 25: blk.1.attn_output.weight.t1, offset: 11188096
+DEBUG:   Tensor 26: blk.1.attn_output.weight.t2, offset: 11323264
+DEBUG:   Tensor 27: blk.1.attn_q.weight.t1, offset: 11532160
+DEBUG:   Tensor 28: blk.1.attn_q.weight.t2, offset: 11667328
+DEBUG:   Tensor 29: blk.1.attn_v.weight.t1, offset: 11876224
+DEBUG:   Tensor 30: blk.1.attn_v.weight.t2, offset: 12011392
+DEBUG:   Tensor 31: blk.1.ffn_down_exps.weight.t1, offset: 12220288
+DEBUG:   Tensor 32: blk.1.ffn_down_exps.weight.t2, offset: 12490624
+DEBUG:   Tensor 33: blk.1.ffn_down_exps.weight.t3, offset: 12908416
+DEBUG:   Tensor 34: blk.1.ffn_gate_exps.weight.t1, offset: 13753216
+DEBUG:   Tensor 35: blk.1.ffn_gate_exps.weight.t2, offset: 14474112
+DEBUG:   Tensor 36: blk.1.ffn_gate_inp.weight.t1, offset: 15588224
+DEBUG:   Tensor 37: blk.1.ffn_gate_inp.weight.t2, offset: 15588576
+DEBUG:   Tensor 38: blk.1.ffn_norm.weight, offset: 15589120
+DEBUG:   Tensor 39: blk.1.ffn_up_exps.weight.t1, offset: 15592192
+DEBUG:   Tensor 40: blk.1.ffn_up_exps.weight.t2, offset: 16313088
+DEBUG:   Tensor 41: blk.2.attn_k.weight.t1, offset: 17427200
+DEBUG:   Tensor 42: blk.2.attn_k.weight.t2, offset: 17562368
+DEBUG:   Tensor 43: blk.2.attn_norm.weight, offset: 17771264
+DEBUG:   Tensor 44: blk.2.attn_output.weight.t1, offset: 17774336
+DEBUG:   Tensor 45: blk.2.attn_output.weight.t2, offset: 17909504
+DEBUG:   Tensor 46: blk.2.attn_q.weight.t1, offset: 18118400
+DEBUG:   Tensor 47: blk.2.attn_q.weight.t2, offset: 18253568
+DEBUG:   Tensor 48: blk.2.attn_v.weight.t1, offset: 18462464
+DEBUG:   Tensor 49: blk.2.attn_v.weight.t2, offset: 18597632
+DEBUG:   Tensor 50: blk.2.ffn_down_exps.weight.t1, offset: 18806528
+DEBUG:   Tensor 51: blk.2.ffn_down_exps.weight.t2, offset: 19076864
+DEBUG:   Tensor 52: blk.2.ffn_down_exps.weight.t3, offset: 19494656
+DEBUG:   Tensor 53: blk.2.ffn_gate_exps.weight.t1, offset: 20339456
+DEBUG:   Tensor 54: blk.2.ffn_gate_exps.weight.t2, offset: 21060352
+DEBUG:   Tensor 55: blk.2.ffn_gate_inp.weight.t1, offset: 22174464
+DEBUG:   Tensor 56: blk.2.ffn_gate_inp.weight.t2, offset: 22174816
+DEBUG:   Tensor 57: blk.2.ffn_norm.weight, offset: 22175360
+DEBUG:   Tensor 58: blk.2.ffn_up_exps.weight.t1, offset: 22178432
+DEBUG:   Tensor 59: blk.2.ffn_up_exps.weight.t2, offset: 22899328
+DEBUG:   Tensor 60: blk.3.attn_k.weight.t1, offset: 24013440
+DEBUG:   Tensor 61: blk.3.attn_k.weight.t2, offset: 24148608
+DEBUG:   Tensor 62: blk.3.attn_norm.weight, offset: 24357504
+DEBUG:   Tensor 63: blk.3.attn_output.weight.t1, offset: 24360576
+DEBUG:   Tensor 64: blk.3.attn_output.weight.t2, offset: 24495744
+DEBUG:   Tensor 65: blk.3.attn_q.weight.t1, offset: 24704640
+DEBUG:   Tensor 66: blk.3.attn_q.weight.t2, offset: 24839808
+DEBUG:   Tensor 67: blk.3.attn_v.weight.t1, offset: 25048704
+DEBUG:   Tensor 68: blk.3.attn_v.weight.t2, offset: 25183872
+DEBUG:   Tensor 69: blk.3.ffn_down_exps.weight.t1, offset: 25392768
+DEBUG:   Tensor 70: blk.3.ffn_down_exps.weight.t2, offset: 25663104
+DEBUG:   Tensor 71: blk.3.ffn_down_exps.weight.t3, offset: 26080896
+DEBUG:   Tensor 72: blk.3.ffn_gate_exps.weight.t1, offset: 26925696
+DEBUG:   Tensor 73: blk.3.ffn_gate_exps.weight.t2, offset: 27646592
+DEBUG:   Tensor 74: blk.3.ffn_gate_inp.weight.t1, offset: 28760704
+DEBUG:   Tensor 75: blk.3.ffn_gate_inp.weight.t2, offset: 28761056
+DEBUG:   Tensor 76: blk.3.ffn_norm.weight, offset: 28761600
+DEBUG:   Tensor 77: blk.3.ffn_up_exps.weight.t1, offset: 28764672
+DEBUG:   Tensor 78: blk.3.ffn_up_exps.weight.t2, offset: 29485568
+DEBUG:   Tensor 79: blk.4.attn_k.weight.t1, offset: 30599680
+DEBUG:   Tensor 80: blk.4.attn_k.weight.t2, offset: 30734848
+DEBUG:   Tensor 81: blk.4.attn_norm.weight, offset: 30943744
+DEBUG:   Tensor 82: blk.4.attn_output.weight.t1, offset: 30946816
+DEBUG:   Tensor 83: blk.4.attn_output.weight.t2, offset: 31081984
+DEBUG:   Tensor 84: blk.4.attn_q.weight.t1, offset: 31290880
+DEBUG:   Tensor 85: blk.4.attn_q.weight.t2, offset: 31426048
+DEBUG:   Tensor 86: blk.4.attn_v.weight.t1, offset: 31634944
+DEBUG:   Tensor 87: blk.4.attn_v.weight.t2, offset: 31770112
+DEBUG:   Tensor 88: blk.4.ffn_down_exps.weight.t1, offset: 31979008
+DEBUG:   Tensor 89: blk.4.ffn_down_exps.weight.t2, offset: 32249344
+DEBUG:   Tensor 90: blk.4.ffn_down_exps.weight.t3, offset: 32667136
+DEBUG:   Tensor 91: blk.4.ffn_gate_exps.weight.t1, offset: 33511936
+DEBUG:   Tensor 92: blk.4.ffn_gate_exps.weight.t2, offset: 34232832
+DEBUG:   Tensor 93: blk.4.ffn_gate_inp.weight.t1, offset: 35346944
+DEBUG:   Tensor 94: blk.4.ffn_gate_inp.weight.t2, offset: 35347296
+DEBUG:   Tensor 95: blk.4.ffn_norm.weight, offset: 35347840
+DEBUG:   Tensor 96: blk.4.ffn_up_exps.weight.t1, offset: 35350912
+DEBUG:   Tensor 97: blk.4.ffn_up_exps.weight.t2, offset: 36071808
+DEBUG:   Tensor 98: blk.5.attn_k.weight.t1, offset: 37185920
+DEBUG:   Tensor 99: blk.5.attn_k.weight.t2, offset: 37321088
+DEBUG:   Tensor 100: blk.5.attn_norm.weight, offset: 37529984
+DEBUG:   Tensor 101: blk.5.attn_output.weight.t1, offset: 37533056
+DEBUG:   Tensor 102: blk.5.attn_output.weight.t2, offset: 37668224
+DEBUG:   Tensor 103: blk.5.attn_q.weight.t1, offset: 37877120
+DEBUG:   Tensor 104: blk.5.attn_q.weight.t2, offset: 38012288
+DEBUG:   Tensor 105: blk.5.attn_v.weight.t1, offset: 38221184
+DEBUG:   Tensor 106: blk.5.attn_v.weight.t2, offset: 38356352
+DEBUG:   Tensor 107: blk.5.ffn_down_exps.weight.t1, offset: 38565248
+DEBUG:   Tensor 108: blk.5.ffn_down_exps.weight.t2, offset: 38835584
+DEBUG:   Tensor 109: blk.5.ffn_down_exps.weight.t3, offset: 39253376
+DEBUG:   Tensor 110: blk.5.ffn_gate_exps.weight.t1, offset: 40098176
+DEBUG:   Tensor 111: blk.5.ffn_gate_exps.weight.t2, offset: 40819072
+DEBUG:   Tensor 112: blk.5.ffn_gate_inp.weight.t1, offset: 41933184
+DEBUG:   Tensor 113: blk.5.ffn_gate_inp.weight.t2, offset: 41933536
+DEBUG:   Tensor 114: blk.5.ffn_norm.weight, offset: 41934080
+DEBUG:   Tensor 115: blk.5.ffn_up_exps.weight.t1, offset: 41937152
+DEBUG:   Tensor 116: blk.5.ffn_up_exps.weight.t2, offset: 42658048
+DEBUG:   Tensor 117: blk.6.attn_k.weight.t1, offset: 43772160
+DEBUG:   Tensor 118: blk.6.attn_k.weight.t2, offset: 43907328
+DEBUG:   Tensor 119: blk.6.attn_norm.weight, offset: 44116224
+DEBUG:   Tensor 120: blk.6.attn_output.weight.t1, offset: 44119296
+DEBUG:   Tensor 121: blk.6.attn_output.weight.t2, offset: 44254464
+DEBUG:   Tensor 122: blk.6.attn_q.weight.t1, offset: 44463360
+DEBUG:   Tensor 123: blk.6.attn_q.weight.t2, offset: 44598528
+DEBUG:   Tensor 124: blk.6.attn_v.weight.t1, offset: 44807424
+DEBUG:   Tensor 125: blk.6.attn_v.weight.t2, offset: 44942592
+DEBUG:   Tensor 126: blk.6.ffn_down_exps.weight.t1, offset: 45151488
+DEBUG:   Tensor 127: blk.6.ffn_down_exps.weight.t2, offset: 45421824
+DEBUG:   Tensor 128: blk.6.ffn_down_exps.weight.t3, offset: 45839616
+DEBUG:   Tensor 129: blk.6.ffn_gate_exps.weight.t1, offset: 46684416
+DEBUG:   Tensor 130: blk.6.ffn_gate_exps.weight.t2, offset: 47405312
+DEBUG:   Tensor 131: blk.6.ffn_gate_inp.weight.t1, offset: 48519424
+DEBUG:   Tensor 132: blk.6.ffn_gate_inp.weight.t2, offset: 48519776
+DEBUG:   Tensor 133: blk.6.ffn_norm.weight, offset: 48520320
+DEBUG:   Tensor 134: blk.6.ffn_up_exps.weight.t1, offset: 48523392
+DEBUG:   Tensor 135: blk.6.ffn_up_exps.weight.t2, offset: 49244288
+DEBUG:   Tensor 136: blk.7.attn_k.weight.t1, offset: 50358400
+DEBUG:   Tensor 137: blk.7.attn_k.weight.t2, offset: 50493568
+DEBUG:   Tensor 138: blk.7.attn_norm.weight, offset: 50702464
+DEBUG:   Tensor 139: blk.7.attn_output.weight.t1, offset: 50705536
+DEBUG:   Tensor 140: blk.7.attn_output.weight.t2, offset: 50840704
+DEBUG:   Tensor 141: blk.7.attn_q.weight.t1, offset: 51049600
+DEBUG:   Tensor 142: blk.7.attn_q.weight.t2, offset: 51184768
+DEBUG:   Tensor 143: blk.7.attn_v.weight.t1, offset: 51393664
+DEBUG:   Tensor 144: blk.7.attn_v.weight.t2, offset: 51528832
+DEBUG:   Tensor 145: blk.7.ffn_down_exps.weight.t1, offset: 51737728
+DEBUG:   Tensor 146: blk.7.ffn_down_exps.weight.t2, offset: 52008064
+DEBUG:   Tensor 147: blk.7.ffn_down_exps.weight.t3, offset: 52425856
+DEBUG:   Tensor 148: blk.7.ffn_gate_exps.weight.t1, offset: 53270656
+DEBUG:   Tensor 149: blk.7.ffn_gate_exps.weight.t2, offset: 53991552
+DEBUG:   Tensor 150: blk.7.ffn_gate_inp.weight.t1, offset: 55105664
+DEBUG:   Tensor 151: blk.7.ffn_gate_inp.weight.t2, offset: 55106016
+DEBUG:   Tensor 152: blk.7.ffn_norm.weight, offset: 55106560
+DEBUG:   Tensor 153: blk.7.ffn_up_exps.weight.t1, offset: 55109632
+DEBUG:   Tensor 154: blk.7.ffn_up_exps.weight.t2, offset: 55830528
+DEBUG:   Tensor 155: blk.8.attn_k.weight.t1, offset: 56944640
+DEBUG:   Tensor 156: blk.8.attn_k.weight.t2, offset: 57079808
+DEBUG:   Tensor 157: blk.8.attn_norm.weight, offset: 57288704
+DEBUG:   Tensor 158: blk.8.attn_output.weight.t1, offset: 57291776
+DEBUG:   Tensor 159: blk.8.attn_output.weight.t2, offset: 57426944
+DEBUG:   Tensor 160: blk.8.attn_q.weight.t1, offset: 57635840
+DEBUG:   Tensor 161: blk.8.attn_q.weight.t2, offset: 57771008
+DEBUG:   Tensor 162: blk.8.attn_v.weight.t1, offset: 57979904
+DEBUG:   Tensor 163: blk.8.attn_v.weight.t2, offset: 58115072
+DEBUG:   Tensor 164: blk.8.ffn_down_exps.weight.t1, offset: 58323968
+DEBUG:   Tensor 165: blk.8.ffn_down_exps.weight.t2, offset: 58594304
+DEBUG:   Tensor 166: blk.8.ffn_down_exps.weight.t3, offset: 59012096
+DEBUG:   Tensor 167: blk.8.ffn_gate_exps.weight.t1, offset: 59856896
+DEBUG:   Tensor 168: blk.8.ffn_gate_exps.weight.t2, offset: 60577792
+DEBUG:   Tensor 169: blk.8.ffn_gate_inp.weight.t1, offset: 61691904
+DEBUG:   Tensor 170: blk.8.ffn_gate_inp.weight.t2, offset: 61692256
+DEBUG:   Tensor 171: blk.8.ffn_norm.weight, offset: 61692800
+DEBUG:   Tensor 172: blk.8.ffn_up_exps.weight.t1, offset: 61695872
+DEBUG:   Tensor 173: blk.8.ffn_up_exps.weight.t2, offset: 62416768
+DEBUG:   Tensor 174: blk.9.attn_k.weight.t1, offset: 63530880
+DEBUG:   Tensor 175: blk.9.attn_k.weight.t2, offset: 63666048
+DEBUG:   Tensor 176: blk.9.attn_norm.weight, offset: 63874944
+DEBUG:   Tensor 177: blk.9.attn_output.weight.t1, offset: 63878016
+DEBUG:   Tensor 178: blk.9.attn_output.weight.t2, offset: 64013184
+DEBUG:   Tensor 179: blk.9.attn_q.weight.t1, offset: 64222080
+DEBUG:   Tensor 180: blk.9.attn_q.weight.t2, offset: 64357248
+DEBUG:   Tensor 181: blk.9.attn_v.weight.t1, offset: 64566144
+DEBUG:   Tensor 182: blk.9.attn_v.weight.t2, offset: 64701312
+DEBUG:   Tensor 183: blk.9.ffn_down_exps.weight.t1, offset: 64910208
+DEBUG:   Tensor 184: blk.9.ffn_down_exps.weight.t2, offset: 65180544
+DEBUG:   Tensor 185: blk.9.ffn_down_exps.weight.t3, offset: 65598336
+DEBUG:   Tensor 186: blk.9.ffn_gate_exps.weight.t1, offset: 66443136
+DEBUG:   Tensor 187: blk.9.ffn_gate_exps.weight.t2, offset: 67164032
+DEBUG:   Tensor 188: blk.9.ffn_gate_inp.weight.t1, offset: 68278144
+DEBUG:   Tensor 189: blk.9.ffn_gate_inp.weight.t2, offset: 68278496
+DEBUG:   Tensor 190: blk.9.ffn_norm.weight, offset: 68279040
+DEBUG:   Tensor 191: blk.9.ffn_up_exps.weight.t1, offset: 68282112
+DEBUG:   Tensor 192: blk.9.ffn_up_exps.weight.t2, offset: 69003008
+DEBUG:   Tensor 193: blk.10.attn_k.weight.t1, offset: 70117120
+DEBUG:   Tensor 194: blk.10.attn_k.weight.t2, offset: 70252288
+DEBUG:   Tensor 195: blk.10.attn_norm.weight, offset: 70461184
+DEBUG:   Tensor 196: blk.10.attn_output.weight.t1, offset: 70464256
+DEBUG:   Tensor 197: blk.10.attn_output.weight.t2, offset: 70599424
+DEBUG:   Tensor 198: blk.10.attn_q.weight.t1, offset: 70808320
+DEBUG:   Tensor 199: blk.10.attn_q.weight.t2, offset: 70943488
+DEBUG:   Tensor 200: blk.10.attn_v.weight.t1, offset: 71152384
+DEBUG:   Tensor 201: blk.10.attn_v.weight.t2, offset: 71287552
+DEBUG:   Tensor 202: blk.10.ffn_down_exps.weight.t1, offset: 71496448
+DEBUG:   Tensor 203: blk.10.ffn_down_exps.weight.t2, offset: 71766784
+DEBUG:   Tensor 204: blk.10.ffn_down_exps.weight.t3, offset: 72184576
+DEBUG:   Tensor 205: blk.10.ffn_gate_exps.weight.t1, offset: 73029376
+DEBUG:   Tensor 206: blk.10.ffn_gate_exps.weight.t2, offset: 73750272
+DEBUG:   Tensor 207: blk.10.ffn_gate_inp.weight.t1, offset: 74864384
+DEBUG:   Tensor 208: blk.10.ffn_gate_inp.weight.t2, offset: 74864736
+DEBUG:   Tensor 209: blk.10.ffn_norm.weight, offset: 74865280
+DEBUG:   Tensor 210: blk.10.ffn_up_exps.weight.t1, offset: 74868352
+DEBUG:   Tensor 211: blk.10.ffn_up_exps.weight.t2, offset: 75589248
+DEBUG:   Tensor 212: blk.11.attn_k.weight.t1, offset: 76703360
+DEBUG:   Tensor 213: blk.11.attn_k.weight.t2, offset: 76838528
+DEBUG:   Tensor 214: blk.11.attn_norm.weight, offset: 77047424
+DEBUG:   Tensor 215: blk.11.attn_output.weight.t1, offset: 77050496
+DEBUG:   Tensor 216: blk.11.attn_output.weight.t2, offset: 77185664
+DEBUG:   Tensor 217: blk.11.attn_q.weight.t1, offset: 77394560
+DEBUG:   Tensor 218: blk.11.attn_q.weight.t2, offset: 77529728
+DEBUG:   Tensor 219: blk.11.attn_v.weight.t1, offset: 77738624
+DEBUG:   Tensor 220: blk.11.attn_v.weight.t2, offset: 77873792
+DEBUG:   Tensor 221: blk.11.ffn_down_exps.weight.t1, offset: 78082688
+DEBUG:   Tensor 222: blk.11.ffn_down_exps.weight.t2, offset: 78353024
+DEBUG:   Tensor 223: blk.11.ffn_down_exps.weight.t3, offset: 78770816
+DEBUG:   Tensor 224: blk.11.ffn_gate_exps.weight.t1, offset: 79615616
+DEBUG:   Tensor 225: blk.11.ffn_gate_exps.weight.t2, offset: 80336512
+DEBUG:   Tensor 226: blk.11.ffn_gate_inp.weight.t1, offset: 81450624
+DEBUG:   Tensor 227: blk.11.ffn_gate_inp.weight.t2, offset: 81450976
+DEBUG:   Tensor 228: blk.11.ffn_norm.weight, offset: 81451520
+DEBUG:   Tensor 229: blk.11.ffn_up_exps.weight.t1, offset: 81454592
+DEBUG:   Tensor 230: blk.11.ffn_up_exps.weight.t2, offset: 82175488
+[   1/ 123]                        output.weight - [  768,  4096,     1,     1], type =   q6_K,   Looking for imatrix for tensor: output.weight
+
+====== llama_model_quantize_impl: did not find weights for output.weight
+converting to q6_K .. load_legacy_imatrix: imatrix dataset='wikitext_wikitext-2_test.txt'
+load_legacy_imatrix: loaded 96 importance matrix entries from Tiny-Moe.imatrix computed on 60 chunks
+prepare_imatrix: have 96 importance matrix entries
+llama_model_quantize_impl: writing tensor data for output.weight at offset 473120
+tensor size=     2.46 MiB ->     2.46 MiB
+total size =     2.46 MiB ->     2.46 MiB
+[   2/ 123]                   output_norm.weight - [  768,     1,     1,     1], type =    f32, size =    0.003 MB
+llama_model_quantize_impl: writing tensor data for output_norm.weight at offset 3053600
+tensor size=     0.00 MiB ->     0.00 MiB
+total size =     2.46 MiB ->     2.46 MiB
+[   3/ 123]                    token_embd.weight - [  768,  4096,     1,     1], type = iq4_xs,   Looking for imatrix for tensor: token_embd.weight
+
+====== llama_model_quantize_impl: did not find weights for token_embd.weight
+converting to iq4_xs .. llama_model_quantize_impl: writing tensor data for token_embd.weight at offset 3056672
+tensor size=     1.59 MiB ->     1.59 MiB
+total size =     4.06 MiB ->     4.06 MiB
+[   4/ 123]                  blk.0.attn_k.weight - [  768,   768,     1,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.0.attn_k.weight.t1: type=q5_K, width=256, nrows=768, offset=0
+operator(): writing tensor data for blk.0.attn_k.weight.t1 at offset 4727840
+  Quantizing blk.0.attn_k.weight.t2: type=iq4_xs, width=512, nrows=768, offset=256
+operator(): writing tensor data for blk.0.attn_k.weight.t2 at offset 4863008
+  Skipping   blk.0.attn_k.weight.t3 due to zero width.
+tensor size=     0.30 MiB ->     0.33 MiB
+total size =     4.36 MiB ->     4.39 MiB
+[   5/ 123]               blk.0.attn_norm.weight - [  768,     1,     1,     1], type =    f32, size =    0.003 MB
+llama_model_quantize_impl: writing tensor data for blk.0.attn_norm.weight at offset 5071904
+tensor size=     0.00 MiB ->     0.00 MiB
+total size =     4.36 MiB ->     4.39 MiB
+[   6/ 123]             blk.0.attn_output.weight - [  768,   768,     1,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.0.attn_output.weight.t1: type=q5_K, width=256, nrows=768, offset=0
+operator(): writing tensor data for blk.0.attn_output.weight.t1 at offset 5074976
+  Quantizing blk.0.attn_output.weight.t2: type=iq4_xs, width=512, nrows=768, offset=256
+operator(): writing tensor data for blk.0.attn_output.weight.t2 at offset 5210144
+  Skipping   blk.0.attn_output.weight.t3 due to zero width.
+tensor size=     0.30 MiB ->     0.33 MiB
+total size =     4.66 MiB ->     4.72 MiB
+[   7/ 123]                  blk.0.attn_q.weight - [  768,   768,     1,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.0.attn_q.weight.t1: type=q5_K, width=256, nrows=768, offset=0
+operator(): writing tensor data for blk.0.attn_q.weight.t1 at offset 5419040
+  Quantizing blk.0.attn_q.weight.t2: type=iq4_xs, width=512, nrows=768, offset=256
+operator(): writing tensor data for blk.0.attn_q.weight.t2 at offset 5554208
+  Skipping   blk.0.attn_q.weight.t3 due to zero width.
+tensor size=     0.30 MiB ->     0.33 MiB
+total size =     4.96 MiB ->     5.04 MiB
+[   8/ 123]                  blk.0.attn_v.weight - [  768,   768,     1,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.0.attn_v.weight.t1: type=q5_K, width=256, nrows=768, offset=0
+operator(): writing tensor data for blk.0.attn_v.weight.t1 at offset 5763104
+  Quantizing blk.0.attn_v.weight.t2: type=iq4_xs, width=512, nrows=768, offset=256
+operator(): writing tensor data for blk.0.attn_v.weight.t2 at offset 5898272
+  Skipping   blk.0.attn_v.weight.t3 due to zero width.
+tensor size=     0.30 MiB ->     0.33 MiB
+total size =     5.26 MiB ->     5.37 MiB
+[   9/ 123]           blk.0.ffn_down_exps.weight - [ 2048,   768,     2,     1], type =   q5_K, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=1280 (q3_K)
+  Quantizing blk.0.ffn_down_exps.weight.t1: type=q5_K, width=256, nrows=768, offset=0
+operator(): writing tensor data for blk.0.ffn_down_exps.weight.t1 at offset 6107168
+  Quantizing blk.0.ffn_down_exps.weight.t2: type=iq4_xs, width=512, nrows=768, offset=256
+operator(): writing tensor data for blk.0.ffn_down_exps.weight.t2 at offset 6242336
+  Quantizing blk.0.ffn_down_exps.weight.t3: type=q3_K, width=1280, nrows=768, offset=768
+operator(): writing tensor data for blk.0.ffn_down_exps.weight.t3 at offset 6451232
+tensor size=     2.06 MiB ->     0.73 MiB
+total size =     7.32 MiB ->     6.10 MiB
+[  10/ 123]           blk.0.ffn_gate_exps.weight - [  768,  2048,     2,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.0.ffn_gate_exps.weight.t1: type=q5_K, width=256, nrows=2048, offset=0
+operator(): writing tensor data for blk.0.ffn_gate_exps.weight.t1 at offset 6873632
+  Quantizing blk.0.ffn_gate_exps.weight.t2: type=iq4_xs, width=512, nrows=2048, offset=256
+operator(): writing tensor data for blk.0.ffn_gate_exps.weight.t2 at offset 7234080
+  Skipping   blk.0.ffn_gate_exps.weight.t3 due to zero width.
+tensor size=     1.59 MiB ->     0.88 MiB
+total size =     8.91 MiB ->     6.98 MiB
+[  11/ 123]            blk.0.ffn_gate_inp.weight - [  768,     2,     1,     1], type =    f32, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.0.ffn_gate_inp.weight.t1: type=q5_K, width=256, nrows=2, offset=0
+operator(): writing tensor data for blk.0.ffn_gate_inp.weight.t1 at offset 7791136
+  Quantizing blk.0.ffn_gate_inp.weight.t2: type=iq4_xs, width=512, nrows=2, offset=256
+operator(): writing tensor data for blk.0.ffn_gate_inp.weight.t2 at offset 7791488
+  Skipping   blk.0.ffn_gate_inp.weight.t3 due to zero width.
+tensor size=     0.01 MiB ->     0.00 MiB
+total size =     8.92 MiB ->     6.98 MiB
+[  12/ 123]                blk.0.ffn_norm.weight - [  768,     1,     1,     1], type =    f32, size =    0.003 MB
+llama_model_quantize_impl: writing tensor data for blk.0.ffn_norm.weight at offset 7792032
+tensor size=     0.00 MiB ->     0.00 MiB
+total size =     8.92 MiB ->     6.98 MiB
+[  13/ 123]             blk.0.ffn_up_exps.weight - [  768,  2048,     2,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.0.ffn_up_exps.weight.t1: type=q5_K, width=256, nrows=2048, offset=0
+operator(): writing tensor data for blk.0.ffn_up_exps.weight.t1 at offset 7795104
+  Quantizing blk.0.ffn_up_exps.weight.t2: type=iq4_xs, width=512, nrows=2048, offset=256
+operator(): writing tensor data for blk.0.ffn_up_exps.weight.t2 at offset 8155552
+  Skipping   blk.0.ffn_up_exps.weight.t3 due to zero width.
+tensor size=     1.59 MiB ->     0.88 MiB
+total size =    10.51 MiB ->     7.86 MiB
+[  14/ 123]                  blk.1.attn_k.weight - [  768,   768,     1,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.1.attn_k.weight.t1: type=q5_K, width=256, nrows=768, offset=0
+operator(): writing tensor data for blk.1.attn_k.weight.t1 at offset 8712608
+  Quantizing blk.1.attn_k.weight.t2: type=iq4_xs, width=512, nrows=768, offset=256
+operator(): writing tensor data for blk.1.attn_k.weight.t2 at offset 8847776
+  Skipping   blk.1.attn_k.weight.t3 due to zero width.
+tensor size=     0.30 MiB ->     0.33 MiB
+total size =    10.81 MiB ->     8.19 MiB
+[  15/ 123]               blk.1.attn_norm.weight - [  768,     1,     1,     1], type =    f32, size =    0.003 MB
+llama_model_quantize_impl: writing tensor data for blk.1.attn_norm.weight at offset 9056672
+tensor size=     0.00 MiB ->     0.00 MiB
+total size =    10.82 MiB ->     8.19 MiB
+[  16/ 123]             blk.1.attn_output.weight - [  768,   768,     1,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.1.attn_output.weight.t1: type=q5_K, width=256, nrows=768, offset=0
+operator(): writing tensor data for blk.1.attn_output.weight.t1 at offset 9059744
+  Quantizing blk.1.attn_output.weight.t2: type=iq4_xs, width=512, nrows=768, offset=256
+operator(): writing tensor data for blk.1.attn_output.weight.t2 at offset 9194912
+  Skipping   blk.1.attn_output.weight.t3 due to zero width.
+tensor size=     0.30 MiB ->     0.33 MiB
+total size =    11.12 MiB ->     8.52 MiB
+[  17/ 123]                  blk.1.attn_q.weight - [  768,   768,     1,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.1.attn_q.weight.t1: type=q5_K, width=256, nrows=768, offset=0
+operator(): writing tensor data for blk.1.attn_q.weight.t1 at offset 9403808
+  Quantizing blk.1.attn_q.weight.t2: type=iq4_xs, width=512, nrows=768, offset=256
+operator(): writing tensor data for blk.1.attn_q.weight.t2 at offset 9538976
+  Skipping   blk.1.attn_q.weight.t3 due to zero width.
+tensor size=     0.30 MiB ->     0.33 MiB
+total size =    11.41 MiB ->     8.85 MiB
+[  18/ 123]                  blk.1.attn_v.weight - [  768,   768,     1,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.1.attn_v.weight.t1: type=q5_K, width=256, nrows=768, offset=0
+operator(): writing tensor data for blk.1.attn_v.weight.t1 at offset 9747872
+  Quantizing blk.1.attn_v.weight.t2: type=iq4_xs, width=512, nrows=768, offset=256
+operator(): writing tensor data for blk.1.attn_v.weight.t2 at offset 9883040
+  Skipping   blk.1.attn_v.weight.t3 due to zero width.
+tensor size=     0.30 MiB ->     0.33 MiB
+total size =    11.71 MiB ->     9.17 MiB
+[  19/ 123]           blk.1.ffn_down_exps.weight - [ 2048,   768,     2,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=1280 (q3_K)
+  Quantizing blk.1.ffn_down_exps.weight.t1: type=q5_K, width=256, nrows=768, offset=0
+operator(): writing tensor data for blk.1.ffn_down_exps.weight.t1 at offset 10091936
+  Quantizing blk.1.ffn_down_exps.weight.t2: type=iq4_xs, width=512, nrows=768, offset=256
+operator(): writing tensor data for blk.1.ffn_down_exps.weight.t2 at offset 10227104
+  Quantizing blk.1.ffn_down_exps.weight.t3: type=q3_K, width=1280, nrows=768, offset=768
+operator(): writing tensor data for blk.1.ffn_down_exps.weight.t3 at offset 10436000
+tensor size=     1.59 MiB ->     0.73 MiB
+total size =    13.31 MiB ->     9.90 MiB
+[  20/ 123]           blk.1.ffn_gate_exps.weight - [  768,  2048,     2,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.1.ffn_gate_exps.weight.t1: type=q5_K, width=256, nrows=2048, offset=0
+operator(): writing tensor data for blk.1.ffn_gate_exps.weight.t1 at offset 10858400
+  Quantizing blk.1.ffn_gate_exps.weight.t2: type=iq4_xs, width=512, nrows=2048, offset=256
+operator(): writing tensor data for blk.1.ffn_gate_exps.weight.t2 at offset 11218848
+  Skipping   blk.1.ffn_gate_exps.weight.t3 due to zero width.
+tensor size=     1.59 MiB ->     0.88 MiB
+total size =    14.90 MiB ->    10.78 MiB
+[  21/ 123]            blk.1.ffn_gate_inp.weight - [  768,     2,     1,     1], type =    f32, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.1.ffn_gate_inp.weight.t1: type=q5_K, width=256, nrows=2, offset=0
+operator(): writing tensor data for blk.1.ffn_gate_inp.weight.t1 at offset 11775904
+  Quantizing blk.1.ffn_gate_inp.weight.t2: type=iq4_xs, width=512, nrows=2, offset=256
+operator(): writing tensor data for blk.1.ffn_gate_inp.weight.t2 at offset 11776256
+  Skipping   blk.1.ffn_gate_inp.weight.t3 due to zero width.
+tensor size=     0.01 MiB ->     0.00 MiB
+total size =    14.91 MiB ->    10.78 MiB
+[  22/ 123]                blk.1.ffn_norm.weight - [  768,     1,     1,     1], type =    f32, size =    0.003 MB
+llama_model_quantize_impl: writing tensor data for blk.1.ffn_norm.weight at offset 11776800
+tensor size=     0.00 MiB ->     0.00 MiB
+total size =    14.91 MiB ->    10.78 MiB
+[  23/ 123]             blk.1.ffn_up_exps.weight - [  768,  2048,     2,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.1.ffn_up_exps.weight.t1: type=q5_K, width=256, nrows=2048, offset=0
+operator(): writing tensor data for blk.1.ffn_up_exps.weight.t1 at offset 11779872
+  Quantizing blk.1.ffn_up_exps.weight.t2: type=iq4_xs, width=512, nrows=2048, offset=256
+operator(): writing tensor data for blk.1.ffn_up_exps.weight.t2 at offset 12140320
+  Skipping   blk.1.ffn_up_exps.weight.t3 due to zero width.
+tensor size=     1.59 MiB ->     0.88 MiB
+total size =    16.50 MiB ->    11.66 MiB
+[  24/ 123]                  blk.2.attn_k.weight - [  768,   768,     1,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.2.attn_k.weight.t1: type=q5_K, width=256, nrows=768, offset=0
+operator(): writing tensor data for blk.2.attn_k.weight.t1 at offset 12697376
+  Quantizing blk.2.attn_k.weight.t2: type=iq4_xs, width=512, nrows=768, offset=256
+operator(): writing tensor data for blk.2.attn_k.weight.t2 at offset 12832544
+  Skipping   blk.2.attn_k.weight.t3 due to zero width.
+tensor size=     0.30 MiB ->     0.33 MiB
+total size =    16.80 MiB ->    11.99 MiB
+[  25/ 123]               blk.2.attn_norm.weight - [  768,     1,     1,     1], type =    f32, size =    0.003 MB
+llama_model_quantize_impl: writing tensor data for blk.2.attn_norm.weight at offset 13041440
+tensor size=     0.00 MiB ->     0.00 MiB
+total size =    16.80 MiB ->    11.99 MiB
+[  26/ 123]             blk.2.attn_output.weight - [  768,   768,     1,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.2.attn_output.weight.t1: type=q5_K, width=256, nrows=768, offset=0
+operator(): writing tensor data for blk.2.attn_output.weight.t1 at offset 13044512
+  Quantizing blk.2.attn_output.weight.t2: type=iq4_xs, width=512, nrows=768, offset=256
+operator(): writing tensor data for blk.2.attn_output.weight.t2 at offset 13179680
+  Skipping   blk.2.attn_output.weight.t3 due to zero width.
+tensor size=     0.30 MiB ->     0.33 MiB
+total size =    17.10 MiB ->    12.32 MiB
+[  27/ 123]                  blk.2.attn_q.weight - [  768,   768,     1,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.2.attn_q.weight.t1: type=q5_K, width=256, nrows=768, offset=0
+operator(): writing tensor data for blk.2.attn_q.weight.t1 at offset 13388576
+  Quantizing blk.2.attn_q.weight.t2: type=iq4_xs, width=512, nrows=768, offset=256
+operator(): writing tensor data for blk.2.attn_q.weight.t2 at offset 13523744
+  Skipping   blk.2.attn_q.weight.t3 due to zero width.
+tensor size=     0.30 MiB ->     0.33 MiB
+total size =    17.40 MiB ->    12.65 MiB
+[  28/ 123]                  blk.2.attn_v.weight - [  768,   768,     1,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.2.attn_v.weight.t1: type=q5_K, width=256, nrows=768, offset=0
+operator(): writing tensor data for blk.2.attn_v.weight.t1 at offset 13732640
+  Quantizing blk.2.attn_v.weight.t2: type=iq4_xs, width=512, nrows=768, offset=256
+operator(): writing tensor data for blk.2.attn_v.weight.t2 at offset 13867808
+  Skipping   blk.2.attn_v.weight.t3 due to zero width.
+tensor size=     0.30 MiB ->     0.33 MiB
+total size =    17.70 MiB ->    12.97 MiB
+[  29/ 123]           blk.2.ffn_down_exps.weight - [ 2048,   768,     2,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=1280 (q3_K)
+  Quantizing blk.2.ffn_down_exps.weight.t1: type=q5_K, width=256, nrows=768, offset=0
+operator(): writing tensor data for blk.2.ffn_down_exps.weight.t1 at offset 14076704
+  Quantizing blk.2.ffn_down_exps.weight.t2: type=iq4_xs, width=512, nrows=768, offset=256
+operator(): writing tensor data for blk.2.ffn_down_exps.weight.t2 at offset 14211872
+  Quantizing blk.2.ffn_down_exps.weight.t3: type=q3_K, width=1280, nrows=768, offset=768
+operator(): writing tensor data for blk.2.ffn_down_exps.weight.t3 at offset 14420768
+tensor size=     1.59 MiB ->     0.73 MiB
+total size =    19.29 MiB ->    13.70 MiB
+[  30/ 123]           blk.2.ffn_gate_exps.weight - [  768,  2048,     2,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.2.ffn_gate_exps.weight.t1: type=q5_K, width=256, nrows=2048, offset=0
+operator(): writing tensor data for blk.2.ffn_gate_exps.weight.t1 at offset 14843168
+  Quantizing blk.2.ffn_gate_exps.weight.t2: type=iq4_xs, width=512, nrows=2048, offset=256
+operator(): writing tensor data for blk.2.ffn_gate_exps.weight.t2 at offset 15203616
+  Skipping   blk.2.ffn_gate_exps.weight.t3 due to zero width.
+tensor size=     1.59 MiB ->     0.88 MiB
+total size =    20.89 MiB ->    14.58 MiB
+[  31/ 123]            blk.2.ffn_gate_inp.weight - [  768,     2,     1,     1], type =    f32, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.2.ffn_gate_inp.weight.t1: type=q5_K, width=256, nrows=2, offset=0
+operator(): writing tensor data for blk.2.ffn_gate_inp.weight.t1 at offset 15760672
+  Quantizing blk.2.ffn_gate_inp.weight.t2: type=iq4_xs, width=512, nrows=2, offset=256
+operator(): writing tensor data for blk.2.ffn_gate_inp.weight.t2 at offset 15761024
+  Skipping   blk.2.ffn_gate_inp.weight.t3 due to zero width.
+tensor size=     0.01 MiB ->     0.00 MiB
+total size =    20.89 MiB ->    14.58 MiB
+[  32/ 123]                blk.2.ffn_norm.weight - [  768,     1,     1,     1], type =    f32, size =    0.003 MB
+llama_model_quantize_impl: writing tensor data for blk.2.ffn_norm.weight at offset 15761568
+tensor size=     0.00 MiB ->     0.00 MiB
+total size =    20.90 MiB ->    14.58 MiB
+[  33/ 123]             blk.2.ffn_up_exps.weight - [  768,  2048,     2,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.2.ffn_up_exps.weight.t1: type=q5_K, width=256, nrows=2048, offset=0
+operator(): writing tensor data for blk.2.ffn_up_exps.weight.t1 at offset 15764640
+  Quantizing blk.2.ffn_up_exps.weight.t2: type=iq4_xs, width=512, nrows=2048, offset=256
+operator(): writing tensor data for blk.2.ffn_up_exps.weight.t2 at offset 16125088
+  Skipping   blk.2.ffn_up_exps.weight.t3 due to zero width.
+tensor size=     1.59 MiB ->     0.88 MiB
+total size =    22.49 MiB ->    15.46 MiB
+[  34/ 123]                  blk.3.attn_k.weight - [  768,   768,     1,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.3.attn_k.weight.t1: type=q5_K, width=256, nrows=768, offset=0
+operator(): writing tensor data for blk.3.attn_k.weight.t1 at offset 16682144
+  Quantizing blk.3.attn_k.weight.t2: type=iq4_xs, width=512, nrows=768, offset=256
+operator(): writing tensor data for blk.3.attn_k.weight.t2 at offset 16817312
+  Skipping   blk.3.attn_k.weight.t3 due to zero width.
+tensor size=     0.30 MiB ->     0.33 MiB
+total size =    22.79 MiB ->    15.79 MiB
+[  35/ 123]               blk.3.attn_norm.weight - [  768,     1,     1,     1], type =    f32, size =    0.003 MB
+llama_model_quantize_impl: writing tensor data for blk.3.attn_norm.weight at offset 17026208
+tensor size=     0.00 MiB ->     0.00 MiB
+total size =    22.79 MiB ->    15.79 MiB
+[  36/ 123]             blk.3.attn_output.weight - [  768,   768,     1,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.3.attn_output.weight.t1: type=q5_K, width=256, nrows=768, offset=0
+operator(): writing tensor data for blk.3.attn_output.weight.t1 at offset 17029280
+  Quantizing blk.3.attn_output.weight.t2: type=iq4_xs, width=512, nrows=768, offset=256
+operator(): writing tensor data for blk.3.attn_output.weight.t2 at offset 17164448
+  Skipping   blk.3.attn_output.weight.t3 due to zero width.
+tensor size=     0.30 MiB ->     0.33 MiB
+total size =    23.09 MiB ->    16.12 MiB
+[  37/ 123]                  blk.3.attn_q.weight - [  768,   768,     1,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.3.attn_q.weight.t1: type=q5_K, width=256, nrows=768, offset=0
+operator(): writing tensor data for blk.3.attn_q.weight.t1 at offset 17373344
+  Quantizing blk.3.attn_q.weight.t2: type=iq4_xs, width=512, nrows=768, offset=256
+operator(): writing tensor data for blk.3.attn_q.weight.t2 at offset 17508512
+  Skipping   blk.3.attn_q.weight.t3 due to zero width.
+tensor size=     0.30 MiB ->     0.33 MiB
+total size =    23.39 MiB ->    16.45 MiB
+[  38/ 123]                  blk.3.attn_v.weight - [  768,   768,     1,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.3.attn_v.weight.t1: type=q5_K, width=256, nrows=768, offset=0
+operator(): writing tensor data for blk.3.attn_v.weight.t1 at offset 17717408
+  Quantizing blk.3.attn_v.weight.t2: type=iq4_xs, width=512, nrows=768, offset=256
+operator(): writing tensor data for blk.3.attn_v.weight.t2 at offset 17852576
+  Skipping   blk.3.attn_v.weight.t3 due to zero width.
+tensor size=     0.30 MiB ->     0.33 MiB
+total size =    23.69 MiB ->    16.77 MiB
+[  39/ 123]           blk.3.ffn_down_exps.weight - [ 2048,   768,     2,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=1280 (q3_K)
+  Quantizing blk.3.ffn_down_exps.weight.t1: type=q5_K, width=256, nrows=768, offset=0
+operator(): writing tensor data for blk.3.ffn_down_exps.weight.t1 at offset 18061472
+  Quantizing blk.3.ffn_down_exps.weight.t2: type=iq4_xs, width=512, nrows=768, offset=256
+operator(): writing tensor data for blk.3.ffn_down_exps.weight.t2 at offset 18196640
+  Quantizing blk.3.ffn_down_exps.weight.t3: type=q3_K, width=1280, nrows=768, offset=768
+operator(): writing tensor data for blk.3.ffn_down_exps.weight.t3 at offset 18405536
+tensor size=     1.59 MiB ->     0.73 MiB
+total size =    25.28 MiB ->    17.50 MiB
+[  40/ 123]           blk.3.ffn_gate_exps.weight - [  768,  2048,     2,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.3.ffn_gate_exps.weight.t1: type=q5_K, width=256, nrows=2048, offset=0
+operator(): writing tensor data for blk.3.ffn_gate_exps.weight.t1 at offset 18827936
+  Quantizing blk.3.ffn_gate_exps.weight.t2: type=iq4_xs, width=512, nrows=2048, offset=256
+operator(): writing tensor data for blk.3.ffn_gate_exps.weight.t2 at offset 19188384
+  Skipping   blk.3.ffn_gate_exps.weight.t3 due to zero width.
+tensor size=     1.59 MiB ->     0.88 MiB
+total size =    26.88 MiB ->    18.38 MiB
+[  41/ 123]            blk.3.ffn_gate_inp.weight - [  768,     2,     1,     1], type =    f32, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.3.ffn_gate_inp.weight.t1: type=q5_K, width=256, nrows=2, offset=0
+operator(): writing tensor data for blk.3.ffn_gate_inp.weight.t1 at offset 19745440
+  Quantizing blk.3.ffn_gate_inp.weight.t2: type=iq4_xs, width=512, nrows=2, offset=256
+operator(): writing tensor data for blk.3.ffn_gate_inp.weight.t2 at offset 19745792
+  Skipping   blk.3.ffn_gate_inp.weight.t3 due to zero width.
+tensor size=     0.01 MiB ->     0.00 MiB
+total size =    26.88 MiB ->    18.38 MiB
+[  42/ 123]                blk.3.ffn_norm.weight - [  768,     1,     1,     1], type =    f32, size =    0.003 MB
+llama_model_quantize_impl: writing tensor data for blk.3.ffn_norm.weight at offset 19746336
+tensor size=     0.00 MiB ->     0.00 MiB
+total size =    26.89 MiB ->    18.38 MiB
+[  43/ 123]             blk.3.ffn_up_exps.weight - [  768,  2048,     2,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.3.ffn_up_exps.weight.t1: type=q5_K, width=256, nrows=2048, offset=0
+operator(): writing tensor data for blk.3.ffn_up_exps.weight.t1 at offset 19749408
+  Quantizing blk.3.ffn_up_exps.weight.t2: type=iq4_xs, width=512, nrows=2048, offset=256
+operator(): writing tensor data for blk.3.ffn_up_exps.weight.t2 at offset 20109856
+  Skipping   blk.3.ffn_up_exps.weight.t3 due to zero width.
+tensor size=     1.59 MiB ->     0.88 MiB
+total size =    28.48 MiB ->    19.26 MiB
+[  44/ 123]                  blk.4.attn_k.weight - [  768,   768,     1,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.4.attn_k.weight.t1: type=q5_K, width=256, nrows=768, offset=0
+operator(): writing tensor data for blk.4.attn_k.weight.t1 at offset 20666912
+  Quantizing blk.4.attn_k.weight.t2: type=iq4_xs, width=512, nrows=768, offset=256
+operator(): writing tensor data for blk.4.attn_k.weight.t2 at offset 20802080
+  Skipping   blk.4.attn_k.weight.t3 due to zero width.
+tensor size=     0.30 MiB ->     0.33 MiB
+total size =    28.78 MiB ->    19.59 MiB
+[  45/ 123]               blk.4.attn_norm.weight - [  768,     1,     1,     1], type =    f32, size =    0.003 MB
+llama_model_quantize_impl: writing tensor data for blk.4.attn_norm.weight at offset 21010976
+tensor size=     0.00 MiB ->     0.00 MiB
+total size =    28.78 MiB ->    19.59 MiB
+[  46/ 123]             blk.4.attn_output.weight - [  768,   768,     1,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.4.attn_output.weight.t1: type=q5_K, width=256, nrows=768, offset=0
+operator(): writing tensor data for blk.4.attn_output.weight.t1 at offset 21014048
+  Quantizing blk.4.attn_output.weight.t2: type=iq4_xs, width=512, nrows=768, offset=256
+operator(): writing tensor data for blk.4.attn_output.weight.t2 at offset 21149216
+  Skipping   blk.4.attn_output.weight.t3 due to zero width.
+tensor size=     0.30 MiB ->     0.33 MiB
+total size =    29.08 MiB ->    19.92 MiB
+[  47/ 123]                  blk.4.attn_q.weight - [  768,   768,     1,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.4.attn_q.weight.t1: type=q5_K, width=256, nrows=768, offset=0
+operator(): writing tensor data for blk.4.attn_q.weight.t1 at offset 21358112
+  Quantizing blk.4.attn_q.weight.t2: type=iq4_xs, width=512, nrows=768, offset=256
+operator(): writing tensor data for blk.4.attn_q.weight.t2 at offset 21493280
+  Skipping   blk.4.attn_q.weight.t3 due to zero width.
+tensor size=     0.30 MiB ->     0.33 MiB
+total size =    29.38 MiB ->    20.25 MiB
+[  48/ 123]                  blk.4.attn_v.weight - [  768,   768,     1,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.4.attn_v.weight.t1: type=q5_K, width=256, nrows=768, offset=0
+operator(): writing tensor data for blk.4.attn_v.weight.t1 at offset 21702176
+  Quantizing blk.4.attn_v.weight.t2: type=iq4_xs, width=512, nrows=768, offset=256
+operator(): writing tensor data for blk.4.attn_v.weight.t2 at offset 21837344
+  Skipping   blk.4.attn_v.weight.t3 due to zero width.
+tensor size=     0.30 MiB ->     0.33 MiB
+total size =    29.68 MiB ->    20.57 MiB
+[  49/ 123]           blk.4.ffn_down_exps.weight - [ 2048,   768,     2,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=1280 (q3_K)
+  Quantizing blk.4.ffn_down_exps.weight.t1: type=q5_K, width=256, nrows=768, offset=0
+operator(): writing tensor data for blk.4.ffn_down_exps.weight.t1 at offset 22046240
+  Quantizing blk.4.ffn_down_exps.weight.t2: type=iq4_xs, width=512, nrows=768, offset=256
+operator(): writing tensor data for blk.4.ffn_down_exps.weight.t2 at offset 22181408
+  Quantizing blk.4.ffn_down_exps.weight.t3: type=q3_K, width=1280, nrows=768, offset=768
+operator(): writing tensor data for blk.4.ffn_down_exps.weight.t3 at offset 22390304
+tensor size=     1.59 MiB ->     0.73 MiB
+total size =    31.27 MiB ->    21.30 MiB
+[  50/ 123]           blk.4.ffn_gate_exps.weight - [  768,  2048,     2,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.4.ffn_gate_exps.weight.t1: type=q5_K, width=256, nrows=2048, offset=0
+operator(): writing tensor data for blk.4.ffn_gate_exps.weight.t1 at offset 22812704
+  Quantizing blk.4.ffn_gate_exps.weight.t2: type=iq4_xs, width=512, nrows=2048, offset=256
+operator(): writing tensor data for blk.4.ffn_gate_exps.weight.t2 at offset 23173152
+  Skipping   blk.4.ffn_gate_exps.weight.t3 due to zero width.
+tensor size=     1.59 MiB ->     0.88 MiB
+total size =    32.87 MiB ->    22.18 MiB
+[  51/ 123]            blk.4.ffn_gate_inp.weight - [  768,     2,     1,     1], type =    f32, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.4.ffn_gate_inp.weight.t1: type=q5_K, width=256, nrows=2, offset=0
+operator(): writing tensor data for blk.4.ffn_gate_inp.weight.t1 at offset 23730208
+  Quantizing blk.4.ffn_gate_inp.weight.t2: type=iq4_xs, width=512, nrows=2, offset=256
+operator(): writing tensor data for blk.4.ffn_gate_inp.weight.t2 at offset 23730560
+  Skipping   blk.4.ffn_gate_inp.weight.t3 due to zero width.
+tensor size=     0.01 MiB ->     0.00 MiB
+total size =    32.87 MiB ->    22.18 MiB
+[  52/ 123]                blk.4.ffn_norm.weight - [  768,     1,     1,     1], type =    f32, size =    0.003 MB
+llama_model_quantize_impl: writing tensor data for blk.4.ffn_norm.weight at offset 23731104
+tensor size=     0.00 MiB ->     0.00 MiB
+total size =    32.87 MiB ->    22.18 MiB
+[  53/ 123]             blk.4.ffn_up_exps.weight - [  768,  2048,     2,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.4.ffn_up_exps.weight.t1: type=q5_K, width=256, nrows=2048, offset=0
+operator(): writing tensor data for blk.4.ffn_up_exps.weight.t1 at offset 23734176
+  Quantizing blk.4.ffn_up_exps.weight.t2: type=iq4_xs, width=512, nrows=2048, offset=256
+operator(): writing tensor data for blk.4.ffn_up_exps.weight.t2 at offset 24094624
+  Skipping   blk.4.ffn_up_exps.weight.t3 due to zero width.
+tensor size=     1.59 MiB ->     0.88 MiB
+total size =    34.47 MiB ->    23.06 MiB
+[  54/ 123]                  blk.5.attn_k.weight - [  768,   768,     1,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.5.attn_k.weight.t1: type=q5_K, width=256, nrows=768, offset=0
+operator(): writing tensor data for blk.5.attn_k.weight.t1 at offset 24651680
+  Quantizing blk.5.attn_k.weight.t2: type=iq4_xs, width=512, nrows=768, offset=256
+operator(): writing tensor data for blk.5.attn_k.weight.t2 at offset 24786848
+  Skipping   blk.5.attn_k.weight.t3 due to zero width.
+tensor size=     0.30 MiB ->     0.33 MiB
+total size =    34.77 MiB ->    23.39 MiB
+[  55/ 123]               blk.5.attn_norm.weight - [  768,     1,     1,     1], type =    f32, size =    0.003 MB
+llama_model_quantize_impl: writing tensor data for blk.5.attn_norm.weight at offset 24995744
+tensor size=     0.00 MiB ->     0.00 MiB
+total size =    34.77 MiB ->    23.39 MiB
+[  56/ 123]             blk.5.attn_output.weight - [  768,   768,     1,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.5.attn_output.weight.t1: type=q5_K, width=256, nrows=768, offset=0
+operator(): writing tensor data for blk.5.attn_output.weight.t1 at offset 24998816
+  Quantizing blk.5.attn_output.weight.t2: type=iq4_xs, width=512, nrows=768, offset=256
+operator(): writing tensor data for blk.5.attn_output.weight.t2 at offset 25133984
+  Skipping   blk.5.attn_output.weight.t3 due to zero width.
+tensor size=     0.30 MiB ->     0.33 MiB
+total size =    35.07 MiB ->    23.72 MiB
+[  57/ 123]                  blk.5.attn_q.weight - [  768,   768,     1,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.5.attn_q.weight.t1: type=q5_K, width=256, nrows=768, offset=0
+operator(): writing tensor data for blk.5.attn_q.weight.t1 at offset 25342880
+  Quantizing blk.5.attn_q.weight.t2: type=iq4_xs, width=512, nrows=768, offset=256
+operator(): writing tensor data for blk.5.attn_q.weight.t2 at offset 25478048
+  Skipping   blk.5.attn_q.weight.t3 due to zero width.
+tensor size=     0.30 MiB ->     0.33 MiB
+total size =    35.37 MiB ->    24.05 MiB
+[  58/ 123]                  blk.5.attn_v.weight - [  768,   768,     1,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.5.attn_v.weight.t1: type=q5_K, width=256, nrows=768, offset=0
+operator(): writing tensor data for blk.5.attn_v.weight.t1 at offset 25686944
+  Quantizing blk.5.attn_v.weight.t2: type=iq4_xs, width=512, nrows=768, offset=256
+operator(): writing tensor data for blk.5.attn_v.weight.t2 at offset 25822112
+  Skipping   blk.5.attn_v.weight.t3 due to zero width.
+tensor size=     0.30 MiB ->     0.33 MiB
+total size =    35.67 MiB ->    24.37 MiB
+[  59/ 123]           blk.5.ffn_down_exps.weight - [ 2048,   768,     2,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=1280 (q3_K)
+  Quantizing blk.5.ffn_down_exps.weight.t1: type=q5_K, width=256, nrows=768, offset=0
+operator(): writing tensor data for blk.5.ffn_down_exps.weight.t1 at offset 26031008
+  Quantizing blk.5.ffn_down_exps.weight.t2: type=iq4_xs, width=512, nrows=768, offset=256
+operator(): writing tensor data for blk.5.ffn_down_exps.weight.t2 at offset 26166176
+  Quantizing blk.5.ffn_down_exps.weight.t3: type=q3_K, width=1280, nrows=768, offset=768
+operator(): writing tensor data for blk.5.ffn_down_exps.weight.t3 at offset 26375072
+tensor size=     1.59 MiB ->     0.73 MiB
+total size =    37.26 MiB ->    25.10 MiB
+[  60/ 123]           blk.5.ffn_gate_exps.weight - [  768,  2048,     2,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.5.ffn_gate_exps.weight.t1: type=q5_K, width=256, nrows=2048, offset=0
+operator(): writing tensor data for blk.5.ffn_gate_exps.weight.t1 at offset 26797472
+  Quantizing blk.5.ffn_gate_exps.weight.t2: type=iq4_xs, width=512, nrows=2048, offset=256
+operator(): writing tensor data for blk.5.ffn_gate_exps.weight.t2 at offset 27157920
+  Skipping   blk.5.ffn_gate_exps.weight.t3 due to zero width.
+tensor size=     1.59 MiB ->     0.88 MiB
+total size =    38.85 MiB ->    25.98 MiB
+[  61/ 123]            blk.5.ffn_gate_inp.weight - [  768,     2,     1,     1], type =    f32, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.5.ffn_gate_inp.weight.t1: type=q5_K, width=256, nrows=2, offset=0
+operator(): writing tensor data for blk.5.ffn_gate_inp.weight.t1 at offset 27714976
+  Quantizing blk.5.ffn_gate_inp.weight.t2: type=iq4_xs, width=512, nrows=2, offset=256
+operator(): writing tensor data for blk.5.ffn_gate_inp.weight.t2 at offset 27715328
+  Skipping   blk.5.ffn_gate_inp.weight.t3 due to zero width.
+tensor size=     0.01 MiB ->     0.00 MiB
+total size =    38.86 MiB ->    25.98 MiB
+[  62/ 123]                blk.5.ffn_norm.weight - [  768,     1,     1,     1], type =    f32, size =    0.003 MB
+llama_model_quantize_impl: writing tensor data for blk.5.ffn_norm.weight at offset 27715872
+tensor size=     0.00 MiB ->     0.00 MiB
+total size =    38.86 MiB ->    25.98 MiB
+[  63/ 123]             blk.5.ffn_up_exps.weight - [  768,  2048,     2,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.5.ffn_up_exps.weight.t1: type=q5_K, width=256, nrows=2048, offset=0
+operator(): writing tensor data for blk.5.ffn_up_exps.weight.t1 at offset 27718944
+  Quantizing blk.5.ffn_up_exps.weight.t2: type=iq4_xs, width=512, nrows=2048, offset=256
+operator(): writing tensor data for blk.5.ffn_up_exps.weight.t2 at offset 28079392
+  Skipping   blk.5.ffn_up_exps.weight.t3 due to zero width.
+tensor size=     1.59 MiB ->     0.88 MiB
+total size =    40.46 MiB ->    26.86 MiB
+[  64/ 123]                  blk.6.attn_k.weight - [  768,   768,     1,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.6.attn_k.weight.t1: type=q5_K, width=256, nrows=768, offset=0
+operator(): writing tensor data for blk.6.attn_k.weight.t1 at offset 28636448
+  Quantizing blk.6.attn_k.weight.t2: type=iq4_xs, width=512, nrows=768, offset=256
+operator(): writing tensor data for blk.6.attn_k.weight.t2 at offset 28771616
+  Skipping   blk.6.attn_k.weight.t3 due to zero width.
+tensor size=     0.30 MiB ->     0.33 MiB
+total size =    40.75 MiB ->    27.19 MiB
+[  65/ 123]               blk.6.attn_norm.weight - [  768,     1,     1,     1], type =    f32, size =    0.003 MB
+llama_model_quantize_impl: writing tensor data for blk.6.attn_norm.weight at offset 28980512
+tensor size=     0.00 MiB ->     0.00 MiB
+total size =    40.76 MiB ->    27.19 MiB
+[  66/ 123]             blk.6.attn_output.weight - [  768,   768,     1,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.6.attn_output.weight.t1: type=q5_K, width=256, nrows=768, offset=0
+operator(): writing tensor data for blk.6.attn_output.weight.t1 at offset 28983584
+  Quantizing blk.6.attn_output.weight.t2: type=iq4_xs, width=512, nrows=768, offset=256
+operator(): writing tensor data for blk.6.attn_output.weight.t2 at offset 29118752
+  Skipping   blk.6.attn_output.weight.t3 due to zero width.
+tensor size=     0.30 MiB ->     0.33 MiB
+total size =    41.06 MiB ->    27.52 MiB
+[  67/ 123]                  blk.6.attn_q.weight - [  768,   768,     1,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.6.attn_q.weight.t1: type=q5_K, width=256, nrows=768, offset=0
+operator(): writing tensor data for blk.6.attn_q.weight.t1 at offset 29327648
+  Quantizing blk.6.attn_q.weight.t2: type=iq4_xs, width=512, nrows=768, offset=256
+operator(): writing tensor data for blk.6.attn_q.weight.t2 at offset 29462816
+  Skipping   blk.6.attn_q.weight.t3 due to zero width.
+tensor size=     0.30 MiB ->     0.33 MiB
+total size =    41.36 MiB ->    27.85 MiB
+[  68/ 123]                  blk.6.attn_v.weight - [  768,   768,     1,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.6.attn_v.weight.t1: type=q5_K, width=256, nrows=768, offset=0
+operator(): writing tensor data for blk.6.attn_v.weight.t1 at offset 29671712
+  Quantizing blk.6.attn_v.weight.t2: type=iq4_xs, width=512, nrows=768, offset=256
+operator(): writing tensor data for blk.6.attn_v.weight.t2 at offset 29806880
+  Skipping   blk.6.attn_v.weight.t3 due to zero width.
+tensor size=     0.30 MiB ->     0.33 MiB
+total size =    41.65 MiB ->    28.17 MiB
+[  69/ 123]           blk.6.ffn_down_exps.weight - [ 2048,   768,     2,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=1280 (q3_K)
+  Quantizing blk.6.ffn_down_exps.weight.t1: type=q5_K, width=256, nrows=768, offset=0
+operator(): writing tensor data for blk.6.ffn_down_exps.weight.t1 at offset 30015776
+  Quantizing blk.6.ffn_down_exps.weight.t2: type=iq4_xs, width=512, nrows=768, offset=256
+operator(): writing tensor data for blk.6.ffn_down_exps.weight.t2 at offset 30150944
+  Quantizing blk.6.ffn_down_exps.weight.t3: type=q3_K, width=1280, nrows=768, offset=768
+operator(): writing tensor data for blk.6.ffn_down_exps.weight.t3 at offset 30359840
+tensor size=     1.59 MiB ->     0.73 MiB
+total size =    43.25 MiB ->    28.91 MiB
+[  70/ 123]           blk.6.ffn_gate_exps.weight - [  768,  2048,     2,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.6.ffn_gate_exps.weight.t1: type=q5_K, width=256, nrows=2048, offset=0
+operator(): writing tensor data for blk.6.ffn_gate_exps.weight.t1 at offset 30782240
+  Quantizing blk.6.ffn_gate_exps.weight.t2: type=iq4_xs, width=512, nrows=2048, offset=256
+operator(): writing tensor data for blk.6.ffn_gate_exps.weight.t2 at offset 31142688
+  Skipping   blk.6.ffn_gate_exps.weight.t3 due to zero width.
+tensor size=     1.59 MiB ->     0.88 MiB
+total size =    44.84 MiB ->    29.78 MiB
+[  71/ 123]            blk.6.ffn_gate_inp.weight - [  768,     2,     1,     1], type =    f32, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.6.ffn_gate_inp.weight.t1: type=q5_K, width=256, nrows=2, offset=0
+operator(): writing tensor data for blk.6.ffn_gate_inp.weight.t1 at offset 31699744
+  Quantizing blk.6.ffn_gate_inp.weight.t2: type=iq4_xs, width=512, nrows=2, offset=256
+operator(): writing tensor data for blk.6.ffn_gate_inp.weight.t2 at offset 31700096
+  Skipping   blk.6.ffn_gate_inp.weight.t3 due to zero width.
+tensor size=     0.01 MiB ->     0.00 MiB
+total size =    44.85 MiB ->    29.78 MiB
+[  72/ 123]                blk.6.ffn_norm.weight - [  768,     1,     1,     1], type =    f32, size =    0.003 MB
+llama_model_quantize_impl: writing tensor data for blk.6.ffn_norm.weight at offset 31700640
+tensor size=     0.00 MiB ->     0.00 MiB
+total size =    44.85 MiB ->    29.78 MiB
+[  73/ 123]             blk.6.ffn_up_exps.weight - [  768,  2048,     2,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.6.ffn_up_exps.weight.t1: type=q5_K, width=256, nrows=2048, offset=0
+operator(): writing tensor data for blk.6.ffn_up_exps.weight.t1 at offset 31703712
+  Quantizing blk.6.ffn_up_exps.weight.t2: type=iq4_xs, width=512, nrows=2048, offset=256
+operator(): writing tensor data for blk.6.ffn_up_exps.weight.t2 at offset 32064160
+  Skipping   blk.6.ffn_up_exps.weight.t3 due to zero width.
+tensor size=     1.59 MiB ->     0.88 MiB
+total size =    46.44 MiB ->    30.66 MiB
+[  74/ 123]                  blk.7.attn_k.weight - [  768,   768,     1,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.7.attn_k.weight.t1: type=q5_K, width=256, nrows=768, offset=0
+operator(): writing tensor data for blk.7.attn_k.weight.t1 at offset 32621216
+  Quantizing blk.7.attn_k.weight.t2: type=iq4_xs, width=512, nrows=768, offset=256
+operator(): writing tensor data for blk.7.attn_k.weight.t2 at offset 32756384
+  Skipping   blk.7.attn_k.weight.t3 due to zero width.
+tensor size=     0.30 MiB ->     0.33 MiB
+total size =    46.74 MiB ->    30.99 MiB
+[  75/ 123]               blk.7.attn_norm.weight - [  768,     1,     1,     1], type =    f32, size =    0.003 MB
+llama_model_quantize_impl: writing tensor data for blk.7.attn_norm.weight at offset 32965280
+tensor size=     0.00 MiB ->     0.00 MiB
+total size =    46.75 MiB ->    30.99 MiB
+[  76/ 123]             blk.7.attn_output.weight - [  768,   768,     1,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.7.attn_output.weight.t1: type=q5_K, width=256, nrows=768, offset=0
+operator(): writing tensor data for blk.7.attn_output.weight.t1 at offset 32968352
+  Quantizing blk.7.attn_output.weight.t2: type=iq4_xs, width=512, nrows=768, offset=256
+operator(): writing tensor data for blk.7.attn_output.weight.t2 at offset 33103520
+  Skipping   blk.7.attn_output.weight.t3 due to zero width.
+tensor size=     0.30 MiB ->     0.33 MiB
+total size =    47.04 MiB ->    31.32 MiB
+[  77/ 123]                  blk.7.attn_q.weight - [  768,   768,     1,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.7.attn_q.weight.t1: type=q5_K, width=256, nrows=768, offset=0
+operator(): writing tensor data for blk.7.attn_q.weight.t1 at offset 33312416
+  Quantizing blk.7.attn_q.weight.t2: type=iq4_xs, width=512, nrows=768, offset=256
+operator(): writing tensor data for blk.7.attn_q.weight.t2 at offset 33447584
+  Skipping   blk.7.attn_q.weight.t3 due to zero width.
+tensor size=     0.30 MiB ->     0.33 MiB
+total size =    47.34 MiB ->    31.65 MiB
+[  78/ 123]                  blk.7.attn_v.weight - [  768,   768,     1,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.7.attn_v.weight.t1: type=q5_K, width=256, nrows=768, offset=0
+operator(): writing tensor data for blk.7.attn_v.weight.t1 at offset 33656480
+  Quantizing blk.7.attn_v.weight.t2: type=iq4_xs, width=512, nrows=768, offset=256
+operator(): writing tensor data for blk.7.attn_v.weight.t2 at offset 33791648
+  Skipping   blk.7.attn_v.weight.t3 due to zero width.
+tensor size=     0.30 MiB ->     0.33 MiB
+total size =    47.64 MiB ->    31.97 MiB
+[  79/ 123]           blk.7.ffn_down_exps.weight - [ 2048,   768,     2,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=1280 (q3_K)
+  Quantizing blk.7.ffn_down_exps.weight.t1: type=q5_K, width=256, nrows=768, offset=0
+operator(): writing tensor data for blk.7.ffn_down_exps.weight.t1 at offset 34000544
+  Quantizing blk.7.ffn_down_exps.weight.t2: type=iq4_xs, width=512, nrows=768, offset=256
+operator(): writing tensor data for blk.7.ffn_down_exps.weight.t2 at offset 34135712
+  Quantizing blk.7.ffn_down_exps.weight.t3: type=q3_K, width=1280, nrows=768, offset=768
+operator(): writing tensor data for blk.7.ffn_down_exps.weight.t3 at offset 34344608
+tensor size=     1.59 MiB ->     0.73 MiB
+total size =    49.24 MiB ->    32.71 MiB
+[  80/ 123]           blk.7.ffn_gate_exps.weight - [  768,  2048,     2,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.7.ffn_gate_exps.weight.t1: type=q5_K, width=256, nrows=2048, offset=0
+operator(): writing tensor data for blk.7.ffn_gate_exps.weight.t1 at offset 34767008
+  Quantizing blk.7.ffn_gate_exps.weight.t2: type=iq4_xs, width=512, nrows=2048, offset=256
+operator(): writing tensor data for blk.7.ffn_gate_exps.weight.t2 at offset 35127456
+  Skipping   blk.7.ffn_gate_exps.weight.t3 due to zero width.
+tensor size=     1.59 MiB ->     0.88 MiB
+total size =    50.83 MiB ->    33.58 MiB
+[  81/ 123]            blk.7.ffn_gate_inp.weight - [  768,     2,     1,     1], type =    f32, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.7.ffn_gate_inp.weight.t1: type=q5_K, width=256, nrows=2, offset=0
+operator(): writing tensor data for blk.7.ffn_gate_inp.weight.t1 at offset 35684512
+  Quantizing blk.7.ffn_gate_inp.weight.t2: type=iq4_xs, width=512, nrows=2, offset=256
+operator(): writing tensor data for blk.7.ffn_gate_inp.weight.t2 at offset 35684864
+  Skipping   blk.7.ffn_gate_inp.weight.t3 due to zero width.
+tensor size=     0.01 MiB ->     0.00 MiB
+total size =    50.84 MiB ->    33.58 MiB
+[  82/ 123]                blk.7.ffn_norm.weight - [  768,     1,     1,     1], type =    f32, size =    0.003 MB
+llama_model_quantize_impl: writing tensor data for blk.7.ffn_norm.weight at offset 35685408
+tensor size=     0.00 MiB ->     0.00 MiB
+total size =    50.84 MiB ->    33.58 MiB
+[  83/ 123]             blk.7.ffn_up_exps.weight - [  768,  2048,     2,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.7.ffn_up_exps.weight.t1: type=q5_K, width=256, nrows=2048, offset=0
+operator(): writing tensor data for blk.7.ffn_up_exps.weight.t1 at offset 35688480
+  Quantizing blk.7.ffn_up_exps.weight.t2: type=iq4_xs, width=512, nrows=2048, offset=256
+operator(): writing tensor data for blk.7.ffn_up_exps.weight.t2 at offset 36048928
+  Skipping   blk.7.ffn_up_exps.weight.t3 due to zero width.
+tensor size=     1.59 MiB ->     0.88 MiB
+total size =    52.43 MiB ->    34.46 MiB
+[  84/ 123]                  blk.8.attn_k.weight - [  768,   768,     1,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.8.attn_k.weight.t1: type=q5_K, width=256, nrows=768, offset=0
+operator(): writing tensor data for blk.8.attn_k.weight.t1 at offset 36605984
+  Quantizing blk.8.attn_k.weight.t2: type=iq4_xs, width=512, nrows=768, offset=256
+operator(): writing tensor data for blk.8.attn_k.weight.t2 at offset 36741152
+  Skipping   blk.8.attn_k.weight.t3 due to zero width.
+tensor size=     0.30 MiB ->     0.33 MiB
+total size =    52.73 MiB ->    34.79 MiB
+[  85/ 123]               blk.8.attn_norm.weight - [  768,     1,     1,     1], type =    f32, size =    0.003 MB
+llama_model_quantize_impl: writing tensor data for blk.8.attn_norm.weight at offset 36950048
+tensor size=     0.00 MiB ->     0.00 MiB
+total size =    52.73 MiB ->    34.79 MiB
+[  86/ 123]             blk.8.attn_output.weight - [  768,   768,     1,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.8.attn_output.weight.t1: type=q5_K, width=256, nrows=768, offset=0
+operator(): writing tensor data for blk.8.attn_output.weight.t1 at offset 36953120
+  Quantizing blk.8.attn_output.weight.t2: type=iq4_xs, width=512, nrows=768, offset=256
+operator(): writing tensor data for blk.8.attn_output.weight.t2 at offset 37088288
+  Skipping   blk.8.attn_output.weight.t3 due to zero width.
+tensor size=     0.30 MiB ->     0.33 MiB
+total size =    53.03 MiB ->    35.12 MiB
+[  87/ 123]                  blk.8.attn_q.weight - [  768,   768,     1,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.8.attn_q.weight.t1: type=q5_K, width=256, nrows=768, offset=0
+operator(): writing tensor data for blk.8.attn_q.weight.t1 at offset 37297184
+  Quantizing blk.8.attn_q.weight.t2: type=iq4_xs, width=512, nrows=768, offset=256
+operator(): writing tensor data for blk.8.attn_q.weight.t2 at offset 37432352
+  Skipping   blk.8.attn_q.weight.t3 due to zero width.
+tensor size=     0.30 MiB ->     0.33 MiB
+total size =    53.33 MiB ->    35.45 MiB
+[  88/ 123]                  blk.8.attn_v.weight - [  768,   768,     1,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.8.attn_v.weight.t1: type=q5_K, width=256, nrows=768, offset=0
+operator(): writing tensor data for blk.8.attn_v.weight.t1 at offset 37641248
+  Quantizing blk.8.attn_v.weight.t2: type=iq4_xs, width=512, nrows=768, offset=256
+operator(): writing tensor data for blk.8.attn_v.weight.t2 at offset 37776416
+  Skipping   blk.8.attn_v.weight.t3 due to zero width.
+tensor size=     0.30 MiB ->     0.33 MiB
+total size =    53.63 MiB ->    35.77 MiB
+[  89/ 123]           blk.8.ffn_down_exps.weight - [ 2048,   768,     2,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=1280 (q3_K)
+  Quantizing blk.8.ffn_down_exps.weight.t1: type=q5_K, width=256, nrows=768, offset=0
+operator(): writing tensor data for blk.8.ffn_down_exps.weight.t1 at offset 37985312
+  Quantizing blk.8.ffn_down_exps.weight.t2: type=iq4_xs, width=512, nrows=768, offset=256
+operator(): writing tensor data for blk.8.ffn_down_exps.weight.t2 at offset 38120480
+  Quantizing blk.8.ffn_down_exps.weight.t3: type=q3_K, width=1280, nrows=768, offset=768
+operator(): writing tensor data for blk.8.ffn_down_exps.weight.t3 at offset 38329376
+tensor size=     1.59 MiB ->     0.73 MiB
+total size =    55.22 MiB ->    36.51 MiB
+[  90/ 123]           blk.8.ffn_gate_exps.weight - [  768,  2048,     2,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.8.ffn_gate_exps.weight.t1: type=q5_K, width=256, nrows=2048, offset=0
+operator(): writing tensor data for blk.8.ffn_gate_exps.weight.t1 at offset 38751776
+  Quantizing blk.8.ffn_gate_exps.weight.t2: type=iq4_xs, width=512, nrows=2048, offset=256
+operator(): writing tensor data for blk.8.ffn_gate_exps.weight.t2 at offset 39112224
+  Skipping   blk.8.ffn_gate_exps.weight.t3 due to zero width.
+tensor size=     1.59 MiB ->     0.88 MiB
+total size =    56.82 MiB ->    37.38 MiB
+[  91/ 123]            blk.8.ffn_gate_inp.weight - [  768,     2,     1,     1], type =    f32, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.8.ffn_gate_inp.weight.t1: type=q5_K, width=256, nrows=2, offset=0
+operator(): writing tensor data for blk.8.ffn_gate_inp.weight.t1 at offset 39669280
+  Quantizing blk.8.ffn_gate_inp.weight.t2: type=iq4_xs, width=512, nrows=2, offset=256
+operator(): writing tensor data for blk.8.ffn_gate_inp.weight.t2 at offset 39669632
+  Skipping   blk.8.ffn_gate_inp.weight.t3 due to zero width.
+tensor size=     0.01 MiB ->     0.00 MiB
+total size =    56.82 MiB ->    37.38 MiB
+[  92/ 123]                blk.8.ffn_norm.weight - [  768,     1,     1,     1], type =    f32, size =    0.003 MB
+llama_model_quantize_impl: writing tensor data for blk.8.ffn_norm.weight at offset 39670176
+tensor size=     0.00 MiB ->     0.00 MiB
+total size =    56.83 MiB ->    37.38 MiB
+[  93/ 123]             blk.8.ffn_up_exps.weight - [  768,  2048,     2,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.8.ffn_up_exps.weight.t1: type=q5_K, width=256, nrows=2048, offset=0
+operator(): writing tensor data for blk.8.ffn_up_exps.weight.t1 at offset 39673248
+  Quantizing blk.8.ffn_up_exps.weight.t2: type=iq4_xs, width=512, nrows=2048, offset=256
+operator(): writing tensor data for blk.8.ffn_up_exps.weight.t2 at offset 40033696
+  Skipping   blk.8.ffn_up_exps.weight.t3 due to zero width.
+tensor size=     1.59 MiB ->     0.88 MiB
+total size =    58.42 MiB ->    38.26 MiB
+[  94/ 123]                  blk.9.attn_k.weight - [  768,   768,     1,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.9.attn_k.weight.t1: type=q5_K, width=256, nrows=768, offset=0
+operator(): writing tensor data for blk.9.attn_k.weight.t1 at offset 40590752
+  Quantizing blk.9.attn_k.weight.t2: type=iq4_xs, width=512, nrows=768, offset=256
+operator(): writing tensor data for blk.9.attn_k.weight.t2 at offset 40725920
+  Skipping   blk.9.attn_k.weight.t3 due to zero width.
+tensor size=     0.30 MiB ->     0.33 MiB
+total size =    58.72 MiB ->    38.59 MiB
+[  95/ 123]               blk.9.attn_norm.weight - [  768,     1,     1,     1], type =    f32, size =    0.003 MB
+llama_model_quantize_impl: writing tensor data for blk.9.attn_norm.weight at offset 40934816
+tensor size=     0.00 MiB ->     0.00 MiB
+total size =    58.72 MiB ->    38.59 MiB
+[  96/ 123]             blk.9.attn_output.weight - [  768,   768,     1,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.9.attn_output.weight.t1: type=q5_K, width=256, nrows=768, offset=0
+operator(): writing tensor data for blk.9.attn_output.weight.t1 at offset 40937888
+  Quantizing blk.9.attn_output.weight.t2: type=iq4_xs, width=512, nrows=768, offset=256
+operator(): writing tensor data for blk.9.attn_output.weight.t2 at offset 41073056
+  Skipping   blk.9.attn_output.weight.t3 due to zero width.
+tensor size=     0.30 MiB ->     0.33 MiB
+total size =    59.02 MiB ->    38.92 MiB
+[  97/ 123]                  blk.9.attn_q.weight - [  768,   768,     1,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.9.attn_q.weight.t1: type=q5_K, width=256, nrows=768, offset=0
+operator(): writing tensor data for blk.9.attn_q.weight.t1 at offset 41281952
+  Quantizing blk.9.attn_q.weight.t2: type=iq4_xs, width=512, nrows=768, offset=256
+operator(): writing tensor data for blk.9.attn_q.weight.t2 at offset 41417120
+  Skipping   blk.9.attn_q.weight.t3 due to zero width.
+tensor size=     0.30 MiB ->     0.33 MiB
+total size =    59.32 MiB ->    39.25 MiB
+[  98/ 123]                  blk.9.attn_v.weight - [  768,   768,     1,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.9.attn_v.weight.t1: type=q5_K, width=256, nrows=768, offset=0
+operator(): writing tensor data for blk.9.attn_v.weight.t1 at offset 41626016
+  Quantizing blk.9.attn_v.weight.t2: type=iq4_xs, width=512, nrows=768, offset=256
+operator(): writing tensor data for blk.9.attn_v.weight.t2 at offset 41761184
+  Skipping   blk.9.attn_v.weight.t3 due to zero width.
+tensor size=     0.30 MiB ->     0.33 MiB
+total size =    59.62 MiB ->    39.57 MiB
+[  99/ 123]           blk.9.ffn_down_exps.weight - [ 2048,   768,     2,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=1280 (q3_K)
+  Quantizing blk.9.ffn_down_exps.weight.t1: type=q5_K, width=256, nrows=768, offset=0
+operator(): writing tensor data for blk.9.ffn_down_exps.weight.t1 at offset 41970080
+  Quantizing blk.9.ffn_down_exps.weight.t2: type=iq4_xs, width=512, nrows=768, offset=256
+operator(): writing tensor data for blk.9.ffn_down_exps.weight.t2 at offset 42105248
+  Quantizing blk.9.ffn_down_exps.weight.t3: type=q3_K, width=1280, nrows=768, offset=768
+operator(): writing tensor data for blk.9.ffn_down_exps.weight.t3 at offset 42314144
+tensor size=     1.59 MiB ->     0.73 MiB
+total size =    61.21 MiB ->    40.31 MiB
+[ 100/ 123]           blk.9.ffn_gate_exps.weight - [  768,  2048,     2,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.9.ffn_gate_exps.weight.t1: type=q5_K, width=256, nrows=2048, offset=0
+operator(): writing tensor data for blk.9.ffn_gate_exps.weight.t1 at offset 42736544
+  Quantizing blk.9.ffn_gate_exps.weight.t2: type=iq4_xs, width=512, nrows=2048, offset=256
+operator(): writing tensor data for blk.9.ffn_gate_exps.weight.t2 at offset 43096992
+  Skipping   blk.9.ffn_gate_exps.weight.t3 due to zero width.
+tensor size=     1.59 MiB ->     0.88 MiB
+total size =    62.81 MiB ->    41.18 MiB
+[ 101/ 123]            blk.9.ffn_gate_inp.weight - [  768,     2,     1,     1], type =    f32, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.9.ffn_gate_inp.weight.t1: type=q5_K, width=256, nrows=2, offset=0
+operator(): writing tensor data for blk.9.ffn_gate_inp.weight.t1 at offset 43654048
+  Quantizing blk.9.ffn_gate_inp.weight.t2: type=iq4_xs, width=512, nrows=2, offset=256
+operator(): writing tensor data for blk.9.ffn_gate_inp.weight.t2 at offset 43654400
+  Skipping   blk.9.ffn_gate_inp.weight.t3 due to zero width.
+tensor size=     0.01 MiB ->     0.00 MiB
+total size =    62.81 MiB ->    41.18 MiB
+[ 102/ 123]                blk.9.ffn_norm.weight - [  768,     1,     1,     1], type =    f32, size =    0.003 MB
+llama_model_quantize_impl: writing tensor data for blk.9.ffn_norm.weight at offset 43654944
+tensor size=     0.00 MiB ->     0.00 MiB
+total size =    62.82 MiB ->    41.18 MiB
+[ 103/ 123]             blk.9.ffn_up_exps.weight - [  768,  2048,     2,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.9.ffn_up_exps.weight.t1: type=q5_K, width=256, nrows=2048, offset=0
+operator(): writing tensor data for blk.9.ffn_up_exps.weight.t1 at offset 43658016
+  Quantizing blk.9.ffn_up_exps.weight.t2: type=iq4_xs, width=512, nrows=2048, offset=256
+operator(): writing tensor data for blk.9.ffn_up_exps.weight.t2 at offset 44018464
+  Skipping   blk.9.ffn_up_exps.weight.t3 due to zero width.
+tensor size=     1.59 MiB ->     0.88 MiB
+total size =    64.41 MiB ->    42.06 MiB
+[ 104/ 123]                 blk.10.attn_k.weight - [  768,   768,     1,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.10.attn_k.weight.t1: type=q5_K, width=256, nrows=768, offset=0
+operator(): writing tensor data for blk.10.attn_k.weight.t1 at offset 44575520
+  Quantizing blk.10.attn_k.weight.t2: type=iq4_xs, width=512, nrows=768, offset=256
+operator(): writing tensor data for blk.10.attn_k.weight.t2 at offset 44710688
+  Skipping   blk.10.attn_k.weight.t3 due to zero width.
+tensor size=     0.30 MiB ->     0.33 MiB
+total size =    64.71 MiB ->    42.39 MiB
+[ 105/ 123]              blk.10.attn_norm.weight - [  768,     1,     1,     1], type =    f32, size =    0.003 MB
+llama_model_quantize_impl: writing tensor data for blk.10.attn_norm.weight at offset 44919584
+tensor size=     0.00 MiB ->     0.00 MiB
+total size =    64.71 MiB ->    42.39 MiB
+[ 106/ 123]            blk.10.attn_output.weight - [  768,   768,     1,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.10.attn_output.weight.t1: type=q5_K, width=256, nrows=768, offset=0
+operator(): writing tensor data for blk.10.attn_output.weight.t1 at offset 44922656
+  Quantizing blk.10.attn_output.weight.t2: type=iq4_xs, width=512, nrows=768, offset=256
+operator(): writing tensor data for blk.10.attn_output.weight.t2 at offset 45057824
+  Skipping   blk.10.attn_output.weight.t3 due to zero width.
+tensor size=     0.30 MiB ->     0.33 MiB
+total size =    65.01 MiB ->    42.72 MiB
+[ 107/ 123]                 blk.10.attn_q.weight - [  768,   768,     1,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.10.attn_q.weight.t1: type=q5_K, width=256, nrows=768, offset=0
+operator(): writing tensor data for blk.10.attn_q.weight.t1 at offset 45266720
+  Quantizing blk.10.attn_q.weight.t2: type=iq4_xs, width=512, nrows=768, offset=256
+operator(): writing tensor data for blk.10.attn_q.weight.t2 at offset 45401888
+  Skipping   blk.10.attn_q.weight.t3 due to zero width.
+tensor size=     0.30 MiB ->     0.33 MiB
+total size =    65.31 MiB ->    43.05 MiB
+[ 108/ 123]                 blk.10.attn_v.weight - [  768,   768,     1,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.10.attn_v.weight.t1: type=q5_K, width=256, nrows=768, offset=0
+operator(): writing tensor data for blk.10.attn_v.weight.t1 at offset 45610784
+  Quantizing blk.10.attn_v.weight.t2: type=iq4_xs, width=512, nrows=768, offset=256
+operator(): writing tensor data for blk.10.attn_v.weight.t2 at offset 45745952
+  Skipping   blk.10.attn_v.weight.t3 due to zero width.
+tensor size=     0.30 MiB ->     0.33 MiB
+total size =    65.61 MiB ->    43.37 MiB
+[ 109/ 123]          blk.10.ffn_down_exps.weight - [ 2048,   768,     2,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=1280 (q3_K)
+  Quantizing blk.10.ffn_down_exps.weight.t1: type=q5_K, width=256, nrows=768, offset=0
+operator(): writing tensor data for blk.10.ffn_down_exps.weight.t1 at offset 45954848
+  Quantizing blk.10.ffn_down_exps.weight.t2: type=iq4_xs, width=512, nrows=768, offset=256
+operator(): writing tensor data for blk.10.ffn_down_exps.weight.t2 at offset 46090016
+  Quantizing blk.10.ffn_down_exps.weight.t3: type=q3_K, width=1280, nrows=768, offset=768
+operator(): writing tensor data for blk.10.ffn_down_exps.weight.t3 at offset 46298912
+tensor size=     1.59 MiB ->     0.73 MiB
+total size =    67.20 MiB ->    44.11 MiB
+[ 110/ 123]          blk.10.ffn_gate_exps.weight - [  768,  2048,     2,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.10.ffn_gate_exps.weight.t1: type=q5_K, width=256, nrows=2048, offset=0
+operator(): writing tensor data for blk.10.ffn_gate_exps.weight.t1 at offset 46721312
+  Quantizing blk.10.ffn_gate_exps.weight.t2: type=iq4_xs, width=512, nrows=2048, offset=256
+operator(): writing tensor data for blk.10.ffn_gate_exps.weight.t2 at offset 47081760
+  Skipping   blk.10.ffn_gate_exps.weight.t3 due to zero width.
+tensor size=     1.59 MiB ->     0.88 MiB
+total size =    68.79 MiB ->    44.98 MiB
+[ 111/ 123]           blk.10.ffn_gate_inp.weight - [  768,     2,     1,     1], type =    f32, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.10.ffn_gate_inp.weight.t1: type=q5_K, width=256, nrows=2, offset=0
+operator(): writing tensor data for blk.10.ffn_gate_inp.weight.t1 at offset 47638816
+  Quantizing blk.10.ffn_gate_inp.weight.t2: type=iq4_xs, width=512, nrows=2, offset=256
+operator(): writing tensor data for blk.10.ffn_gate_inp.weight.t2 at offset 47639168
+  Skipping   blk.10.ffn_gate_inp.weight.t3 due to zero width.
+tensor size=     0.01 MiB ->     0.00 MiB
+total size =    68.80 MiB ->    44.98 MiB
+[ 112/ 123]               blk.10.ffn_norm.weight - [  768,     1,     1,     1], type =    f32, size =    0.003 MB
+llama_model_quantize_impl: writing tensor data for blk.10.ffn_norm.weight at offset 47639712
+tensor size=     0.00 MiB ->     0.00 MiB
+total size =    68.80 MiB ->    44.98 MiB
+[ 113/ 123]            blk.10.ffn_up_exps.weight - [  768,  2048,     2,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.10.ffn_up_exps.weight.t1: type=q5_K, width=256, nrows=2048, offset=0
+operator(): writing tensor data for blk.10.ffn_up_exps.weight.t1 at offset 47642784
+  Quantizing blk.10.ffn_up_exps.weight.t2: type=iq4_xs, width=512, nrows=2048, offset=256
+operator(): writing tensor data for blk.10.ffn_up_exps.weight.t2 at offset 48003232
+  Skipping   blk.10.ffn_up_exps.weight.t3 due to zero width.
+tensor size=     1.59 MiB ->     0.88 MiB
+total size =    70.40 MiB ->    45.86 MiB
+[ 114/ 123]                 blk.11.attn_k.weight - [  768,   768,     1,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.11.attn_k.weight.t1: type=q5_K, width=256, nrows=768, offset=0
+operator(): writing tensor data for blk.11.attn_k.weight.t1 at offset 48560288
+  Quantizing blk.11.attn_k.weight.t2: type=iq4_xs, width=512, nrows=768, offset=256
+operator(): writing tensor data for blk.11.attn_k.weight.t2 at offset 48695456
+  Skipping   blk.11.attn_k.weight.t3 due to zero width.
+tensor size=     0.30 MiB ->     0.33 MiB
+total size =    70.70 MiB ->    46.19 MiB
+[ 115/ 123]              blk.11.attn_norm.weight - [  768,     1,     1,     1], type =    f32, size =    0.003 MB
+llama_model_quantize_impl: writing tensor data for blk.11.attn_norm.weight at offset 48904352
+tensor size=     0.00 MiB ->     0.00 MiB
+total size =    70.70 MiB ->    46.19 MiB
+[ 116/ 123]            blk.11.attn_output.weight - [  768,   768,     1,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.11.attn_output.weight.t1: type=q5_K, width=256, nrows=768, offset=0
+operator(): writing tensor data for blk.11.attn_output.weight.t1 at offset 48907424
+  Quantizing blk.11.attn_output.weight.t2: type=iq4_xs, width=512, nrows=768, offset=256
+operator(): writing tensor data for blk.11.attn_output.weight.t2 at offset 49042592
+  Skipping   blk.11.attn_output.weight.t3 due to zero width.
+tensor size=     0.30 MiB ->     0.33 MiB
+total size =    71.00 MiB ->    46.52 MiB
+[ 117/ 123]                 blk.11.attn_q.weight - [  768,   768,     1,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.11.attn_q.weight.t1: type=q5_K, width=256, nrows=768, offset=0
+operator(): writing tensor data for blk.11.attn_q.weight.t1 at offset 49251488
+  Quantizing blk.11.attn_q.weight.t2: type=iq4_xs, width=512, nrows=768, offset=256
+operator(): writing tensor data for blk.11.attn_q.weight.t2 at offset 49386656
+  Skipping   blk.11.attn_q.weight.t3 due to zero width.
+tensor size=     0.30 MiB ->     0.33 MiB
+total size =    71.30 MiB ->    46.85 MiB
+[ 118/ 123]                 blk.11.attn_v.weight - [  768,   768,     1,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.11.attn_v.weight.t1: type=q5_K, width=256, nrows=768, offset=0
+operator(): writing tensor data for blk.11.attn_v.weight.t1 at offset 49595552
+  Quantizing blk.11.attn_v.weight.t2: type=iq4_xs, width=512, nrows=768, offset=256
+operator(): writing tensor data for blk.11.attn_v.weight.t2 at offset 49730720
+  Skipping   blk.11.attn_v.weight.t3 due to zero width.
+tensor size=     0.30 MiB ->     0.33 MiB
+total size =    71.60 MiB ->    47.17 MiB
+[ 119/ 123]          blk.11.ffn_down_exps.weight - [ 2048,   768,     2,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=1280 (q3_K)
+  Quantizing blk.11.ffn_down_exps.weight.t1: type=q5_K, width=256, nrows=768, offset=0
+operator(): writing tensor data for blk.11.ffn_down_exps.weight.t1 at offset 49939616
+  Quantizing blk.11.ffn_down_exps.weight.t2: type=iq4_xs, width=512, nrows=768, offset=256
+operator(): writing tensor data for blk.11.ffn_down_exps.weight.t2 at offset 50074784
+  Quantizing blk.11.ffn_down_exps.weight.t3: type=q3_K, width=1280, nrows=768, offset=768
+operator(): writing tensor data for blk.11.ffn_down_exps.weight.t3 at offset 50283680
+tensor size=     1.59 MiB ->     0.73 MiB
+total size =    73.19 MiB ->    47.91 MiB
+[ 120/ 123]          blk.11.ffn_gate_exps.weight - [  768,  2048,     2,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.11.ffn_gate_exps.weight.t1: type=q5_K, width=256, nrows=2048, offset=0
+operator(): writing tensor data for blk.11.ffn_gate_exps.weight.t1 at offset 50706080
+  Quantizing blk.11.ffn_gate_exps.weight.t2: type=iq4_xs, width=512, nrows=2048, offset=256
+operator(): writing tensor data for blk.11.ffn_gate_exps.weight.t2 at offset 51066528
+  Skipping   blk.11.ffn_gate_exps.weight.t3 due to zero width.
+tensor size=     1.59 MiB ->     0.88 MiB
+total size =    74.78 MiB ->    48.78 MiB
+[ 121/ 123]           blk.11.ffn_gate_inp.weight - [  768,     2,     1,     1], type =    f32, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.11.ffn_gate_inp.weight.t1: type=q5_K, width=256, nrows=2, offset=0
+operator(): writing tensor data for blk.11.ffn_gate_inp.weight.t1 at offset 51623584
+  Quantizing blk.11.ffn_gate_inp.weight.t2: type=iq4_xs, width=512, nrows=2, offset=256
+operator(): writing tensor data for blk.11.ffn_gate_inp.weight.t2 at offset 51623936
+  Skipping   blk.11.ffn_gate_inp.weight.t3 due to zero width.
+tensor size=     0.01 MiB ->     0.00 MiB
+total size =    74.79 MiB ->    48.78 MiB
+[ 122/ 123]               blk.11.ffn_norm.weight - [  768,     1,     1,     1], type =    f32, size =    0.003 MB
+llama_model_quantize_impl: writing tensor data for blk.11.ffn_norm.weight at offset 51624480
+tensor size=     0.00 MiB ->     0.00 MiB
+total size =    74.79 MiB ->    48.78 MiB
+[ 123/ 123]            blk.11.ffn_up_exps.weight - [  768,  2048,     2,     1], type = iq4_xs, T3 Quantization: t1_width=256 (q5_K), t2_width=512 (iq4_xs), t3_width=0 (q3_K)
+  Quantizing blk.11.ffn_up_exps.weight.t1: type=q5_K, width=256, nrows=2048, offset=0
+operator(): writing tensor data for blk.11.ffn_up_exps.weight.t1 at offset 51627552
+  Quantizing blk.11.ffn_up_exps.weight.t2: type=iq4_xs, width=512, nrows=2048, offset=256
+operator(): writing tensor data for blk.11.ffn_up_exps.weight.t2 at offset 51988000
+  Skipping   blk.11.ffn_up_exps.weight.t3 due to zero width.
+tensor size=     1.59 MiB ->     0.88 MiB
+total size =    76.39 MiB ->    49.66 MiB
+operator(): metadata size after tensor quantization = 473120 (  462.03 KB)
+DEBUG: Tensors in ctx_outs[cur_split] before writing:
+DEBUG:   Tensor 0: output.weight, offset: 0
+DEBUG:   Tensor 1: output_norm.weight, offset: 2580480
+DEBUG:   Tensor 2: token_embd.weight, offset: 2583552
+DEBUG:   Tensor 3: blk.0.attn_k.weight.t1, offset: 4254720
+DEBUG:   Tensor 4: blk.0.attn_k.weight.t2, offset: 4389888
+DEBUG:   Tensor 5: blk.0.attn_norm.weight, offset: 4598784
+DEBUG:   Tensor 6: blk.0.attn_output.weight.t1, offset: 4601856
+DEBUG:   Tensor 7: blk.0.attn_output.weight.t2, offset: 4737024
+DEBUG:   Tensor 8: blk.0.attn_q.weight.t1, offset: 4945920
+DEBUG:   Tensor 9: blk.0.attn_q.weight.t2, offset: 5081088
+DEBUG:   Tensor 10: blk.0.attn_v.weight.t1, offset: 5289984
+DEBUG:   Tensor 11: blk.0.attn_v.weight.t2, offset: 5425152
+DEBUG:   Tensor 12: blk.0.ffn_down_exps.weight.t1, offset: 5634048
+DEBUG:   Tensor 13: blk.0.ffn_down_exps.weight.t2, offset: 5904384
+DEBUG:   Tensor 14: blk.0.ffn_down_exps.weight.t3, offset: 6322176
+DEBUG:   Tensor 15: blk.0.ffn_gate_exps.weight.t1, offset: 7166976
+DEBUG:   Tensor 16: blk.0.ffn_gate_exps.weight.t2, offset: 7887872
+DEBUG:   Tensor 17: blk.0.ffn_gate_inp.weight.t1, offset: 9001984
+DEBUG:   Tensor 18: blk.0.ffn_gate_inp.weight.t2, offset: 9002336
+DEBUG:   Tensor 19: blk.0.ffn_norm.weight, offset: 9002880
+DEBUG:   Tensor 20: blk.0.ffn_up_exps.weight.t1, offset: 9005952
+DEBUG:   Tensor 21: blk.0.ffn_up_exps.weight.t2, offset: 9726848
+DEBUG:   Tensor 22: blk.1.attn_k.weight.t1, offset: 10840960
+DEBUG:   Tensor 23: blk.1.attn_k.weight.t2, offset: 10976128
+DEBUG:   Tensor 24: blk.1.attn_norm.weight, offset: 11185024
+DEBUG:   Tensor 25: blk.1.attn_output.weight.t1, offset: 11188096
+DEBUG:   Tensor 26: blk.1.attn_output.weight.t2, offset: 11323264
+DEBUG:   Tensor 27: blk.1.attn_q.weight.t1, offset: 11532160
+DEBUG:   Tensor 28: blk.1.attn_q.weight.t2, offset: 11667328
+DEBUG:   Tensor 29: blk.1.attn_v.weight.t1, offset: 11876224
+DEBUG:   Tensor 30: blk.1.attn_v.weight.t2, offset: 12011392
+DEBUG:   Tensor 31: blk.1.ffn_down_exps.weight.t1, offset: 12220288
+DEBUG:   Tensor 32: blk.1.ffn_down_exps.weight.t2, offset: 12490624
+DEBUG:   Tensor 33: blk.1.ffn_down_exps.weight.t3, offset: 12908416
+DEBUG:   Tensor 34: blk.1.ffn_gate_exps.weight.t1, offset: 13753216
+DEBUG:   Tensor 35: blk.1.ffn_gate_exps.weight.t2, offset: 14474112
+DEBUG:   Tensor 36: blk.1.ffn_gate_inp.weight.t1, offset: 15588224
+DEBUG:   Tensor 37: blk.1.ffn_gate_inp.weight.t2, offset: 15588576
+DEBUG:   Tensor 38: blk.1.ffn_norm.weight, offset: 15589120
+DEBUG:   Tensor 39: blk.1.ffn_up_exps.weight.t1, offset: 15592192
+DEBUG:   Tensor 40: blk.1.ffn_up_exps.weight.t2, offset: 16313088
+DEBUG:   Tensor 41: blk.2.attn_k.weight.t1, offset: 17427200
+DEBUG:   Tensor 42: blk.2.attn_k.weight.t2, offset: 17562368
+DEBUG:   Tensor 43: blk.2.attn_norm.weight, offset: 17771264
+DEBUG:   Tensor 44: blk.2.attn_output.weight.t1, offset: 17774336
+DEBUG:   Tensor 45: blk.2.attn_output.weight.t2, offset: 17909504
+DEBUG:   Tensor 46: blk.2.attn_q.weight.t1, offset: 18118400
+DEBUG:   Tensor 47: blk.2.attn_q.weight.t2, offset: 18253568
+DEBUG:   Tensor 48: blk.2.attn_v.weight.t1, offset: 18462464
+DEBUG:   Tensor 49: blk.2.attn_v.weight.t2, offset: 18597632
+DEBUG:   Tensor 50: blk.2.ffn_down_exps.weight.t1, offset: 18806528
+DEBUG:   Tensor 51: blk.2.ffn_down_exps.weight.t2, offset: 19076864
+DEBUG:   Tensor 52: blk.2.ffn_down_exps.weight.t3, offset: 19494656
+DEBUG:   Tensor 53: blk.2.ffn_gate_exps.weight.t1, offset: 20339456
+DEBUG:   Tensor 54: blk.2.ffn_gate_exps.weight.t2, offset: 21060352
+DEBUG:   Tensor 55: blk.2.ffn_gate_inp.weight.t1, offset: 22174464
+DEBUG:   Tensor 56: blk.2.ffn_gate_inp.weight.t2, offset: 22174816
+DEBUG:   Tensor 57: blk.2.ffn_norm.weight, offset: 22175360
+DEBUG:   Tensor 58: blk.2.ffn_up_exps.weight.t1, offset: 22178432
+DEBUG:   Tensor 59: blk.2.ffn_up_exps.weight.t2, offset: 22899328
+DEBUG:   Tensor 60: blk.3.attn_k.weight.t1, offset: 24013440
+DEBUG:   Tensor 61: blk.3.attn_k.weight.t2, offset: 24148608
+DEBUG:   Tensor 62: blk.3.attn_norm.weight, offset: 24357504
+DEBUG:   Tensor 63: blk.3.attn_output.weight.t1, offset: 24360576
+DEBUG:   Tensor 64: blk.3.attn_output.weight.t2, offset: 24495744
+DEBUG:   Tensor 65: blk.3.attn_q.weight.t1, offset: 24704640
+DEBUG:   Tensor 66: blk.3.attn_q.weight.t2, offset: 24839808
+DEBUG:   Tensor 67: blk.3.attn_v.weight.t1, offset: 25048704
+DEBUG:   Tensor 68: blk.3.attn_v.weight.t2, offset: 25183872
+DEBUG:   Tensor 69: blk.3.ffn_down_exps.weight.t1, offset: 25392768
+DEBUG:   Tensor 70: blk.3.ffn_down_exps.weight.t2, offset: 25663104
+DEBUG:   Tensor 71: blk.3.ffn_down_exps.weight.t3, offset: 26080896
+DEBUG:   Tensor 72: blk.3.ffn_gate_exps.weight.t1, offset: 26925696
+DEBUG:   Tensor 73: blk.3.ffn_gate_exps.weight.t2, offset: 27646592
+DEBUG:   Tensor 74: blk.3.ffn_gate_inp.weight.t1, offset: 28760704
+DEBUG:   Tensor 75: blk.3.ffn_gate_inp.weight.t2, offset: 28761056
+DEBUG:   Tensor 76: blk.3.ffn_norm.weight, offset: 28761600
+DEBUG:   Tensor 77: blk.3.ffn_up_exps.weight.t1, offset: 28764672
+DEBUG:   Tensor 78: blk.3.ffn_up_exps.weight.t2, offset: 29485568
+DEBUG:   Tensor 79: blk.4.attn_k.weight.t1, offset: 30599680
+DEBUG:   Tensor 80: blk.4.attn_k.weight.t2, offset: 30734848
+DEBUG:   Tensor 81: blk.4.attn_norm.weight, offset: 30943744
+DEBUG:   Tensor 82: blk.4.attn_output.weight.t1, offset: 30946816
+DEBUG:   Tensor 83: blk.4.attn_output.weight.t2, offset: 31081984
+DEBUG:   Tensor 84: blk.4.attn_q.weight.t1, offset: 31290880
+DEBUG:   Tensor 85: blk.4.attn_q.weight.t2, offset: 31426048
+DEBUG:   Tensor 86: blk.4.attn_v.weight.t1, offset: 31634944
+DEBUG:   Tensor 87: blk.4.attn_v.weight.t2, offset: 31770112
+DEBUG:   Tensor 88: blk.4.ffn_down_exps.weight.t1, offset: 31979008
+DEBUG:   Tensor 89: blk.4.ffn_down_exps.weight.t2, offset: 32249344
+DEBUG:   Tensor 90: blk.4.ffn_down_exps.weight.t3, offset: 32667136
+DEBUG:   Tensor 91: blk.4.ffn_gate_exps.weight.t1, offset: 33511936
+DEBUG:   Tensor 92: blk.4.ffn_gate_exps.weight.t2, offset: 34232832
+DEBUG:   Tensor 93: blk.4.ffn_gate_inp.weight.t1, offset: 35346944
+DEBUG:   Tensor 94: blk.4.ffn_gate_inp.weight.t2, offset: 35347296
+DEBUG:   Tensor 95: blk.4.ffn_norm.weight, offset: 35347840
+DEBUG:   Tensor 96: blk.4.ffn_up_exps.weight.t1, offset: 35350912
+DEBUG:   Tensor 97: blk.4.ffn_up_exps.weight.t2, offset: 36071808
+DEBUG:   Tensor 98: blk.5.attn_k.weight.t1, offset: 37185920
+DEBUG:   Tensor 99: blk.5.attn_k.weight.t2, offset: 37321088
+DEBUG:   Tensor 100: blk.5.attn_norm.weight, offset: 37529984
+DEBUG:   Tensor 101: blk.5.attn_output.weight.t1, offset: 37533056
+DEBUG:   Tensor 102: blk.5.attn_output.weight.t2, offset: 37668224
+DEBUG:   Tensor 103: blk.5.attn_q.weight.t1, offset: 37877120
+DEBUG:   Tensor 104: blk.5.attn_q.weight.t2, offset: 38012288
+DEBUG:   Tensor 105: blk.5.attn_v.weight.t1, offset: 38221184
+DEBUG:   Tensor 106: blk.5.attn_v.weight.t2, offset: 38356352
+DEBUG:   Tensor 107: blk.5.ffn_down_exps.weight.t1, offset: 38565248
+DEBUG:   Tensor 108: blk.5.ffn_down_exps.weight.t2, offset: 38835584
+DEBUG:   Tensor 109: blk.5.ffn_down_exps.weight.t3, offset: 39253376
+DEBUG:   Tensor 110: blk.5.ffn_gate_exps.weight.t1, offset: 40098176
+DEBUG:   Tensor 111: blk.5.ffn_gate_exps.weight.t2, offset: 40819072
+DEBUG:   Tensor 112: blk.5.ffn_gate_inp.weight.t1, offset: 41933184
+DEBUG:   Tensor 113: blk.5.ffn_gate_inp.weight.t2, offset: 41933536
+DEBUG:   Tensor 114: blk.5.ffn_norm.weight, offset: 41934080
+DEBUG:   Tensor 115: blk.5.ffn_up_exps.weight.t1, offset: 41937152
+DEBUG:   Tensor 116: blk.5.ffn_up_exps.weight.t2, offset: 42658048
+DEBUG:   Tensor 117: blk.6.attn_k.weight.t1, offset: 43772160
+DEBUG:   Tensor 118: blk.6.attn_k.weight.t2, offset: 43907328
+DEBUG:   Tensor 119: blk.6.attn_norm.weight, offset: 44116224
+DEBUG:   Tensor 120: blk.6.attn_output.weight.t1, offset: 44119296
+DEBUG:   Tensor 121: blk.6.attn_output.weight.t2, offset: 44254464
+DEBUG:   Tensor 122: blk.6.attn_q.weight.t1, offset: 44463360
+DEBUG:   Tensor 123: blk.6.attn_q.weight.t2, offset: 44598528
+DEBUG:   Tensor 124: blk.6.attn_v.weight.t1, offset: 44807424
+DEBUG:   Tensor 125: blk.6.attn_v.weight.t2, offset: 44942592
+DEBUG:   Tensor 126: blk.6.ffn_down_exps.weight.t1, offset: 45151488
+DEBUG:   Tensor 127: blk.6.ffn_down_exps.weight.t2, offset: 45421824
+DEBUG:   Tensor 128: blk.6.ffn_down_exps.weight.t3, offset: 45839616
+DEBUG:   Tensor 129: blk.6.ffn_gate_exps.weight.t1, offset: 46684416
+DEBUG:   Tensor 130: blk.6.ffn_gate_exps.weight.t2, offset: 47405312
+DEBUG:   Tensor 131: blk.6.ffn_gate_inp.weight.t1, offset: 48519424
+DEBUG:   Tensor 132: blk.6.ffn_gate_inp.weight.t2, offset: 48519776
+DEBUG:   Tensor 133: blk.6.ffn_norm.weight, offset: 48520320
+DEBUG:   Tensor 134: blk.6.ffn_up_exps.weight.t1, offset: 48523392
+DEBUG:   Tensor 135: blk.6.ffn_up_exps.weight.t2, offset: 49244288
+DEBUG:   Tensor 136: blk.7.attn_k.weight.t1, offset: 50358400
+DEBUG:   Tensor 137: blk.7.attn_k.weight.t2, offset: 50493568
+DEBUG:   Tensor 138: blk.7.attn_norm.weight, offset: 50702464
+DEBUG:   Tensor 139: blk.7.attn_output.weight.t1, offset: 50705536
+DEBUG:   Tensor 140: blk.7.attn_output.weight.t2, offset: 50840704
+DEBUG:   Tensor 141: blk.7.attn_q.weight.t1, offset: 51049600
+DEBUG:   Tensor 142: blk.7.attn_q.weight.t2, offset: 51184768
+DEBUG:   Tensor 143: blk.7.attn_v.weight.t1, offset: 51393664
+DEBUG:   Tensor 144: blk.7.attn_v.weight.t2, offset: 51528832
+DEBUG:   Tensor 145: blk.7.ffn_down_exps.weight.t1, offset: 51737728
+DEBUG:   Tensor 146: blk.7.ffn_down_exps.weight.t2, offset: 52008064
+DEBUG:   Tensor 147: blk.7.ffn_down_exps.weight.t3, offset: 52425856
+DEBUG:   Tensor 148: blk.7.ffn_gate_exps.weight.t1, offset: 53270656
+DEBUG:   Tensor 149: blk.7.ffn_gate_exps.weight.t2, offset: 53991552
+DEBUG:   Tensor 150: blk.7.ffn_gate_inp.weight.t1, offset: 55105664
+DEBUG:   Tensor 151: blk.7.ffn_gate_inp.weight.t2, offset: 55106016
+DEBUG:   Tensor 152: blk.7.ffn_norm.weight, offset: 55106560
+DEBUG:   Tensor 153: blk.7.ffn_up_exps.weight.t1, offset: 55109632
+DEBUG:   Tensor 154: blk.7.ffn_up_exps.weight.t2, offset: 55830528
+DEBUG:   Tensor 155: blk.8.attn_k.weight.t1, offset: 56944640
+DEBUG:   Tensor 156: blk.8.attn_k.weight.t2, offset: 57079808
+DEBUG:   Tensor 157: blk.8.attn_norm.weight, offset: 57288704
+DEBUG:   Tensor 158: blk.8.attn_output.weight.t1, offset: 57291776
+DEBUG:   Tensor 159: blk.8.attn_output.weight.t2, offset: 57426944
+DEBUG:   Tensor 160: blk.8.attn_q.weight.t1, offset: 57635840
+DEBUG:   Tensor 161: blk.8.attn_q.weight.t2, offset: 57771008
+DEBUG:   Tensor 162: blk.8.attn_v.weight.t1, offset: 57979904
+DEBUG:   Tensor 163: blk.8.attn_v.weight.t2, offset: 58115072
+DEBUG:   Tensor 164: blk.8.ffn_down_exps.weight.t1, offset: 58323968
+DEBUG:   Tensor 165: blk.8.ffn_down_exps.weight.t2, offset: 58594304
+DEBUG:   Tensor 166: blk.8.ffn_down_exps.weight.t3, offset: 59012096
+DEBUG:   Tensor 167: blk.8.ffn_gate_exps.weight.t1, offset: 59856896
+DEBUG:   Tensor 168: blk.8.ffn_gate_exps.weight.t2, offset: 60577792
+DEBUG:   Tensor 169: blk.8.ffn_gate_inp.weight.t1, offset: 61691904
+DEBUG:   Tensor 170: blk.8.ffn_gate_inp.weight.t2, offset: 61692256
+DEBUG:   Tensor 171: blk.8.ffn_norm.weight, offset: 61692800
+DEBUG:   Tensor 172: blk.8.ffn_up_exps.weight.t1, offset: 61695872
+DEBUG:   Tensor 173: blk.8.ffn_up_exps.weight.t2, offset: 62416768
+DEBUG:   Tensor 174: blk.9.attn_k.weight.t1, offset: 63530880
+DEBUG:   Tensor 175: blk.9.attn_k.weight.t2, offset: 63666048
+DEBUG:   Tensor 176: blk.9.attn_norm.weight, offset: 63874944
+DEBUG:   Tensor 177: blk.9.attn_output.weight.t1, offset: 63878016
+DEBUG:   Tensor 178: blk.9.attn_output.weight.t2, offset: 64013184
+DEBUG:   Tensor 179: blk.9.attn_q.weight.t1, offset: 64222080
+DEBUG:   Tensor 180: blk.9.attn_q.weight.t2, offset: 64357248
+DEBUG:   Tensor 181: blk.9.attn_v.weight.t1, offset: 64566144
+DEBUG:   Tensor 182: blk.9.attn_v.weight.t2, offset: 64701312
+DEBUG:   Tensor 183: blk.9.ffn_down_exps.weight.t1, offset: 64910208
+DEBUG:   Tensor 184: blk.9.ffn_down_exps.weight.t2, offset: 65180544
+DEBUG:   Tensor 185: blk.9.ffn_down_exps.weight.t3, offset: 65598336
+DEBUG:   Tensor 186: blk.9.ffn_gate_exps.weight.t1, offset: 66443136
+DEBUG:   Tensor 187: blk.9.ffn_gate_exps.weight.t2, offset: 67164032
+DEBUG:   Tensor 188: blk.9.ffn_gate_inp.weight.t1, offset: 68278144
+DEBUG:   Tensor 189: blk.9.ffn_gate_inp.weight.t2, offset: 68278496
+DEBUG:   Tensor 190: blk.9.ffn_norm.weight, offset: 68279040
+DEBUG:   Tensor 191: blk.9.ffn_up_exps.weight.t1, offset: 68282112
+DEBUG:   Tensor 192: blk.9.ffn_up_exps.weight.t2, offset: 69003008
+DEBUG:   Tensor 193: blk.10.attn_k.weight.t1, offset: 70117120
+DEBUG:   Tensor 194: blk.10.attn_k.weight.t2, offset: 70252288
+DEBUG:   Tensor 195: blk.10.attn_norm.weight, offset: 70461184
+DEBUG:   Tensor 196: blk.10.attn_output.weight.t1, offset: 70464256
+DEBUG:   Tensor 197: blk.10.attn_output.weight.t2, offset: 70599424
+DEBUG:   Tensor 198: blk.10.attn_q.weight.t1, offset: 70808320
+DEBUG:   Tensor 199: blk.10.attn_q.weight.t2, offset: 70943488
+DEBUG:   Tensor 200: blk.10.attn_v.weight.t1, offset: 71152384
+DEBUG:   Tensor 201: blk.10.attn_v.weight.t2, offset: 71287552
+DEBUG:   Tensor 202: blk.10.ffn_down_exps.weight.t1, offset: 71496448
+DEBUG:   Tensor 203: blk.10.ffn_down_exps.weight.t2, offset: 71766784
+DEBUG:   Tensor 204: blk.10.ffn_down_exps.weight.t3, offset: 72184576
+DEBUG:   Tensor 205: blk.10.ffn_gate_exps.weight.t1, offset: 73029376
+DEBUG:   Tensor 206: blk.10.ffn_gate_exps.weight.t2, offset: 73750272
+DEBUG:   Tensor 207: blk.10.ffn_gate_inp.weight.t1, offset: 74864384
+DEBUG:   Tensor 208: blk.10.ffn_gate_inp.weight.t2, offset: 74864736
+DEBUG:   Tensor 209: blk.10.ffn_norm.weight, offset: 74865280
+DEBUG:   Tensor 210: blk.10.ffn_up_exps.weight.t1, offset: 74868352
+DEBUG:   Tensor 211: blk.10.ffn_up_exps.weight.t2, offset: 75589248
+DEBUG:   Tensor 212: blk.11.attn_k.weight.t1, offset: 76703360
+DEBUG:   Tensor 213: blk.11.attn_k.weight.t2, offset: 76838528
+DEBUG:   Tensor 214: blk.11.attn_norm.weight, offset: 77047424
+DEBUG:   Tensor 215: blk.11.attn_output.weight.t1, offset: 77050496
+DEBUG:   Tensor 216: blk.11.attn_output.weight.t2, offset: 77185664
+DEBUG:   Tensor 217: blk.11.attn_q.weight.t1, offset: 77394560
+DEBUG:   Tensor 218: blk.11.attn_q.weight.t2, offset: 77529728
+DEBUG:   Tensor 219: blk.11.attn_v.weight.t1, offset: 77738624
+DEBUG:   Tensor 220: blk.11.attn_v.weight.t2, offset: 77873792
+DEBUG:   Tensor 221: blk.11.ffn_down_exps.weight.t1, offset: 78082688
+DEBUG:   Tensor 222: blk.11.ffn_down_exps.weight.t2, offset: 78353024
+DEBUG:   Tensor 223: blk.11.ffn_down_exps.weight.t3, offset: 78770816
+DEBUG:   Tensor 224: blk.11.ffn_gate_exps.weight.t1, offset: 79615616
+DEBUG:   Tensor 225: blk.11.ffn_gate_exps.weight.t2, offset: 80336512
+DEBUG:   Tensor 226: blk.11.ffn_gate_inp.weight.t1, offset: 81450624
+DEBUG:   Tensor 227: blk.11.ffn_gate_inp.weight.t2, offset: 81450976
+DEBUG:   Tensor 228: blk.11.ffn_norm.weight, offset: 81451520
+DEBUG:   Tensor 229: blk.11.ffn_up_exps.weight.t1, offset: 81454592
+DEBUG:   Tensor 230: blk.11.ffn_up_exps.weight.t2, offset: 82175488
+llama_model_quantize_impl: model size  =    76.39 MB
+llama_model_quantize_impl: quant size  =    49.66 MB
+
+main: quantize time = 29087.40 ms
+main:    total time = 29087.40 ms
