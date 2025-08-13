@@ -926,28 +926,7 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
             quantize &= name.find("attn_rel_b.weight") == std::string::npos;
 
             if (quantize) {
-                new_type = default_type;
-                if (!params->pure && ggml_is_quantized(default_type)) {
-                    int fallback = qs_meta.n_fallback;
-                    new_type = llama_tensor_get_type(qs_meta, new_type, tensor, ftype);
-                    if (params->tensor_types && qs_meta.n_fallback - fallback == 0) {
-                        const std::vector<tensor_quantization> & tensor_types = *static_cast<const std::vector<tensor_quantization> *>(params->tensor_types);
-                        const std::string tensor_name(tensor->name);
-                        for (const auto & [tname, qtype] : tensor_types) {
-                            if (std::regex pattern(tname); std::regex_search(tensor_name, pattern)) {
-                                if  (qtype != new_type) {
-                                    new_type = qtype;
-                                }
-                            }
-                        }
-                    }
-                }
-                if (params->token_embedding_type < GGML_TYPE_COUNT && strcmp(tensor->name, "token_embd.weight") == 0) {
-                    new_type = params->token_embedding_type;
-                }
-                if (params->output_tensor_type < GGML_TYPE_COUNT && strcmp(tensor->name, "output.weight") == 0) {
-                    new_type = params->output_tensor_type;
-                }
+                new_type = llama_tensor_get_type(qs_meta, new_type, tensor, ftype);
             }
 
             if (tensor->type != new_type) {
@@ -976,6 +955,7 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
     std::ofstream fout;
     auto close_ofstream = [&]() {
         // Write metadata and close file handler
+        // TB: copy metadata to a new context first and write that one to file. This fixes the issue with the offsets.
         if (fout.is_open()) {
             fout.seekp(0);
             size_t meta_size = gguf_get_meta_size(ctx_outs[cur_split].get());
