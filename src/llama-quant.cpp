@@ -594,49 +594,10 @@ static size_t llama_tensor_quantize_impl(enum ggml_type new_type, const float * 
 }
 
 static void llama_model_quantize_impl(const std::string & fname_inp, const std::string & fname_out, const llama_model_quantize_params * params) {
-    ggml_type default_type;
+    
+    
+
     llama_ftype ftype = params->ftype;
-
-    switch (params->ftype) {
-        case LLAMA_FTYPE_MOSTLY_Q4_0: default_type = GGML_TYPE_Q4_0; break;
-        case LLAMA_FTYPE_MOSTLY_Q4_1: default_type = GGML_TYPE_Q4_1; break;
-        case LLAMA_FTYPE_MOSTLY_Q5_0: default_type = GGML_TYPE_Q5_0; break;
-        case LLAMA_FTYPE_MOSTLY_Q5_1: default_type = GGML_TYPE_Q5_1; break;
-        case LLAMA_FTYPE_MOSTLY_Q8_0: default_type = GGML_TYPE_Q8_0; break;
-        case LLAMA_FTYPE_MOSTLY_F16:  default_type = GGML_TYPE_F16;  break;
-        case LLAMA_FTYPE_MOSTLY_BF16: default_type = GGML_TYPE_BF16; break;
-        case LLAMA_FTYPE_ALL_F32:     default_type = GGML_TYPE_F32;  break;
-
-        case LLAMA_FTYPE_MOSTLY_MXFP4_MOE: default_type = GGML_TYPE_MXFP4; break;
-
-        // K-quants
-        case LLAMA_FTYPE_MOSTLY_Q2_K_S:
-        case LLAMA_FTYPE_MOSTLY_Q2_K:    default_type = GGML_TYPE_Q2_K;    break;
-        case LLAMA_FTYPE_MOSTLY_IQ3_XS:  default_type = GGML_TYPE_IQ3_S;   break;
-        case LLAMA_FTYPE_MOSTLY_Q3_K_S:
-        case LLAMA_FTYPE_MOSTLY_Q3_K_M:
-        case LLAMA_FTYPE_MOSTLY_Q3_K_L:  default_type = GGML_TYPE_Q3_K;    break;
-        case LLAMA_FTYPE_MOSTLY_Q4_K_S:
-        case LLAMA_FTYPE_MOSTLY_Q4_K_M:  default_type = GGML_TYPE_Q4_K;    break;
-        case LLAMA_FTYPE_MOSTLY_Q5_K_S:
-        case LLAMA_FTYPE_MOSTLY_Q5_K_M:  default_type = GGML_TYPE_Q5_K;    break;
-        case LLAMA_FTYPE_MOSTLY_Q6_K:    default_type = GGML_TYPE_Q6_K;    break;
-        case LLAMA_FTYPE_MOSTLY_TQ1_0:   default_type = GGML_TYPE_TQ1_0;   break;
-        case LLAMA_FTYPE_MOSTLY_TQ2_0:   default_type = GGML_TYPE_TQ2_0;   break;
-        case LLAMA_FTYPE_MOSTLY_IQ2_XXS: default_type = GGML_TYPE_IQ2_XXS; break;
-        case LLAMA_FTYPE_MOSTLY_IQ2_XS:  default_type = GGML_TYPE_IQ2_XS;  break;
-        case LLAMA_FTYPE_MOSTLY_IQ2_S:   default_type = GGML_TYPE_IQ2_S;   break;
-        case LLAMA_FTYPE_MOSTLY_IQ2_M:   default_type = GGML_TYPE_IQ2_S;   break;
-        case LLAMA_FTYPE_MOSTLY_IQ3_XXS: default_type = GGML_TYPE_IQ3_XXS; break;
-        case LLAMA_FTYPE_MOSTLY_IQ1_S:   default_type = GGML_TYPE_IQ1_S;   break;
-        case LLAMA_FTYPE_MOSTLY_IQ1_M:   default_type = GGML_TYPE_IQ1_M;   break;
-        case LLAMA_FTYPE_MOSTLY_IQ4_NL:  default_type = GGML_TYPE_IQ4_NL;  break;
-        case LLAMA_FTYPE_MOSTLY_IQ4_XS:  default_type = GGML_TYPE_IQ4_XS;  break;
-        case LLAMA_FTYPE_MOSTLY_IQ3_S:   default_type = GGML_TYPE_IQ3_S;   break;
-        case LLAMA_FTYPE_MOSTLY_IQ3_M:   default_type = GGML_TYPE_IQ3_S;   break;
-
-        default: throw std::runtime_error(format("invalid output file type %d\n", ftype));
-    }
 
     int nthread = params->nthread;
 
@@ -710,11 +671,10 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
     gguf_context_ptr ctx_out { gguf_init_empty() };
 
     // Create a ggml_context for allocating new tensors
-    struct ggml_init_params gml_params = {
-        .mem_size   = 1024 * 1024 * 1024, // 1GB, adjust as needed
-        .mem_buffer = NULL,
-        .no_alloc   = false,
-    };
+    struct ggml_init_params gml_params;
+    gml_params.mem_size   = 1024 * 1024 * 1024; // 1GB, adjust as needed
+    gml_params.mem_buffer = NULL;
+    gml_params.no_alloc   = false;
     struct ggml_context * gctx = ggml_init(gml_params);
 
     std::vector<int> prune_list = {};
@@ -1246,7 +1206,7 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
                 LLAMA_LOG_INFO("size = %8.3f MB\n", ggml_nbytes(tensor)/1024.0/1024.0);
             };
             // write tensor data + padding
-            LLAMA_LOG_INFO("%s: writing tensor data for %s at offset %zu\n", __func__, name.c_str(), fout.tellp());
+            LLAMA_LOG_INFO("%s: writing tensor data for %s at offset %zu\n", __func__, name.c_str(), (size_t)fout.tellp());
             fout.write((const char *) new_data, new_size);
             zeros(fout, GGML_PAD(new_size, align) - new_size);
 
