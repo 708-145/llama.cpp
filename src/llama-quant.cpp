@@ -843,6 +843,9 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
     std::vector<gguf_context_ptr> ctx_outs(n_split);
     ctx_outs[0] = std::move(ctx_out);
 
+    quantize_state_impl qs_meta = qs;
+    std::map<std::string, ggml_type> tensor_new_types;
+
     // populate the original tensors so we get an initial meta data
     for (const auto * it : tensors) {
         uint16_t i_split = params->keep_split ? it->idx : 0;
@@ -852,6 +855,8 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
         }
 
         const std::string name = ggml_get_name(tensor);
+        ggml_type new_type = tensor->type;
+
         if (smarterquant_data.count(name) > 0 && smarterquant_data.at(name).size() > 4) {
             // T3 quantization: add sub-tensors instead of original
             const auto& sq_info = smarterquant_data[name];
@@ -890,12 +895,53 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
             // Add permutation metadata
             gguf_set_arr_data(ctx_outs[i_split].get(), (name + ".permutation").c_str(), GGUF_TYPE_INT32, perm.data(), perm.size());
             LLAMA_LOG_INFO("%s: added permutation metadata for %s.permutation\n", __func__, name.c_str());
-
+            new_type = t1_type;
         } else {
-            // Not a T3 tensor, add original
-            gguf_add_tensor(ctx_outs[i_split].get(), tensor);
-            LLAMA_LOG_INFO("%s: added tensor metadata for %s (type: %s) with dimensions: %ld, %ld, %ld, %ld, n_dims: %d\n", __func__, ggml_get_name(tensor), ggml_type_name(tensor->type), tensor->ne[0], tensor->ne[1], tensor->ne[2], tensor->ne[3], ggml_n_dims(tensor));
+            bool quantize = name.rfind("weight") == name.size() - 6;
+            quantize &= (ggml_n_dims(tensor) >= 2);
+            quantize &= name.find("_norm.weight") == std::string::npos;
+            quantize &= params->quantize_output_tensor || name != "output.weight";
+            quantize &= !params->only_copy;
+            quantize &= name.find("ffn_gate_inp.weight") == std::string::npos;
+            quantize &= name.find("altup")  == std::string::npos;
+            quantize &= name.find("laurel") == std::string::npos;
+            quantize &= name.find("per_layer_model_proj") == std::string::npos;
+            quantize &= name != tn(LLM_TENSOR_POS_EMBD,    "weight");
+            quantize &= name != tn(LLM_TENSOR_TOKEN_TYPES, "weight");
+            quantize &= name.find("ssm_conv1d.weight") == std::string::npos;
+            quantize &= name.find("shortconv.conv.weight") == std::string::npos;
+            quantize &= name.find("time_mix_first.weight") == std::string::npos;
+            quantize &= name.find("time_mix_w0.weight") == std::string::npos;
+            quantize &= name.find("time_mix_w1.weight") == std::string::npos;
+            quantize &= name.find("time_mix_w2.weight") == std::string::npos;
+            quantize &= name.find("time_mix_v0.weight") == std::string::npos;
+            quantize &= name.find("time_mix_v1.weight") == std::string::npos;
+            quantize &= name.find("time_mix_v2.weight") == std::string::npos;
+            quantize &= name.find("time_mix_a0.weight") == std::string::npos;
+            quantize &= name.find("time_mix_a1.weight") == std::string::npos;
+            quantize &= name.find("time_mix_a2.weight") == std::string::npos;
+            quantize &= name.find("time_mix_g1.weight") == std::string::npos;
+            quantize &= name.find("time_mix_g2.weight") == std::string::npos;
+            quantize &= name.find("time_mix_decay_w1.weight") == std::string::npos;
+            quantize &= name.find("time_mix_decay_w2.weight") == std::string::npos;
+            quantize &= name.find("time_mix_lerp_fused.weight") == std::string::npos;
+
+            // do not quantize relative position bias (T5)
+            quantize &= name.find("attn_rel_b.weight") == std::string::npos;
+
+            if (quantize) {
+                new_type = llama_tensor_get_type(qs_meta, new_type, tensor, ftype);
+            }
+
+            if (tensor->type != new_type) {
+                struct ggml_tensor * new_tensor = ggml_new_tensor(gctx, new_type, ggml_n_dims(tensor), tensor->ne);
+                ggml_set_name(new_tensor, name.c_str());
+                gguf_add_tensor(ctx_outs[i_split].get(), new_tensor);
+            } else {
+                gguf_add_tensor(ctx_outs[i_split].get(), tensor);
+            }
         }
+        tensor_new_types[name] = new_type;
     }
 
     // Set split info if needed
@@ -1093,35 +1139,7 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
 
         } else {
             if (quantize) {
-                new_type = default_type;
-
-                // get more optimal quantization type based on the tensor shape, layer, etc.
-                if (!params->pure && ggml_is_quantized(default_type)) {
-                    int fallback = qs.n_fallback;
-                    new_type = llama_tensor_get_type(qs, new_type, tensor, ftype);
-                    // unless the user specifies a type, and the tensor geometry will not require fallback quantisation
-                    if (params->tensor_types && qs.n_fallback - fallback == 0) {
-                        const std::vector<tensor_quantization> & tensor_types = *static_cast<const std::vector<tensor_quantization> *>(params->tensor_types);
-                        const std::string tensor_name(tensor->name);
-                        for (const auto & [tname, qtype] : tensor_types) {
-                            if (std::regex pattern(tname); std::regex_search(tensor_name, pattern)) {
-                                if  (qtype != new_type) {
-                                    LLAMA_LOG_DEBUG("(overriding %s) ", ggml_type_name(new_type));
-                                    new_type = qtype;
-                                }
-                            }
-                        }
-                    }
-                }
-                if (params->token_embedding_type < GGML_TYPE_COUNT && strcmp(tensor->name, "token_embd.weight") == 0) {
-                    new_type = params->token_embedding_type;
-                }
-                if (params->output_tensor_type < GGML_TYPE_COUNT && strcmp(tensor->name, "output.weight") == 0) {
-                    new_type = params->output_tensor_type;
-                }
-
-                // If we've decided to quantize to the same type the tensor is already
-                // in then there's nothing to do.
+                new_type = tensor_new_types.at(name);
                 quantize = tensor->type != new_type;
 
                 const int64_t nelements = ggml_nelements(tensor);
