@@ -1166,6 +1166,20 @@ void gguf_set_tensor_data(struct gguf_context * ctx, const char * name, const vo
     ctx->info[tensor_id].t.data = (void *)(uintptr_t)data; // double cast suppresses warning about casting away const
 }
 
+void gguf_set_tensor_offset(struct gguf_context * ctx, const char * name, uint64_t offset) {
+    const int64_t tensor_id = gguf_find_tensor(ctx, name);
+    if (tensor_id < 0) {
+        GGML_ABORT("tensor not found: %s", name);
+    }
+    // set this tensor's offset and re-flow subsequent offsets based on current sizes
+    GGML_LOG_INFO("%s: setting offset for tensor '%s' (id=%" PRId64 ") to %" PRIu64 "\n", __func__, name, tensor_id, offset);
+    ctx->info[tensor_id].offset = offset;
+    const int64_t n_tensors = gguf_get_n_tensors(ctx);
+    for (int64_t i = tensor_id + 1; i < n_tensors; ++i) {
+        ctx->info[i].offset = ctx->info[i - 1].offset + GGML_PAD(ggml_nbytes(&ctx->info[i - 1].t), ctx->alignment);
+    }
+}
+
 struct gguf_writer {
     std::vector<int8_t> & buf;
 
