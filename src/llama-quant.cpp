@@ -920,19 +920,13 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
         // TB: copy metadata to a new context first and write that one to file. This fixes the issue with the offsets.
         if (fout.is_open()) {
             fout.seekp(0);
-            gguf_context_ptr ctx_temp { gguf_init_empty() };
-            gguf_set_kv(ctx_temp.get(), ctx_outs[cur_split].get());
-            for (const auto * it : tensors) {
-                ggml_tensor * tensor = it->tensor;
-                gguf_add_tensor(ctx_temp.get(), tensor);
-            }
-            size_t meta_size = gguf_get_meta_size(ctx_temp.get());
+            size_t meta_size = gguf_get_meta_size(ctx_outs[cur_split].get());
             LLAMA_LOG_INFO("%s: metadata size after tensor quantization = %8.2f KB\n", __func__, meta_size / 1024.0);
             std::vector<uint8_t> data(meta_size);
-            gguf_get_meta_data(ctx_temp.get(), data.data());
-            LLAMA_LOG_INFO("DEBUG: Tensors in ctx_temp before writing:\n");
-            for (int i = 0; i < gguf_get_n_tensors(ctx_temp.get()); ++i) {
-                LLAMA_LOG_INFO("DEBUG:   Tensor %d: %s, offset: %zu\n", i, gguf_get_tensor_name(ctx_temp.get(), i), gguf_get_tensor_offset(ctx_temp.get(), i));
+            gguf_get_meta_data(ctx_outs[cur_split].get(), data.data());
+            LLAMA_LOG_INFO("DEBUG: Tensors in ctx_outs[cur_split] before writing:\n");
+            for (int i = 0; i < gguf_get_n_tensors(ctx_outs[cur_split].get()); ++i) {
+                LLAMA_LOG_INFO("DEBUG:   Tensor %d: %s, offset: %zu\n", i, gguf_get_tensor_name(ctx_outs[cur_split].get(), i), gguf_get_tensor_offset(ctx_outs[cur_split].get(), i));
             }
             fout.write((const char *) data.data(), data.size());
             fout.close();
