@@ -879,7 +879,7 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
                 }
                 struct ggml_tensor * dummy_tensor = ggml_new_tensor(gctx, type, n_dims_new, ne_new);
                 ggml_set_name(dummy_tensor, t_name.c_str());
-                LLAMA_LOG_INFO("Adding dummy tensor: %s (type: %s) with dimensions: %ld, %ld, %ld, %ld, n_dims: %d\n", t_name.c_str(), ggml_type_name(type), ne_new[0], ne_new[1], ne_new[2], ne_new[3], n_dims_new);
+                LLAMA_LOG_INFO("Adding dummy tensor: %s (type: %s, size: %zu bytes) with dimensions: %ld, %ld, %ld, %ld, n_dims: %d\n", t_name.c_str(), ggml_type_name(type), ggml_nbytes(dummy_tensor), ne_new[0], ne_new[1], ne_new[2], ne_new[3], n_dims_new);
                 gguf_add_tensor(ctx_outs[i_split].get(), dummy_tensor);
             };
 
@@ -1258,6 +1258,22 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
 //
 // interface implementation
 //
+
+// Stub function to calculate the quantized size of a tensor.
+// This function should implement the logic to determine the final size of a tensor after quantization.
+// It should not perform the actual quantization.
+//
+// @param tensor The original tensor.
+// @param params The quantization parameters.
+// @return The size in bytes of the quantized tensor.
+static size_t calculate_quantized_size(const ggml_tensor * tensor, const llama_model_quantize_params * params) {
+    // TODO: Implement the logic to calculate the quantized size.
+    // This involves determining the new type of the tensor after quantization,
+    // and then calculating the size based on the new type and tensor dimensions.
+
+    // For now, returning the original size.
+    return ggml_nbytes(tensor);
+}
 
 llama_model_quantize_params llama_model_quantize_default_params() {
     llama_model_quantize_params result = {
