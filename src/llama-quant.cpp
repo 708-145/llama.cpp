@@ -1067,7 +1067,7 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
             }
 
             const int64_t n_per_row = tensor->ne[0];
-            const int64_t nrows = tensor->ne[1];
+            const int64_t nrows = ggml_nelements(tensor) / n_per_row;
 
             LLAMA_LOG_INFO("T3 Quantization: t1_width=%d (%s), t2_width=%d (%s), t3_width=%ld (%s)\n", t1_width, ggml_type_name(t1_type), t2_width, ggml_type_name(t2_type), n_per_row - t1_width - t2_width, ggml_type_name(t3_type));
             if (n_per_row < 768) LLAMA_LOG_ERROR("Tensor %s contains less than 768 elements, which is not supported by T3 quantization.\n", name.c_str());
