@@ -21,64 +21,6 @@ struct tensor_quantization {
     ggml_type quant = GGML_TYPE_COUNT;
 };
 
-static bool try_parse_ftype(const std::string & ftype_str_in, llama_ftype & ftype, std::string & ftype_str_out) {
-    if (ftype_str_in == "F32") {
-        ftype = LLAMA_FTYPE_ALL_F32;
-    } else if (ftype_str_in == "F16") {
-        ftype = LLAMA_FTYPE_MOSTLY_F16;
-    } else if (ftype_str_in == "Q4_0") {
-        ftype = LLAMA_FTYPE_MOSTLY_Q4_0;
-    } else if (ftype_str_in == "Q4_1") {
-        ftype = LLAMA_FTYPE_MOSTLY_Q4_1;
-    } else if (ftype_str_in == "Q5_0") {
-        ftype = LLAMA_FTYPE_MOSTLY_Q5_0;
-    } else if (ftype_str_in == "Q5_1") {
-        ftype = LLAMA_FTYPE_MOSTLY_Q5_1;
-    } else if (ftype_str_in == "Q8_0") {
-        ftype = LLAMA_FTYPE_MOSTLY_Q8_0;
-    } else if (ftype_str_in == "Q2_K") {
-        ftype = LLAMA_FTYPE_MOSTLY_Q2_K;
-    } else if (ftype_str_in == "Q3_K") {
-        ftype = LLAMA_FTYPE_MOSTLY_Q3_K_M;
-    } else if (ftype_str_in == "Q4_K") {
-        ftype = LLAMA_FTYPE_MOSTLY_Q4_K_M;
-    } else if (ftype_str_in == "Q5_K") {
-        ftype = LLAMA_FTYPE_MOSTLY_Q5_K_M;
-    } else if (ftype_str_in == "Q6_K") {
-        ftype = LLAMA_FTYPE_MOSTLY_Q6_K;
-    } else if (ftype_str_in == "IQ2_XXS") {
-        ftype = LLAMA_FTYPE_MOSTLY_IQ2_XXS;
-    } else if (ftype_str_in == "IQ2_XS") {
-        ftype = LLAMA_FTYPE_MOSTLY_IQ2_XS;
-    } else if (ftype_str_in == "IQ3_XXS") {
-        ftype = LLAMA_FTYPE_MOSTLY_IQ3_XXS;
-    } else if (ftype_str_in == "IQ1_S") {
-        ftype = LLAMA_FTYPE_MOSTLY_IQ1_S;
-    } else if (ftype_str_in == "IQ4_NL") {
-        ftype = LLAMA_FTYPE_MOSTLY_IQ4_NL;
-    } else if (ftype_str_in == "IQ3_S") {
-        ftype = LLAMA_FTYPE_MOSTLY_IQ3_S;
-    } else if (ftype_str_in == "IQ2_S") {
-        ftype = LLAMA_FTYPE_MOSTLY_IQ2_S;
-    } else if (ftype_str_in == "IQ4_XS") {
-        ftype = LLAMA_FTYPE_MOSTLY_IQ4_XS;
-    } else if (ftype_str_in == "IQ1_M") {
-        ftype = LLAMA_FTYPE_MOSTLY_IQ1_M;
-    } else if (ftype_str_in == "BF16") {
-        ftype = LLAMA_FTYPE_MOSTLY_BF16;
-    } else if (ftype_str_in == "MXFP4") {
-        ftype = LLAMA_FTYPE_MOSTLY_MXFP4_MOE;
-    } else if (ftype_str_in == "TQ1_0") {
-        ftype = LLAMA_FTYPE_MOSTLY_TQ1_0;
-    } else if (ftype_str_in == "TQ2_0") {
-        ftype = LLAMA_FTYPE_MOSTLY_TQ2_0;
-    } else {
-        return false;
-    }
-    ftype_str_out = ftype_str_in;
-    return true;
-}
-
 static void zeros(std::ofstream & file, size_t n) {
     char zero = 0;
     for (size_t i = 0; i < n; ++i) {
