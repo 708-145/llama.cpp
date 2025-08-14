@@ -257,34 +257,23 @@ class GGUFReader:
         offs = orig_offs
 
         # Get Tensor Name
-        print(f"DEBUG: Reading tensor name at offset {offs}")
         name_len, name_data = self._get_str(offs)
-        print(f"DEBUG:   name_len raw: {name_len.tobytes().hex()}, decoded: {name_len[0]}")
-        print(f"DEBUG:   name_data raw: {name_data.tobytes().hex()}, decoded: {bytes(name_data).decode('utf-8')}")
         offs += int(name_len.nbytes + name_data.nbytes)
 
         # Get Tensor Dimensions Count
-        print(f"DEBUG: Reading n_dims at offset {offs}")
         n_dims = self._get(offs, np.uint32)
-        print(f"DEBUG:   n_dims raw: {n_dims.tobytes().hex()}, decoded: {n_dims[0]}")
         offs += int(n_dims.nbytes)
 
         # Get Tensor Dimension Array
-        print(f"DEBUG: Reading dims at offset {offs}, count {n_dims[0]}")
         dims = self._get(offs, np.uint64, n_dims[0])
-        print(f"DEBUG:   dims raw: {dims.tobytes().hex()}, decoded: {dims.tolist()}")
         offs += int(dims.nbytes)
 
         # Get Tensor Encoding Scheme Type
-        print(f"DEBUG: Reading raw_dtype at offset {offs}")
         raw_dtype = self._get(offs, np.uint32)
-        print(f"DEBUG:   raw_dtype raw: {raw_dtype.tobytes().hex()}, decoded: {raw_dtype[0]}")
         offs += int(raw_dtype.nbytes)
 
         # Get Tensor Offset
-        print(f"DEBUG: Reading offset_tensor at offset {offs}")
         offset_tensor = self._get(offs, np.uint64)
-        print(f"DEBUG:   offset_tensor raw: {offset_tensor.tobytes().hex()}, decoded: {offset_tensor[0]}")
         offs += int(offset_tensor.nbytes)
 
         return ReaderField(
@@ -365,7 +354,6 @@ class GGUFReader:
                 item_count = n_bytes
                 item_type = np.uint8
                 np_dims = quant_shape_to_byte_shape(np_dims, ggml_type)
-            print("DEBUG: Processing tensor: {}, np_dims: {}, item_count: {}, ggml_type: {}".format(tensor_name, np_dims, item_count, ggml_type.name))
             tensors.append(ReaderTensor(
                 name = tensor_name,
                 tensor_type = ggml_type,
