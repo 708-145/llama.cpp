@@ -620,8 +620,8 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
 
     // copy the KV pairs from the input file
     gguf_set_kv     (ctx_out.get(), ml.meta.get());
-    gguf_set_val_u32(ctx_out.get(), "general.quantization_version", GGML_QNT_VERSION);
-    gguf_set_val_u32(ctx_out.get(), "general.file_type", ftype);
+    gguf_set_val_u32(ctx_out.get(), "general.quantization_version", GGML_QNT_VERSION); // TODO: use LLM_KV
+    gguf_set_val_u32(ctx_out.get(), "general.file_type", ftype); // TODO: use LLM_KV
 
     // Remove split metadata
     gguf_remove_key(ctx_out.get(), ml.llm_kv(LLM_KV_SPLIT_NO).c_str());
@@ -684,9 +684,6 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
         });
     }
     
-    // Log metadata size before tensor quantization
-    LLAMA_LOG_INFO("%s: metadata size before tensor quantization = %8.2f KB\n", __func__, gguf_get_meta_size(ctx_out.get()) / 1024.0);
-
     for (const auto * it : tensors) {
         const struct ggml_tensor * tensor = it->tensor;
 
@@ -927,7 +924,7 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
                ggml_type_name(tensor->type));
 
         // This used to be a regex, but <regex> has an extreme cost to compile times.
-        bool quantize = name.rfind("weight") == name.size() - 6;
+        bool quantize = name.rfind("weight") == name.size() - 6; // ends with 'weight'?
 
         // quantize only 2D and 3D tensors (experts)
         quantize &= (ggml_n_dims(tensor) >= 2);
@@ -950,8 +947,8 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
         quantize &= name.find("per_layer_model_proj") == std::string::npos;
 
         // do not quantize positional embeddings and token types (BERT)
-        quantize &= name != LLM_TN(qs.model.arch)(LLM_TENSOR_POS_EMBD,    "weight");
-        quantize &= name != LLM_TN(qs.model.arch)(LLM_TENSOR_TOKEN_TYPES, "weight");
+        quantize &= name != LLM_TN(model.arch)(LLM_TENSOR_POS_EMBD,    "weight");
+        quantize &= name != LLM_TN(model.arch)(LLM_TENSOR_TOKEN_TYPES, "weight");
 
         // do not quantize Mamba's small yet 2D weights
         // NOTE: can't use LLM_TN here because the layer number is not known
@@ -1041,7 +1038,7 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
                 gguf_set_tensor_type(ctx_outs[cur_split].get(), t_name.c_str(), type);
                 gguf_set_tensor_data(ctx_outs[cur_split].get(), t_name.c_str(), t_new_data);
 
-                LLAMA_LOG_INFO("%s: writing tensor data for %s at offset %zu, size= %zu\n", __func__, t_name.c_str(), (size_t)fout.tellp(), t_new_size);
+                // LLAMA_LOG_INFO("%s: writing tensor data for %s at offset %zu, size= %zu\n", __func__, t_name.c_str(), (size_t)fout.tellp(), t_new_size);
                 split_tensor_offsets[cur_split].push_back(split_cur_offs[cur_split]);
                 fout.write((const char*)t_new_data, t_new_size);
                 const size_t ctx_align = gguf_get_alignment(ctx_outs[cur_split].get());
@@ -1171,7 +1168,7 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
             gguf_set_tensor_type(ctx_outs[cur_split].get(), name.c_str(), new_type);
             gguf_set_tensor_data(ctx_outs[cur_split].get(), name.c_str(), new_data);
 
-            LLAMA_LOG_INFO("%s: writing tensor data for %s at file offset %zu vs. tracked offset %zu, delta=%zu\n", __func__, name.c_str(), (size_t)fout.tellp(), split_cur_offs[cur_split], (size_t)fout.tellp() - split_cur_offs[cur_split]);
+            // LLAMA_LOG_INFO("%s: writing tensor data for %s at file offset %zu vs. tracked offset %zu, delta=%zu\n", __func__, name.c_str(), (size_t)fout.tellp(), split_cur_offs[cur_split], (size_t)fout.tellp() - split_cur_offs[cur_split]);
             split_tensor_offsets[cur_split].push_back(split_cur_offs[cur_split]);
             fout.write((const char *) new_data, new_size);
             const size_t ctx_align = gguf_get_alignment(ctx_outs[cur_split].get());
@@ -1191,20 +1188,20 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
         // program offsets and write metadata at file start
         const int64_t nt = gguf_get_n_tensors(ctx_outs[cur_split].get());
         GGML_ASSERT((int64_t)split_tensor_offsets[cur_split].size() == nt);
+        /*
         for (int64_t t = 0; t < nt; ++t) {
             const char * tname = gguf_get_tensor_name(ctx_outs[cur_split].get(), t);
             gguf_set_tensor_offset(ctx_outs[cur_split].get(), tname, split_tensor_offsets[cur_split][t]);
         }
         for (int64_t t = 0; t < nt; ++t) {
-            LLAMA_LOG_INFO("DEBUG FINAL:   Tensor %ld: %s, type: %s, offset: %zu, size: %zu\n",
-                t,
-                gguf_get_tensor_name(ctx_outs[cur_split].get(), t),
-                ggml_type_name(gguf_get_tensor_type(ctx_outs[cur_split].get(), t)),
-                gguf_get_tensor_offset(ctx_outs[cur_split].get(), t),
-                gguf_get_tensor_size(ctx_outs[cur_split].get(), t));
+            LLAMA_LOG_INFO("DEBUG FINAL:   Tensor %ld: %s, type: %s, offset: %zu, size: %zu\n", t, gguf_get_tensor_name(ctx_outs[cur_split].get(), t), ggml_type_name(gguf_get_tensor_type(ctx_outs[cur_split].get(), t)), gguf_get_tensor_offset(ctx_outs[cur_split].get(), t), gguf_get_tensor_size(ctx_outs[cur_split].get(), t));
         }
+        */
+        int64_t t = nt-1; // last tensor
+        LLAMA_LOG_INFO("DEBUG FINAL:   Tensor %ld: %s, type: %s, offset: %zu, size: %zu\n", t, gguf_get_tensor_name(ctx_outs[cur_split].get(), t), ggml_type_name(gguf_get_tensor_type(ctx_outs[cur_split].get(), t)), gguf_get_tensor_offset(ctx_outs[cur_split].get(), t), gguf_get_tensor_size(ctx_outs[cur_split].get(), t));
         fout.seekp(0);
         const size_t meta_size = gguf_get_meta_size(ctx_outs[cur_split].get());
+        LLAMA_LOG_INFO("%s: metadata size after tensor quantization = %zu (%8.2f KB)\n", __func__, meta_size, meta_size / 1024.0);
         std::vector<uint8_t> meta(meta_size);
         gguf_get_meta_data(ctx_outs[cur_split].get(), meta.data());
         fout.write((const char *) meta.data(), meta.size());
