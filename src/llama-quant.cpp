@@ -570,8 +570,6 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
 
     quantize_state_impl qs(model, params);
 
-    const auto       tn = LLM_TN(qs.model.arch);
-
     if (params->only_copy) {
         ftype = ml.ftype;
     }
@@ -699,7 +697,7 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
             name.find("attn_qkv.weight") != std::string::npos ||
             name.find("attn_kv_b.weight")!= std::string::npos) {
             ++qs.n_attention_wv;
-        } else if (name == tn(LLM_TENSOR_OUTPUT, "weight")) {
+        } else if (name == LLM_TN(qs.model.arch)(LLM_TENSOR_OUTPUT, "weight")) {
             qs.has_output = true;
         }
     }
@@ -802,8 +800,8 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
             quantize &= name.find("altup")  == std::string::npos;
             quantize &= name.find("laurel") == std::string::npos;
             quantize &= name.find("per_layer_model_proj") == std::string::npos;
-            quantize &= name != tn(LLM_TENSOR_POS_EMBD,    "weight");
-            quantize &= name != tn(LLM_TENSOR_TOKEN_TYPES, "weight");
+            quantize &= name != LLM_TN(qs.model.arch)(LLM_TENSOR_POS_EMBD,    "weight");
+            quantize &= name != LLM_TN(qs.model.arch)(LLM_TENSOR_TOKEN_TYPES, "weight");
             quantize &= name.find("ssm_conv1d.weight") == std::string::npos;
             quantize &= name.find("shortconv.conv.weight") == std::string::npos;
             quantize &= name.find("time_mix_first.weight") == std::string::npos;
@@ -952,8 +950,8 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
         quantize &= name.find("per_layer_model_proj") == std::string::npos;
 
         // do not quantize positional embeddings and token types (BERT)
-        quantize &= name != tn(LLM_TENSOR_POS_EMBD,    "weight");
-        quantize &= name != tn(LLM_TENSOR_TOKEN_TYPES, "weight");
+        quantize &= name != LLM_TN(qs.model.arch)(LLM_TENSOR_POS_EMBD,    "weight");
+        quantize &= name != LLM_TN(qs.model.arch)(LLM_TENSOR_TOKEN_TYPES, "weight");
 
         // do not quantize Mamba's small yet 2D weights
         // NOTE: can't use LLM_TN here because the layer number is not known
@@ -1081,7 +1079,7 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
                             // this is a significant error and it may be good idea to abort the process if this happens,
                             // since many people will miss the error and not realize that most of the model is being quantized without an imatrix
                             // tok_embd should be ignored in this case, since it always causes this warning
-                            if (name != tn(LLM_TENSOR_TOKEN_EMBD, "weight")) {
+                            if (name != LLM_TN(qs.model.arch)(LLM_TENSOR_TOKEN_EMBD, "weight")) {
                                 throw std::runtime_error(format("imatrix size %d is different from tensor size %d for %s",
                                         int(it->second.size()), int(tensor->ne[0]*tensor->ne[2]), tensor->name));
                             }
