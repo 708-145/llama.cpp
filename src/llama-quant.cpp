@@ -925,15 +925,15 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
             LLAMA_LOG_INFO("%s: metadata size after tensor quantization = %zu (%8.2f KB)\n", __func__, meta_size, meta_size / 1024.0);
             std::vector<uint8_t> data(meta_size);
             gguf_get_meta_data(ctx_outs[cur_split].get(), data.data());
-            LLAMA_LOG_INFO("DEBUG: Set Tensor offsets in ctx_outs[cur_split]:\n");
+            LLAMA_LOG_INFO("DEBUG3: Set Tensor offsets in ctx_outs[cur_split]:\n");
             for (int i = 0; i < gguf_get_n_tensors(ctx_outs[cur_split].get()); ++i) {
                 const char * tname = gguf_get_tensor_name(ctx_outs[cur_split].get(), i);
                 gguf_set_tensor_offset(ctx_outs[cur_split].get(), tname, split_tensor_offsets[cur_split][i]);
-                LLAMA_LOG_INFO("DEBUG:   Tensor %d: %s, offset: %zu\n", i, tname, gguf_get_tensor_offset(ctx_outs[cur_split].get(), i));
+                LLAMA_LOG_INFO("DEBUG3:   Tensor %d: %s, offset: %zu\n", i, tname, gguf_get_tensor_offset(ctx_outs[cur_split].get(), i));
             }
-            LLAMA_LOG_INFO("DEBUG: Print Tensors in ctx_outs[cur_split] before writing:\n");
+            LLAMA_LOG_INFO("DEBUG3: Print Tensors in ctx_outs[cur_split] before writing:\n");
             for (int i = 0; i < gguf_get_n_tensors(ctx_outs[cur_split].get()); ++i) {
-                LLAMA_LOG_INFO("DEBUG:   Tensor %d: %s, offset: %zu\n", i, gguf_get_tensor_name(ctx_outs[cur_split].get(), i), gguf_get_tensor_offset(ctx_outs[cur_split].get(), i));
+                LLAMA_LOG_INFO("DEBUG3:   Tensor %d: %s, offset: %zu\n", i, gguf_get_tensor_name(ctx_outs[cur_split].get(), i), gguf_get_tensor_offset(ctx_outs[cur_split].get(), i));
             }
             fout.write((const char *) data.data(), data.size());
             fout.close();
@@ -953,11 +953,11 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
         fout = std::ofstream(fname, std::ios::binary);
         fout.exceptions(std::ofstream::failbit); // fail fast on write errors
         const size_t meta_size = gguf_get_meta_size(ctx_outs[cur_split].get());
-        LLAMA_LOG_INFO("DEBUG: meta_size in new_ofstream: %zu (%8.2f KB)\n", meta_size, meta_size / 1024.0);
+        LLAMA_LOG_INFO("DEBUG4: meta_size in new_ofstream: %zu (%8.2f KB)\n", meta_size, meta_size / 1024.0);
         // placeholder for the meta data
-        LLAMA_LOG_INFO("DEBUG: Tensors in ctx_outs[cur_split] before writing:\n");
+        LLAMA_LOG_INFO("DEBUG4: Tensors in ctx_outs[cur_split] before writing:\n");
         for (int i = 0; i < gguf_get_n_tensors(ctx_outs[cur_split].get()); ++i) {
-            LLAMA_LOG_INFO("DEBUG:   Tensor %d: %s, offset: %zu\n", i, gguf_get_tensor_name(ctx_outs[cur_split].get(), i), gguf_get_tensor_offset(ctx_outs[cur_split].get(), i));
+            LLAMA_LOG_INFO("DEBUG4:   Tensor %d: %s, offset: %zu, size: %zu\n", i, gguf_get_tensor_name(ctx_outs[cur_split].get(), i), gguf_get_tensor_offset(ctx_outs[cur_split].get(), i), gguf_get_tensor_size(ctx_outs[cur_split].get(), i));
         }
         ::zeros(fout, meta_size);
     };
@@ -1104,7 +1104,7 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
                 gguf_set_tensor_type(ctx_outs[cur_split].get(), t_name.c_str(), type);
                 gguf_set_tensor_data(ctx_outs[cur_split].get(), t_name.c_str(), t_new_data);
 
-                LLAMA_LOG_INFO("%s: writing tensor data for %s at offset %zu\n", __func__, t_name.c_str(), (size_t)fout.tellp());
+                LLAMA_LOG_INFO("%s: writing tensor data for %s at offset %zu, size= %zu\n", __func__, t_name.c_str(), (size_t)fout.tellp(), t_new_size);
                 split_tensor_offsets[cur_split].push_back(split_cur_offs[cur_split]);
                 fout.write((const char*)t_new_data, t_new_size);
                 const size_t ctx_align = gguf_get_alignment(ctx_outs[cur_split].get());
@@ -1234,7 +1234,7 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
             gguf_set_tensor_type(ctx_outs[cur_split].get(), name.c_str(), new_type);
             gguf_set_tensor_data(ctx_outs[cur_split].get(), name.c_str(), new_data);
 
-            LLAMA_LOG_INFO("%s: writing tensor data for %s at file offset %zu vs. tracked offset %zu\n", __func__, name.c_str(), (size_t)fout.tellp(), split_cur_offs[cur_split]);
+            LLAMA_LOG_INFO("%s: writing tensor data for %s at file offset %zu vs. tracked offset %zu, delta=%zu\n", __func__, name.c_str(), (size_t)fout.tellp(), split_cur_offs[cur_split], (size_t)fout.tellp() - split_cur_offs[cur_split]);
             split_tensor_offsets[cur_split].push_back(split_cur_offs[cur_split]);
             fout.write((const char *) new_data, new_size);
             const size_t ctx_align = gguf_get_alignment(ctx_outs[cur_split].get());
