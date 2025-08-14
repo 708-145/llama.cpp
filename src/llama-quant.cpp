@@ -506,7 +506,7 @@ static size_t llama_tensor_quantize_impl(enum ggml_type new_type, const float * 
                 break;
             }
             lock.unlock();
-            const int64_t this_nrow = std::min(nrows - first_row, nrows_per_chunk); // number of elements for this thread
+            const int64_t this_nrow = std::min(nrows - first_row, nrows_per_chunk);
             size_t this_size = ggml_quantize_chunk(new_type, f32_data, new_data, first_row * n_per_row, this_nrow, n_per_row, imatrix);
             local_size += this_size;
 
@@ -683,7 +683,6 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
             return a->idx < b->idx;
         });
     }
-    
     for (const auto * it : tensors) {
         const struct ggml_tensor * tensor = it->tensor;
 
@@ -694,7 +693,7 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
             name.find("attn_qkv.weight") != std::string::npos ||
             name.find("attn_kv_b.weight")!= std::string::npos) {
             ++qs.n_attention_wv;
-        } else if (name == LLM_TN(qs.model.arch)(LLM_TENSOR_OUTPUT, "weight")) {
+        } else if (name == LLM_TN(model.arch)(LLM_TENSOR_OUTPUT, "weight")) {
             qs.has_output = true;
         }
     }
@@ -736,7 +735,6 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
     std::vector<gguf_context_ptr> ctx_outs(n_split);
     ctx_outs[0] = std::move(ctx_out);
 
-    quantize_state_impl qs_meta = qs;
     std::map<std::string, ggml_type> tensor_new_types;
 
     // populate the original tensors so we get an initial meta data
@@ -819,7 +817,7 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
             quantize &= name.find("attn_rel_b.weight") == std::string::npos;
 
             if (quantize) {
-                new_type = llama_tensor_get_type(qs_meta, new_type, tensor, ftype);
+                new_type = llama_tensor_get_type(qs, new_type, tensor, ftype);
             }
 
             if (tensor->type != new_type) {
