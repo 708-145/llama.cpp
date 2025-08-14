@@ -361,7 +361,7 @@ class GGUFReader:
                 n_elements = n_elems,
                 n_bytes = n_bytes,
                 data_offset = data_offs,
-            data = self._get(data_offs, item_type, item_count).reshape(np_dims),
+                data = self._get(data_offs, item_type, item_count).reshape(np_dims),
                 field = field,
             ))
         self.tensors = tensors
