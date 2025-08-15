@@ -12,7 +12,7 @@ please use the ggml_type definition from ./include/llama.h and ggml/include/ggml
 Quantization uses a 2 phase approach where in the first phase all tensors are discovered, type and size computed and written to metadata in RAM.
 A second phase actually performs the real quantization split by split and writes metadata before the quantized output tensors to file per split.
 
-compile with 
+compile with:
 cmake -B build -DBUILD_SHARED_LIBS=OFF -DLLAMA_CURL=OFF
 cmake --build build --config Release -j8 --target llama-quantize llama-cli
 
