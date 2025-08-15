@@ -842,7 +842,6 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
         }
     }
 
-    
     int cur_split = -1;
     std::ofstream fout;
     auto close_ofstream = [&]() {
