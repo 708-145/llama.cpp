@@ -1153,12 +1153,12 @@ uint32_t llama_model_do_analysis(
                 const float * f32_data_03 = f32_data + i03 * nelements_matrix;
                 const float * imatrix_03 = nullptr;
                 if (imatrix_data) {
-                    std::string remapped_imatrix_name = remap_imatrix(name, mapped);
-                    auto it = imatrix_data->find(remapped_imatrix_name);
+                    auto it = imatrix_data->find(name);
                     if (it != imatrix_data->end()) {
                         imatrix_03 = it->second.data() + i03 * n_per_row;
+                        LLAMA_LOG_WARN("Analyzing with imatrix data: %s\n", name.c_str());
                     } else {
-                        LLAMA_LOG_WARN("imatrix data not found for tensor: %s (remapped: %s)\n", name.c_str(), remapped_imatrix_name.c_str());
+                        LLAMA_LOG_WARN("Analyzing without imatrix data: %s\n", name.c_str());
                     }
                 }
 
@@ -1190,21 +1190,13 @@ uint32_t llama_model_do_analysis(
                         const int64_t blocks_per_row = std::max((int64_t)1, n_per_row / block_size); // Ensure at least 1
 
                         const int64_t linear_block_idx = i / block_size;
-                        LLAMA_LOG_INFO("WTF2: %ld , %ld\n", linear_block_idx, blocks_per_row);
                         const int64_t block_row = linear_block_idx / blocks_per_row;
                         const int64_t block_col = linear_block_idx % blocks_per_row;
-
+                        /*
                         if (max_imatrix_val > 1e9f) {
                             LLAMA_LOG_DEBUG("max_imatrix_val for tensor %s, block_row %ld, block_col %ld: %f\n", name.c_str(), block_row, block_col, max_imatrix_val);
-                            LLAMA_LOG_DEBUG("Problematic imatrix_03 values (first 256 in block):\n");
-                            for (int64_t k_idx = 0; k_idx < block_size; ++k_idx) {
-                                if (i + k_idx < end) { // Ensure we don't go out of bounds
-                                    LLAMA_LOG_DEBUG("  imatrix_03[%ld]: %f\n", i + k_idx, imatrix_03[i + k_idx]);
-                                }
-                            }
-                            //throw std::runtime_error(format("max_imatrix_val exceeded maximum: %f", max_imatrix_val));
                         }
-
+                        */
                         analyze_fout << name << ","
                                      << i03 << ","
                                      << block_row << ","
