@@ -1,6 +1,8 @@
 #include "common.h"
 #include "llama.h"
 #include "gguf.h"
+#include "../../src/llama-quant.h"
+#include "../../src/llama-impl.h"
 
 #include <cstdio>
 #include <cstring>
@@ -117,7 +119,7 @@ static bool try_parse_ftype(const std::string & ftype_str_in, llama_ftype & ftyp
 
 [[noreturn]]
 static void usage(const char * executable) {
-    printf("usage: %s [--help] [--allow-requantize] [--leave-output-tensor] [--pure] [--imatrix] [--include-weights]\n", executable);
+    printf("usage: %s [--help] [--allow-requantize] [--leave-output-tensor] [--pure] [--imatrix] [--include-weights] [--analyze]\n", executable);
     printf("       [--exclude-weights] [--output-tensor-type] [--token-embedding-type] [--tensor-type] [--prune-layers] [--keep-split] [--override-kv]\n");
     printf("       model-f32.gguf [model-quant.gguf] type [nthreads]\n\n");
     printf("  --allow-requantize: Allows requantizing tensors that have already been quantized. Warning: This can severely reduce quality compared to quantizing from 16bit or 32bit\n");
@@ -132,6 +134,7 @@ static void usage(const char * executable) {
     printf("      Advanced option to selectively quantize tensors. May be specified multiple times.\n");
     printf("  --prune-layers L0,L1,L2...comma-separated list of layer numbers to prune from the model\n");
     printf("      Advanced option to remove all tensors from the given layers\n");
+    printf("  --analyze filename: write analysis to the specified file\n");
     printf("  --keep-split: will generate quantized model in the same shards as input\n");
     printf("  --override-kv KEY=TYPE:VALUE\n");
     printf("      Advanced option to override model metadata by key in the quantized model. May be specified multiple times.\n");
@@ -449,6 +452,8 @@ int main(int argc, char ** argv) {
 
     int arg_idx = 1;
     std::string imatrix_file;
+    std::string analyze_file;
+    bool do_analysis_only = false;
     std::vector<std::string> included_weights, excluded_weights;
     std::vector<llama_model_kv_override> kv_overrides;
     std::vector<tensor_quantization> tensor_types;
@@ -506,6 +511,13 @@ int main(int argc, char ** argv) {
         } else if (strcmp(argv[arg_idx], "--exclude-weights") == 0) {
             if (arg_idx < argc-1) {
                 excluded_weights.emplace_back(argv[++arg_idx]);
+            } else {
+                usage(argv[0]);
+            }
+        } else if (strcmp(argv[arg_idx], "--analyze") == 0) {
+            if (arg_idx < argc - 1) {
+                analyze_file = argv[++arg_idx];
+                do_analysis_only = true;
             } else {
                 usage(argv[0]);
             }
@@ -573,6 +585,9 @@ int main(int argc, char ** argv) {
     }
     if (!prune_layers.empty()) {
         params.prune_layers = &prune_layers;
+    }
+    if (!analyze_file.empty()) {
+        params.analyze_file = &analyze_file;
     }
 
     llama_backend_init();
@@ -645,35 +660,48 @@ int main(int argc, char ** argv) {
 
     print_build_info();
 
-    fprintf(stderr, "%s: quantizing '%s' to '%s' as %s", __func__, fname_inp.c_str(), fname_out.c_str(), ftype_str.c_str());
-    if (params.nthread > 0) {
-        fprintf(stderr, " using %d threads", params.nthread);
-    }
-    fprintf(stderr, "\n");
-
-    const int64_t t_main_start_us = llama_time_us();
-
-    int64_t t_quantize_us = 0;
-
-    // load the model
-    {
-        const int64_t t_start_us = llama_time_us();
-
-        if (llama_model_quantize(fname_inp.c_str(), fname_out.c_str(), &params)) {
-            fprintf(stderr, "%s: failed to quantize model from '%s'\n", __func__, fname_inp.c_str());
+    if (do_analysis_only) {
+        fprintf(stderr, "%s: analyzing '%s' to '%s'\n", __func__, fname_inp.c_str(), analyze_file.c_str());
+        const int64_t t_main_start_us = llama_time_us();
+        if (llama_model_do_analysis(fname_inp.c_str(), analyze_file.c_str(), &imatrix_data)) {
+            fprintf(stderr, "%s: failed to analyze model from '%s'\n", __func__, fname_inp.c_str());
             return 1;
         }
-
-        t_quantize_us = llama_time_us() - t_start_us;
-    }
-
-    // report timing
-    {
         const int64_t t_main_end_us = llama_time_us();
-
         printf("\n");
-        printf("%s: quantize time = %8.2f ms\n", __func__, t_quantize_us/1000.0);
+        printf("%s: analyze time = %8.2f ms\n", __func__, (t_main_end_us - t_main_start_us)/1000.0);
         printf("%s:    total time = %8.2f ms\n", __func__, (t_main_end_us - t_main_start_us)/1000.0);
+    } else {
+        fprintf(stderr, "%s: quantizing '%s' to '%s' as %s", __func__, fname_inp.c_str(), fname_out.c_str(), ftype_str.c_str());
+        if (params.nthread > 0) {
+            fprintf(stderr, " using %d threads", params.nthread);
+        }
+        fprintf(stderr, "\n");
+
+        const int64_t t_main_start_us = llama_time_us();
+
+        int64_t t_quantize_us = 0;
+
+        // load the model
+        {
+            const int64_t t_start_us = llama_time_us();
+
+            if (llama_model_quantize(fname_inp.c_str(), fname_out.c_str(), &params)) {
+                fprintf(stderr, "%s: failed to quantize model from '%s'\n", __func__, fname_inp.c_str());
+                return 1;
+            }
+
+            t_quantize_us = llama_time_us() - t_start_us;
+        }
+
+        // report timing
+        {
+            const int64_t t_main_end_us = llama_time_us();
+
+            printf("\n");
+            printf("%s: quantize time = %8.2f ms\n", __func__, t_quantize_us/1000.0);
+            printf("%s:    total time = %8.2f ms\n", __func__, (t_main_end_us - t_main_start_us)/1000.0);
+        }
     }
 
     llama_backend_free();

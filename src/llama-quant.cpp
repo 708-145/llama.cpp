@@ -12,6 +12,8 @@
 #include <regex>
 #include <thread>
 #include <unordered_map>
+#include <iomanip>
+#include <cfloat>
 
 // Quantization types. Changes to this struct must be replicated in quantize.cpp
 struct tensor_quantization {
@@ -1050,6 +1052,180 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
 // interface implementation
 //
 
+uint32_t llama_model_do_analysis(
+    const char * fname_inp,
+    const char * analyze_file_name,
+    const void * imatrix_data_ptr
+) {
+    try {
+        int nthread = std::thread::hardware_concurrency();
+
+#if defined(__linux__) || defined(_WIN32)
+        constexpr bool use_mmap = true;
+#else
+        constexpr bool use_mmap = false;
+#endif
+
+        std::vector<std::string> splits = {};
+        llama_model_loader ml(fname_inp, splits, use_mmap, /*check_tensors*/ true, nullptr, nullptr);
+        ml.init_mappings(false); // no prefetching
+
+        llama_model model(llama_model_default_params());
+
+        model.load_arch   (ml);
+        model.load_hparams(ml);
+        model.load_stats  (ml);
+
+        llama_model_quantize_params params_dummy = llama_model_quantize_default_params();
+        quantize_state_impl qs(model, &params_dummy);
+
+        const std::unordered_map<std::string, std::vector<float>> * imatrix_data = nullptr;
+        if (imatrix_data_ptr) {
+            imatrix_data = static_cast<const std::unordered_map<std::string, std::vector<float>>*>(imatrix_data_ptr);
+            if (imatrix_data) {
+                LLAMA_LOG_INFO("================================ Have weights data with %d entries\n",int(imatrix_data->size()));
+                qs.has_imatrix = true;
+                // check imatrix for nans or infs
+                for (const auto & kv : *imatrix_data) {
+                    for (float f : kv.second) {
+                        if (!std::isfinite(f)) {
+                            throw std::runtime_error(format("imatrix contains non-finite value %f\n", f));
+                        }
+                    }
+                }
+            }
+        }
+
+        std::ofstream analyze_fout;
+        analyze_fout.open(analyze_file_name);
+        if (!analyze_fout) {
+            throw std::runtime_error(format("failed to open analysis file %s", analyze_file_name));
+        }
+        analyze_fout << "tensor_name,expert_idx,block_row,block_col,block_type,max_abs_weight,min_abs_weight,log2_max_div_min,max_imatrix_val\n";
+
+        std::map<int, std::string> mapped;
+        int blk_id = 0;
+        int pruned_attention_w_unused = 0; (void)pruned_attention_w_unused;
+
+        std::vector<const llama_model_loader::llama_tensor_weight *> tensors;
+        tensors.reserve(ml.weights_map.size());
+        for (const auto & it : ml.weights_map) {
+            const std::string remapped_name(remap_layer(it.first, {}, mapped, blk_id)); // No pruning for analysis
+            if (remapped_name.empty()) {
+                continue;
+            } else if (remapped_name != it.first) {
+                ggml_set_name(it.second.tensor, remapped_name.c_str());
+            }
+            tensors.push_back(&it.second);
+        }
+
+        for (const auto * it : tensors) {
+            struct ggml_tensor * tensor = const_cast<struct ggml_tensor *>(it->tensor);
+            const std::string name = ggml_get_name(tensor);
+
+            std::vector<no_init<uint8_t>> read_data;
+            std::vector<no_init<float>> f32_conv_buf;
+            std::vector<std::thread> workers;
+
+            if (!ml.use_mmap) {
+                if (read_data.size() < ggml_nbytes(tensor)) {
+                    read_data.resize(ggml_nbytes(tensor));
+                }
+                tensor->data = read_data.data();
+            }
+            ml.load_data_for(tensor);
+
+            const int64_t nelements = ggml_nelements(tensor);
+            float * f32_data;
+
+            if (tensor->type == GGML_TYPE_F32) {
+                f32_data = (float *) tensor->data;
+            } else {
+                llama_tensor_dequantize_impl(tensor, f32_conv_buf, workers, nelements, nthread);
+                f32_data = (float *) f32_conv_buf.data();
+            }
+
+            const int64_t n_per_row = tensor->ne[0];
+            const int64_t nrows_unused = tensor->ne[1]; (void)nrows_unused;
+            const int64_t nelements_matrix = tensor->ne[0] * tensor->ne[1];
+
+            for (int64_t i03 = 0; i03 < tensor->ne[2]; ++i03) {
+                const float * f32_data_03 = f32_data + i03 * nelements_matrix;
+                const float * imatrix_03 = nullptr;
+                if (imatrix_data) {
+                    std::string remapped_imatrix_name = remap_imatrix(name, mapped);
+                    auto it = imatrix_data->find(remapped_imatrix_name);
+                    if (it != imatrix_data->end()) {
+                        imatrix_03 = it->second.data() + i03 * n_per_row;
+                    } else {
+                        LLAMA_LOG_WARN("imatrix data not found for tensor: %s (remapped: %s)\n", name.c_str(), remapped_imatrix_name.c_str());
+                    }
+                }
+
+                // Always use a block size of 256 for analysis, independent of quant type
+                const int64_t block_size = 256;
+                if (block_size > 1) {
+                    for (int64_t i = 0; i < nelements_matrix; i += block_size) {
+                        float max_abs_val = 0.0f;
+                        float min_abs_val = FLT_MAX;
+                        const int64_t end = std::min(i + block_size, nelements_matrix);
+                        for (int64_t j = i; j < end; ++j) {
+                            float val = std::abs(f32_data_03[j]);
+                            if (val > max_abs_val) max_abs_val = val;
+                            if (val < min_abs_val && val > 0.001) min_abs_val = val;
+                        }
+                        double log2_max_div_min = 0.0;
+                        if (min_abs_val > 0.0f && min_abs_val != FLT_MAX) {
+                            log2_max_div_min = log2(max_abs_val / min_abs_val);
+                        }
+
+                        float max_imatrix_val = 0.0f;
+                        if (imatrix_03) {
+                            for (int64_t j = i; j < end; ++j) {
+                                if (imatrix_03[j] > max_imatrix_val) {
+                                    max_imatrix_val = imatrix_03[j];
+                                }
+                            }
+                        }
+                        const int64_t blocks_per_row = std::max((int64_t)1, n_per_row / block_size); // Ensure at least 1
+
+                        const int64_t linear_block_idx = i / block_size;
+                        LLAMA_LOG_INFO("WTF2: %ld , %ld\n", linear_block_idx, blocks_per_row);
+                        const int64_t block_row = linear_block_idx / blocks_per_row;
+                        const int64_t block_col = linear_block_idx % blocks_per_row;
+
+                        if (max_imatrix_val > 1e9f) {
+                            LLAMA_LOG_DEBUG("max_imatrix_val for tensor %s, block_row %ld, block_col %ld: %f\n", name.c_str(), block_row, block_col, max_imatrix_val);
+                            LLAMA_LOG_DEBUG("Problematic imatrix_03 values (first 256 in block):\n");
+                            for (int64_t k_idx = 0; k_idx < block_size; ++k_idx) {
+                                if (i + k_idx < end) { // Ensure we don't go out of bounds
+                                    LLAMA_LOG_DEBUG("  imatrix_03[%ld]: %f\n", i + k_idx, imatrix_03[i + k_idx]);
+                                }
+                            }
+                            //throw std::runtime_error(format("max_imatrix_val exceeded maximum: %f", max_imatrix_val));
+                        }
+
+                        analyze_fout << name << ","
+                                     << i03 << ","
+                                     << block_row << ","
+                                     << block_col << ","
+                                     << ggml_type_name(tensor->type) << ","
+                                     << std::fixed << std::setprecision(6) << max_abs_val << ","
+                                     << std::fixed << std::setprecision(6) << min_abs_val << ","
+                                     << std::fixed << std::setprecision(6) << log2_max_div_min << ","
+                                     << std::fixed << std::setprecision(6) << max_imatrix_val << "\n";
+                    }
+                }
+            }
+        }
+        analyze_fout.close();
+    } catch (const std::exception & err) {
+        LLAMA_LOG_ERROR("%s: failed to analyze: %s\n", __func__, err.what());
+        return 1;
+    }
+    return 0;
+}
+
 llama_model_quantize_params llama_model_quantize_default_params() {
     llama_model_quantize_params result = {
         /*.nthread                     =*/ 0,
@@ -1064,7 +1240,8 @@ llama_model_quantize_params llama_model_quantize_default_params() {
         /*.imatrix                     =*/ nullptr,
         /*.kv_overrides                =*/ nullptr,
         /*.tensor_type                 =*/ nullptr,
-        /*.prune_layers                =*/ nullptr
+        /*.prune_layers                =*/ nullptr,
+        /*.analyze_file                =*/ nullptr
     };
 
     return result;
