@@ -8,7 +8,9 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#ifdef __cplusplus
 #include <string>
+#endif
 #include <stdio.h>
 #include <stdbool.h>
 
@@ -550,8 +552,6 @@ extern "C" {
             const char * fname_inp,
             const char * fname_out,
             const llama_model_quantize_params * params);
-
-    LLAMA_API std::string llama_model_ftype_name(llama_ftype ftype);
 
     //
     // Adapters
@@ -1457,6 +1457,10 @@ extern "C" {
 
 #ifdef __cplusplus
 }
+#endif
+
+#ifdef __cplusplus
+LLAMA_API std::string llama_model_ftype_name(llama_ftype ftype);
 #endif
 
 #endif // LLAMA_H
