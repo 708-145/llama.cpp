@@ -241,7 +241,16 @@
 #define GGML_ROPE_TYPE_MROPE  8
 #define GGML_ROPE_TYPE_VISION 24
 
+#define GGML_MROPE_SECTIONS   4
+
 #define GGML_UNUSED(x) (void)(x)
+#ifdef __CUDACC__
+template<typename... Args>
+__host__ __device__ constexpr inline void ggml_unused_vars_impl(Args&&...) noexcept {}
+#define GGML_UNUSED_VARS(...) ggml_unused_vars_impl(__VA_ARGS__)
+#else
+#define GGML_UNUSED_VARS(...) do { (void)sizeof((__VA_ARGS__, 0)); } while(0)
+#endif // __CUDACC__
 
 #define GGML_PAD(x, n) (((x) + (n) - 1) & ~((n) - 1))
 
@@ -544,6 +553,7 @@ extern "C" {
         GGML_OP_CROSS_ENTROPY_LOSS,
         GGML_OP_CROSS_ENTROPY_LOSS_BACK,
         GGML_OP_OPT_STEP_ADAMW,
+        GGML_OP_OPT_STEP_SGD,
 
         GGML_OP_GLU,
 
@@ -1664,7 +1674,7 @@ extern "C" {
             struct ggml_tensor  * b,
             struct ggml_tensor  * c,
             int                   n_dims,
-            int                   sections[4],
+            int                   sections[GGML_MROPE_SECTIONS],
             int                   mode,
             int                   n_ctx_orig,
             float                 freq_base,
@@ -1681,6 +1691,22 @@ extern "C" {
             struct ggml_tensor  * b,
             struct ggml_tensor  * c,
             int                   n_dims,
+            int                   mode,
+            int                   n_ctx_orig,
+            float                 freq_base,
+            float                 freq_scale,
+            float                 ext_factor,
+            float                 attn_factor,
+            float                 beta_fast,
+            float                 beta_slow);
+
+    GGML_API struct ggml_tensor * ggml_rope_multi_inplace(
+            struct ggml_context * ctx,
+            struct ggml_tensor  * a,
+            struct ggml_tensor  * b,
+            struct ggml_tensor  * c,
+            int                   n_dims,
+            int                   sections[GGML_MROPE_SECTIONS],
             int                   mode,
             int                   n_ctx_orig,
             float                 freq_base,
@@ -2297,7 +2323,14 @@ extern "C" {
             struct ggml_tensor  * grad,
             struct ggml_tensor  * m,
             struct ggml_tensor  * v,
-            struct ggml_tensor  * adamw_params); // parameters such a the learning rate
+            struct ggml_tensor  * adamw_params); // parameters such as the learning rate
+
+    // stochastic gradient descent step (with weight decay)
+    GGML_API struct ggml_tensor * ggml_opt_step_sgd(
+        struct ggml_context * ctx,
+        struct ggml_tensor *  a,
+        struct ggml_tensor *  grad,
+        struct ggml_tensor *  sgd_params); // alpha, weight decay
 
     //
     // automatic differentiation
