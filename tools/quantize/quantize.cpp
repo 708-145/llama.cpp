@@ -1,5 +1,6 @@
 #include "common.h"
 #include "llama.h"
+#include "llama-quant.h" // Include for SmarterQuantConfig and SmartQuantConfig
 #include "gguf.h"
 
 #include <cstdio>
@@ -12,6 +13,10 @@
 #include <cmath>
 #include <cctype>
 #include <algorithm>
+#include <fstream>
+#include <memory> // For std::unique_ptr
+#include "../../vendor/nlohmann/json.hpp"
+
 
 struct quant_option {
     std::string name;
@@ -44,6 +49,8 @@ static const std::vector<quant_option> QUANT_OPTIONS = {
     { "Q3_K_L",   LLAMA_FTYPE_MOSTLY_Q3_K_L,   " 4.03G, +0.5562 ppl @ Llama-3-8B",  },
     { "IQ4_NL",   LLAMA_FTYPE_MOSTLY_IQ4_NL,   " 4.50 bpw non-linear quantization", },
     { "IQ4_XS",   LLAMA_FTYPE_MOSTLY_IQ4_XS,   " 4.25 bpw non-linear quantization", },
+    { "NF4_XS",   LLAMA_FTYPE_MOSTLY_NF4_XS,   " 4.25 bpw NormalFloat quantization",},
+    { "FP4_XS",   LLAMA_FTYPE_MOSTLY_FP4_XS,   " 4.25 bpw FP4E1M2 quantization",    },
     { "Q4_K",     LLAMA_FTYPE_MOSTLY_Q4_K_M,   "alias for Q4_K_M",                  },
     { "Q4_K_S",   LLAMA_FTYPE_MOSTLY_Q4_K_S,   " 4.37G, +0.2689 ppl @ Llama-3-8B",  },
     { "Q4_K_M",   LLAMA_FTYPE_MOSTLY_Q4_K_M,   " 4.58G, +0.1754 ppl @ Llama-3-8B",  },
@@ -117,7 +124,7 @@ static bool try_parse_ftype(const std::string & ftype_str_in, llama_ftype & ftyp
 [[noreturn]]
 static void usage(const char * executable) {
     printf("usage: %s [--help] [--allow-requantize] [--leave-output-tensor] [--pure] [--imatrix] [--include-weights]\n", executable);
-    printf("       [--exclude-weights] [--output-tensor-type] [--token-embedding-type] [--tensor-type] [--prune-layers] [--keep-split] [--override-kv]\n");
+    printf("       [--exclude-weights] [--output-tensor-type] [--token-embedding-type] [--tensor-type] [--prune-layers] [--keep-split] [--override-kv] [--smartquant]\n");
     printf("       model-f32.gguf [model-quant.gguf] type [nthreads]\n\n");
     printf("  --allow-requantize: Allows requantizing tensors that have already been quantized. Warning: This can severely reduce quality compared to quantizing from 16bit or 32bit\n");
     printf("  --leave-output-tensor: Will leave output.weight un(re)quantized. Increases model size but may also increase quality, especially when requantizing\n");
@@ -134,6 +141,8 @@ static void usage(const char * executable) {
     printf("  --keep-split: will generate quantized model in the same shards as input\n");
     printf("  --override-kv KEY=TYPE:VALUE\n");
     printf("      Advanced option to override model metadata by key in the quantized model. May be specified multiple times.\n");
+    printf("  --smartquant file_name: path to a JSON file with quantization parameters\n");
+    printf("  --smarterquant file_name: path to a JSON file with smarter quantization parameters\n");
     printf("Note: --include-weights and --exclude-weights cannot be used together\n");
     printf("\nAllowed quantization types:\n");
     for (const auto & it : QUANT_OPTIONS) {
@@ -381,6 +390,28 @@ static ggml_type parse_ggml_type(const char * arg) {
     return GGML_TYPE_COUNT;
 }
 
+static void parse_json_params(const std::string & json_file, std::vector<llama_model_kv_override> & kv_overrides) {
+    std::ifstream f(json_file);
+    if (!f.is_open()) {
+        fprintf(stderr, "Could not open file %s\n", json_file.c_str());
+        exit(1);
+    }
+    nlohmann::json j;
+    f >> j;
+
+    if (j.is_object()) {
+        for (auto& item : j.items()) {
+            llama_model_kv_override kvo;
+            std::string key = "ggml.quantization_override." + item.key();
+            strncpy(kvo.key, key.c_str(), sizeof(kvo.key) - 1);
+            kvo.key[sizeof(kvo.key) - 1] = '\0';
+            kvo.tag = LLAMA_KV_OVERRIDE_TYPE_INT;
+            kvo.val_i64 = item.value().get<int64_t>();
+            kv_overrides.push_back(kvo);
+        }
+    }
+}
+
 static bool parse_tensor_type(const char * data, std::vector<tensor_quantization> & tensor_type) {
     const char * sep = strchr(data, '=');
     if (sep == nullptr) {
@@ -450,11 +481,18 @@ int main(int argc, char ** argv) {
     std::string imatrix_file;
     std::vector<std::string> included_weights, excluded_weights;
     std::vector<llama_model_kv_override> kv_overrides;
+    std::string smartquant_file;
     std::vector<tensor_quantization> tensor_types;
     std::vector<int> prune_layers;
 
     for (; arg_idx < argc && strncmp(argv[arg_idx], "--", 2) == 0; arg_idx++) {
-        if (strcmp(argv[arg_idx], "--leave-output-tensor") == 0) {
+        if (strcmp(argv[arg_idx], "--smartquant") == 0) {
+            if (arg_idx < argc - 1) {
+                smartquant_file = argv[++arg_idx];
+            } else {
+                usage(argv[0]);
+            }
+        } else if (strcmp(argv[arg_idx], "--leave-output-tensor") == 0) {
             params.quantize_output_tensor = false;
         } else if (strcmp(argv[arg_idx], "--output-tensor-type") == 0) {
             if (arg_idx < argc-1) {
@@ -513,6 +551,11 @@ int main(int argc, char ** argv) {
         } else {
             usage(argv[0]);
         }
+    }
+    std::unique_ptr<SmartQuantConfig> smart_quant_config_ptr;
+    if (!smartquant_file.empty()) {
+        smart_quant_config_ptr = std::make_unique<SmartQuantConfig>(load_smart_quant_config(smartquant_file));
+        params.smart_quant_config = smart_quant_config_ptr.get();
     }
 
     if (argc - arg_idx < 2) {
