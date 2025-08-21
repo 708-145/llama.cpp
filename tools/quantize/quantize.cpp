@@ -1,6 +1,6 @@
 #include "common.h"
 #include "llama.h"
-#include "llama-quant.h" // Include for SmarterQuantConfig and SmartQuantConfig
+#include "llama-quant.h" // Include for SmartQuantConfig
 #include "gguf.h"
 
 #include <cstdio>
@@ -66,11 +66,7 @@ static const std::vector<quant_option> QUANT_OPTIONS = {
     { "COPY",     LLAMA_FTYPE_ALL_F32,         "only copy tensors, no quantizing",  },
 };
 
-// Quantization types. Changes to this struct must be replicated in llama-quantize.cpp
-struct tensor_quantization {
-    std::string name;
-    ggml_type quant = GGML_TYPE_COUNT;
-};
+
 
 static const char * const LLM_KV_QUANTIZE_IMATRIX_FILE       = "quantize.imatrix.file";
 static const char * const LLM_KV_QUANTIZE_IMATRIX_DATASET    = "quantize.imatrix.dataset";
@@ -142,7 +138,6 @@ static void usage(const char * executable) {
     printf("  --override-kv KEY=TYPE:VALUE\n");
     printf("      Advanced option to override model metadata by key in the quantized model. May be specified multiple times.\n");
     printf("  --smartquant file_name: path to a JSON file with quantization parameters\n");
-    printf("  --smarterquant file_name: path to a JSON file with smarter quantization parameters\n");
     printf("Note: --include-weights and --exclude-weights cannot be used together\n");
     printf("\nAllowed quantization types:\n");
     for (const auto & it : QUANT_OPTIONS) {

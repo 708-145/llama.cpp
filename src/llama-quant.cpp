@@ -829,7 +829,7 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
         }
         ml.load_data_for(tensor);
 
-        // Calculate and print average bpw for SmarterQuant
+        // Calculate and print average bpw for each tensor
         const int64_t n_cols = tensor->ne[0];
         const int64_t n_rows = tensor->ne[1]; // TODO: MoE support with ne[2]?
         int64_t total_weights = n_cols * n_rows;
@@ -912,7 +912,7 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
             }
 
             // get more optimal quantization type based on the tensor shape, layer, etc.
-            if (!params->pure && ggml_is_quantized(default_type) && sq_info == nullptr) { // Only apply default logic if no SmarterQuant
+            if (!params->pure && ggml_is_quantized(default_type)) {
                 int fallback = qs.n_fallback;
                 new_type = llama_tensor_get_type(qs, new_type, tensor, ftype);
                 // unless the user specifies a type, and the tensor geometry will not require fallback quantisation
