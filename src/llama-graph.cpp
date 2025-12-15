@@ -13,6 +13,36 @@
 #include <cmath>
 #include <cstring>
 
+static ggml_tensor * build_mul_mat_padded(ggml_context * ctx, ggml_tensor * w, ggml_tensor * cur) {
+    if (ggml_is_quantized(w->type)) {
+        const int64_t blck = ggml_blck_size(w->type);
+        if (w->ne[0] % blck != 0) {
+            const int64_t ne0_pad = ((w->ne[0] + blck - 1) / blck) * blck;
+
+            ggml_tensor * w_pad = ggml_view_4d(ctx, w, ne0_pad, w->ne[1], w->ne[2], w->ne[3], w->nb[1], w->nb[2], w->nb[3], 0);
+            ggml_tensor * cur_pad = ggml_pad(ctx, cur, ne0_pad - cur->ne[0], 0, 0, 0);
+
+            return ggml_mul_mat(ctx, w_pad, cur_pad);
+        }
+    }
+    return ggml_mul_mat(ctx, w, cur);
+}
+
+static ggml_tensor * build_mul_mat_id_padded(ggml_context * ctx, ggml_tensor * as, ggml_tensor * b, ggml_tensor * ids) {
+    if (ggml_is_quantized(as->type)) {
+        const int64_t blck = ggml_blck_size(as->type);
+        if (as->ne[0] % blck != 0) {
+            const int64_t ne0_pad = ((as->ne[0] + blck - 1) / blck) * blck;
+
+            ggml_tensor * as_pad = ggml_view_4d(ctx, as, ne0_pad, as->ne[1], as->ne[2], as->ne[3], as->nb[1], as->nb[2], as->nb[3], 0);
+            ggml_tensor * b_pad = ggml_pad(ctx, b, ne0_pad - b->ne[0], 0, 0, 0);
+
+            return ggml_mul_mat_id(ctx, as_pad, b_pad, ids);
+        }
+    }
+    return ggml_mul_mat_id(ctx, as, b, ids);
+}
+
 void llm_graph_input_embd::set_input(const llama_ubatch * ubatch) {
     if (ubatch->token) {
         const int64_t n_tokens = ubatch->n_tokens;
@@ -543,7 +573,7 @@ ggml_tensor * llm_graph_context::build_cvec(
 ggml_tensor * llm_graph_context::build_lora_mm(
           ggml_tensor * w,
           ggml_tensor * cur) const {
-    ggml_tensor * res = ggml_mul_mat(ctx0, w, cur);
+    ggml_tensor * res = build_mul_mat_padded(ctx0, w, cur);
 
     for (const auto & lora : *loras) {
         llama_adapter_lora_weight * lw = lora.first->get_weight(w);
@@ -554,9 +584,9 @@ ggml_tensor * llm_graph_context::build_lora_mm(
         const float adapter_scale = lora.second;
         const float scale = lw->get_scale(lora.first->alpha, adapter_scale);
 
-        ggml_tensor * ab_cur = ggml_mul_mat(
+        ggml_tensor * ab_cur = build_mul_mat_padded(
                 ctx0, lw->b,
-                ggml_mul_mat(ctx0, lw->a, cur)
+                build_mul_mat_padded(ctx0, lw->a, cur)
                 );
 
         ab_cur = ggml_scale(ctx0, ab_cur, scale);
@@ -570,7 +600,7 @@ ggml_tensor * llm_graph_context::build_lora_mm_id(
           ggml_tensor * w,   // ggml_tensor * as
           ggml_tensor * cur, // ggml_tensor * b
           ggml_tensor * ids) const {
-    ggml_tensor * res = ggml_mul_mat_id(ctx0, w, cur, ids);
+    ggml_tensor * res = build_mul_mat_id_padded(ctx0, w, cur, ids);
     for (const auto & lora : *loras) {
         llama_adapter_lora_weight * lw = lora.first->get_weight(w);
         if (lw == nullptr) {
@@ -581,9 +611,9 @@ ggml_tensor * llm_graph_context::build_lora_mm_id(
         const float rank  = (float) lw->b->ne[0];
         const float scale = alpha ? lora.second * alpha / rank : lora.second;
 
-        ggml_tensor * ab_cur = ggml_mul_mat_id(
+        ggml_tensor * ab_cur = build_mul_mat_id_padded(
                 ctx0, lw->b,
-                ggml_mul_mat_id(ctx0, lw->a, cur, ids),
+                build_mul_mat_id_padded(ctx0, lw->a, cur, ids),
                 ids
                 );
 
@@ -1269,12 +1299,12 @@ ggml_tensor * llm_graph_context::build_attn_mha(
             // v_mla can be applied as a matrix-vector multiplication with broadcasting across dimension 3 == n_tokens.
             // However, the code is optimized for dimensions 0 and 1 being large, so this is ineffient.
             cur = ggml_reshape_4d(ctx0, cur, v_mla->ne[0], 1, n_head, n_tokens);
-            cur = ggml_mul_mat(ctx0, v_mla, cur);
+            cur = build_mul_mat_padded(ctx0, v_mla, cur);
 #else
             // It's preferable to do the calculation as a matrix-matrix multiplication with n_tokens in dimension 1.
             // The permutations are noops and only change how the tensor data is interpreted.
             cur = ggml_permute(ctx0, cur, 0, 2, 1, 3);
-            cur = ggml_mul_mat(ctx0, v_mla, cur);
+            cur = build_mul_mat_padded(ctx0, v_mla, cur);
             cur = ggml_permute(ctx0, cur, 0, 2, 1, 3);
             cur = ggml_cont(ctx0, cur); // Needed because ggml_reshape_2d expects contiguous inputs.
 #endif
@@ -1282,7 +1312,7 @@ ggml_tensor * llm_graph_context::build_attn_mha(
 
         cur = ggml_reshape_2d(ctx0, cur, cur->ne[0]*cur->ne[1], cur->ne[2]*cur->ne[3]);
     } else {
-        ggml_tensor * kq = ggml_mul_mat(ctx0, k, q);
+        ggml_tensor * kq = build_mul_mat_padded(ctx0, k, q);
 
         // note: this op tends to require high floating point range
         //       while for some models F16 is enough, for others it is not, so we default to F32 here
@@ -1317,11 +1347,11 @@ ggml_tensor * llm_graph_context::build_attn_mha(
             v = ggml_cont(ctx0, ggml_transpose(ctx0, v));
         }
 
-        ggml_tensor * kqv = ggml_mul_mat(ctx0, v, kq);
+        ggml_tensor * kqv = build_mul_mat_padded(ctx0, v, kq);
 
         // for MLA with the absorption optimization, we need to "decompress" from MQA back to MHA
         if (v_mla) {
-            kqv = ggml_mul_mat(ctx0, v_mla, kqv);
+            kqv = build_mul_mat_padded(ctx0, v_mla, kqv);
         }
 
         cur = ggml_permute(ctx0, kqv, 0, 2, 1, 3);
@@ -1832,7 +1862,7 @@ void llm_graph_context::build_pooling(
         case LLAMA_POOLING_TYPE_MEAN:
             {
                 ggml_tensor * inp_mean = build_inp_mean();
-                cur = ggml_mul_mat(ctx0, ggml_cont(ctx0, ggml_transpose(ctx0, inp)), inp_mean);
+                cur = build_mul_mat_padded(ctx0, ggml_cont(ctx0, ggml_transpose(ctx0, inp)), inp_mean);
             } break;
         case LLAMA_POOLING_TYPE_CLS:
         case LLAMA_POOLING_TYPE_LAST:
@@ -1848,7 +1878,7 @@ void llm_graph_context::build_pooling(
                 if (cls) {
                     // classification head
                     // https://github.com/huggingface/transformers/blob/5af7d41e49bbfc8319f462eb45253dcb3863dfb7/src/transformers/models/roberta/modeling_roberta.py#L1566
-                    cur = ggml_mul_mat(ctx0, cls, inp);
+                    cur = build_mul_mat_padded(ctx0, cls, inp);
                     if (cls_b) {
                         cur = ggml_add(ctx0, cur, cls_b);
                     }
@@ -1857,7 +1887,7 @@ void llm_graph_context::build_pooling(
                     // some models don't have `cls_out`, for example: https://huggingface.co/jinaai/jina-reranker-v1-tiny-en
                     // https://huggingface.co/jinaai/jina-reranker-v1-tiny-en/blob/cb5347e43979c3084a890e3f99491952603ae1b7/modeling_bert.py#L884-L896
                     if (cls_out) {
-                        cur = ggml_mul_mat(ctx0, cls_out, cur);
+                        cur = build_mul_mat_padded(ctx0, cls_out, cur);
                         if (cls_out_b) {
                             cur = ggml_add(ctx0, cur, cls_out_b);
                         }
@@ -1865,7 +1895,7 @@ void llm_graph_context::build_pooling(
                 } else if (cls_out) {
                     // Single layer classification head (direct projection)
                     // https://github.com/huggingface/transformers/blob/f4fc42216cd56ab6b68270bf80d811614d8d59e4/src/transformers/models/bert/modeling_bert.py#L1476
-                    cur = ggml_mul_mat(ctx0, cls_out, inp);
+                    cur = build_mul_mat_padded(ctx0, cls_out, inp);
                     if (cls_out_b) {
                         cur = ggml_add(ctx0, cur, cls_out_b);
                     }
