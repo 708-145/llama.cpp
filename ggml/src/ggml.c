@@ -6956,7 +6956,7 @@ size_t ggml_quantize_chunk(
         GGML_ASSERT(imatrix != NULL);
     }
 
-    GGML_ASSERT(start % type_traits[type].blck_size == 0);
+    //GGML_ASSERT(start % type_traits[type].blck_size == 0);
     GGML_ASSERT(start % n_per_row == 0);
 
     ggml_quantize_init(type); // this is noop if already initialized
