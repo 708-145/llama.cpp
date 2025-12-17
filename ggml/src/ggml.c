@@ -1208,7 +1208,7 @@ size_t ggml_nbytes(const struct ggml_tensor * tensor) {
         }
     }
     else {
-        nbytes = tensor->ne[0]*tensor->nb[0]/blck_size;
+        nbytes = tensor->nb[0]*((tensor->ne[0] + blck_size - 1)/blck_size);
         for (int i = 1; i < GGML_MAX_DIMS; ++i) {
             nbytes += (tensor->ne[i] - 1)*tensor->nb[i];
         }
@@ -1230,8 +1230,7 @@ size_t ggml_type_size(enum ggml_type type) {
 }
 
 size_t ggml_row_size(enum ggml_type type, int64_t ne) {
-    assert(ne % ggml_blck_size(type) == 0);
-    return ggml_type_size(type)*ne/ggml_blck_size(type);
+    return ggml_type_size(type)*((ne + ggml_blck_size(type) - 1)/ggml_blck_size(type));
 }
 
 double ggml_type_sizef(enum ggml_type type) {
@@ -1685,7 +1684,7 @@ static struct ggml_tensor * ggml_new_tensor_impl(
     }
 
     result->nb[0] = ggml_type_size(type);
-    result->nb[1] = result->nb[0]*(result->ne[0]/ggml_blck_size(type));
+    result->nb[1] = result->nb[0]*((result->ne[0] + ggml_blck_size(type) - 1)/ggml_blck_size(type));
     for (int i = 2; i < GGML_MAX_DIMS; i++) {
         result->nb[i] = result->nb[i - 1]*result->ne[i - 1];
     }
@@ -6957,7 +6956,7 @@ size_t ggml_quantize_chunk(
         GGML_ASSERT(imatrix != NULL);
     }
 
-    GGML_ASSERT(start % type_traits[type].blck_size == 0);
+    //GGML_ASSERT(start % type_traits[type].blck_size == 0);
     GGML_ASSERT(start % n_per_row == 0);
 
     ggml_quantize_init(type); // this is noop if already initialized

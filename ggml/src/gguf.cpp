@@ -1142,10 +1142,10 @@ void gguf_set_tensor_type(struct gguf_context * ctx, const char * name, enum ggm
     const int64_t blck_size = ggml_blck_size(type);
 
     tensor->type = type;
-    GGML_ASSERT(tensor->ne[0] % blck_size == 0 && "tensor row size not divisible by block size of new type");
+    //GGML_ASSERT(tensor->ne[0] % blck_size == 0 && "tensor row size not divisible by block size of new type");
 
     tensor->nb[0] = type_size;
-    tensor->nb[1] = tensor->nb[0]*(tensor->ne[0]/blck_size);
+    tensor->nb[1] = tensor->nb[0]*((tensor->ne[0] + blck_size - 1)/blck_size);
     for (int i = 2; i < GGML_MAX_DIMS; i++) {
         tensor->nb[i] = tensor->nb[i - 1]*tensor->ne[i - 1];
     }

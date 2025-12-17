@@ -208,13 +208,13 @@ static ggml_type llama_tensor_get_type(quantize_state_impl & qs, ggml_type new_t
         if (qs.params->output_tensor_type < GGML_TYPE_COUNT) {
             new_type = qs.params->output_tensor_type;
         } else {
-            const int64_t nx = tensor->ne[0];
-            const int64_t qk_k = ggml_blck_size(new_type);
+            // const int64_t nx = tensor->ne[0];
+            // const int64_t qk_k = ggml_blck_size(new_type);
 
             if (ftype == LLAMA_FTYPE_MOSTLY_MXFP4_MOE) {
                 new_type = GGML_TYPE_Q8_0;
             }
-            else if (arch == LLM_ARCH_FALCON || nx % qk_k != 0) {
+            else if (arch == LLM_ARCH_FALCON) {
                 new_type = GGML_TYPE_Q8_0;
             }
             else if (ftype == LLAMA_FTYPE_MOSTLY_IQ2_XXS || ftype == LLAMA_FTYPE_MOSTLY_IQ2_XS || ftype == LLAMA_FTYPE_MOSTLY_IQ3_XXS ||
@@ -436,12 +436,13 @@ static ggml_type llama_tensor_get_type(quantize_state_impl & qs, ggml_type new_t
     bool convert_incompatible_tensor = false;
     {
         const int64_t nx = tensor->ne[0];
-        const int64_t ny = tensor->ne[1];
+        // const int64_t ny = tensor->ne[1];
         const int64_t qk_k = ggml_blck_size(new_type);
 
         if (nx % qk_k != 0) {
-            LLAMA_LOG_WARN("\n\n%s : tensor cols %" PRId64 " x %" PRId64 " are not divisible by %" PRId64 ", required for %s", __func__, nx, ny, qk_k, ggml_type_name(new_type));
-            convert_incompatible_tensor = true;
+            // LLAMA_LOG_WARN("\n\n%s : tensor cols %" PRId64 " x %" PRId64 " are not divisible by %" PRId64 ", required for %s", __func__, nx, ny, qk_k, ggml_type_name(new_type));
+            // convert_incompatible_tensor = true;
+            ++qs.n_k_quantized;
         } else {
             ++qs.n_k_quantized;
         }

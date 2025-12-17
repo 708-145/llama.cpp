@@ -442,7 +442,7 @@ void dequantize_row_mxfp4(const block_mxfp4 * GGML_RESTRICT x, float * GGML_REST
 // ===================== Helper functions
 //
 static inline int nearest_int(float fval) {
-    assert(fabsf(fval) <= 4194303.f);
+    //assert(fabsf(fval) <= 4194303.f);
     float val = fval + 12582912.f;
     int i; memcpy(&i, &val, sizeof(int));
     return (i & 0x007fffff) - 0x00400000;
@@ -712,8 +712,7 @@ static inline void get_scale_min_k4(int j, const uint8_t * GGML_RESTRICT q, uint
 //========================- 2-bit (de)-quantization
 
 void quantize_row_q2_K_ref(const float * GGML_RESTRICT x, block_q2_K * GGML_RESTRICT y, int64_t k) {
-    assert(k % QK_K == 0);
-    const int nb = k / QK_K;
+    const int64_t nb = (k + QK_K - 1) / QK_K;
 
     uint8_t L[QK_K];
     uint8_t Laux[16];
@@ -724,11 +723,19 @@ void quantize_row_q2_K_ref(const float * GGML_RESTRICT x, block_q2_K * GGML_REST
     const float q4scale = 15.f;
 
     for (int i = 0; i < nb; i++) {
+        const float * x_in = x;
+        float x_pad[QK_K];
+        if (k % QK_K != 0 && i == nb - 1) {
+            memset(x_pad, 0, QK_K * sizeof(float));
+            memcpy(x_pad, x, (k % QK_K) * sizeof(float));
+            x_in = x_pad;
+        }
+
         float max_scale = 0; // as we are deducting the min, scales are always positive
         float max_min = 0;
         for (int j = 0; j < QK_K/16; ++j) {
-            for (int l = 0; l < 16; ++l) weights[l] = fabsf(x[16*j + l]);
-            scales[j] = make_qkx2_quants(16, 3, x + 16*j, weights, L + 16*j, &mins[j], Laux, -0.5f, 0.1f, 15, true);
+            for (int l = 0; l < 16; ++l) weights[l] = fabsf(x_in[16*j + l]);
+            scales[j] = make_qkx2_quants(16, 3, x_in + 16*j, weights, L + 16*j, &mins[j], Laux, -0.5f, 0.1f, 15, true);
             float scale = scales[j];
             if (scale > max_scale) {
                 max_scale = scale;
@@ -765,7 +772,7 @@ void quantize_row_q2_K_ref(const float * GGML_RESTRICT x, block_q2_K * GGML_REST
             if (!d) continue;
             const float dm = GGML_FP16_TO_FP32(y[i].dmin) * (y[i].scales[j] >> 4);
             for (int ii = 0; ii < 16; ++ii) {
-                int l = nearest_int((x[16*j + ii] + dm)/d);
+                int l = nearest_int((x_in[16*j + ii] + dm)/d);
                 l = MAX(0, MIN(3, l));
                 L[16*j + ii] = l;
             }
@@ -971,8 +978,7 @@ static float make_qp_quants(int n, int nmax, const float * GGML_RESTRICT x, uint
 
 static void quantize_row_q2_K_impl(const float * GGML_RESTRICT x, block_q2_K * GGML_RESTRICT y, int k, const float * GGML_RESTRICT quant_weights) {
     GGML_ASSERT(quant_weights);
-    assert(k % QK_K == 0);
-    const int nb = k / QK_K;
+    const int64_t nb = (k + QK_K - 1) / QK_K;
     const bool requantize = true;
 
     uint8_t L[QK_K];
@@ -984,15 +990,29 @@ static void quantize_row_q2_K_impl(const float * GGML_RESTRICT x, block_q2_K * G
     uint8_t Ls[QK_K/16], Lm[QK_K/16];
 
     for (int i = 0; i < nb; i++) {
+        const float * x_in = x;
+        const float * qw_in = quant_weights + QK_K * i;
+        float x_pad[QK_K];
+        float qw_pad[QK_K];
+        if (k % QK_K != 0 && i == nb - 1) {
+            memset(x_pad, 0, QK_K * sizeof(float));
+            memcpy(x_pad, x, (k % QK_K) * sizeof(float));
+            x_in = x_pad;
+
+            memset(qw_pad, 0, QK_K * sizeof(float));
+            memcpy(qw_pad, qw_in, (k % QK_K) * sizeof(float));
+            qw_in = qw_pad;
+        }
+
         memset(sw, 0, QK_K/16*sizeof(float));
         float sumx2 = 0;
-        for (int j = 0; j < QK_K; ++j) sumx2 += x[j]*x[j];
+        for (int j = 0; j < QK_K; ++j) sumx2 += x_in[j]*x_in[j];
         float sigma2 = sumx2/QK_K;
         for (int j = 0; j < QK_K/16; ++j) {
-            const float * GGML_RESTRICT qw = quant_weights + QK_K * i + 16*j;
-            for (int l = 0; l < 16; ++l) weight[l] = qw[l] * sqrtf(sigma2 + x[16*j + l]*x[16*j + l]);
+            const float * GGML_RESTRICT qw = qw_in + 16*j;
+            for (int l = 0; l < 16; ++l) weight[l] = qw[l] * sqrtf(sigma2 + x_in[16*j + l]*x_in[16*j + l]);
             for (int l = 0; l < QK_K/16; ++l) sw[j] += weight[l];
-            scales[j] = make_qkx3_quants(16, 3, x + 16*j, weight, L + 16*j, &mins[j], Laux, -0.9f, 0.05f, 36, false);
+            scales[j] = make_qkx3_quants(16, 3, x_in + 16*j, weight, L + 16*j, &mins[j], Laux, -0.9f, 0.05f, 36, false);
         }
 
         float dm, mm;
@@ -1014,7 +1034,7 @@ static void quantize_row_q2_K_impl(const float * GGML_RESTRICT x, block_q2_K * G
                 if (!d) continue;
                 const float m = mm * (y[i].scales[j] >> 4);
                 for (int ii = 0; ii < 16; ++ii) {
-                    int l = nearest_int((x[16*j + ii] + m)/d);
+                    int l = nearest_int((x_in[16*j + ii] + m)/d);
                     l = MAX(0, MIN(3, l));
                     L[16*j + ii] = l;
                 }
@@ -1050,18 +1070,24 @@ size_t quantize_q2_K(const float * GGML_RESTRICT src, void * GGML_RESTRICT dst, 
 //========================= 3-bit (de)-quantization
 
 void quantize_row_q3_K_ref(const float * GGML_RESTRICT x, block_q3_K * GGML_RESTRICT y, int64_t k) {
-    assert(k % QK_K == 0);
-    const int nb = k / QK_K;
+    const int64_t nb = (k + QK_K - 1) / QK_K;
 
     int8_t L[QK_K];
     float scales[QK_K / 16];
 
     for (int i = 0; i < nb; i++) {
+        const float * x_in = x;
+        float x_pad[QK_K];
+        if (k % QK_K != 0 && i == nb - 1) {
+            memset(x_pad, 0, QK_K * sizeof(float));
+            memcpy(x_pad, x, (k % QK_K) * sizeof(float));
+            x_in = x_pad;
+        }
 
         float max_scale = 0;
         float amax = 0;
         for (int j = 0; j < QK_K/16; ++j) {
-            scales[j] = make_q3_quants(16, 4, x + 16*j, L + 16*j, true);
+            scales[j] = make_q3_quants(16, 4, x_in + 16*j, L + 16*j, true);
             float scale = fabsf(scales[j]);
             if (scale > amax) {
                 amax = scale; max_scale = scales[j];
@@ -1096,7 +1122,7 @@ void quantize_row_q3_K_ref(const float * GGML_RESTRICT x, block_q3_K * GGML_REST
                 continue;
             }
             for (int ii = 0; ii < 16; ++ii) {
-                int l = nearest_int(x[16*j + ii]/d);
+                int l = nearest_int(x_in[16*j + ii]/d);
                 l = MAX(-4, MIN(3, l));
                 L[16*j + ii] = l + 4;
             }
@@ -1176,8 +1202,7 @@ void dequantize_row_q3_K(const block_q3_K * GGML_RESTRICT x, float * GGML_RESTRI
 }
 
 static void quantize_row_q3_K_impl(const float * GGML_RESTRICT x, block_q3_K * GGML_RESTRICT y, int64_t n_per_row, const float * GGML_RESTRICT quant_weights) {
-    assert(n_per_row % QK_K == 0);
-    const int nb = n_per_row / QK_K;
+    const int64_t nb = (n_per_row + QK_K - 1) / QK_K;
 
     int8_t L[QK_K];
     float scales[QK_K / 16];
@@ -1186,23 +1211,38 @@ static void quantize_row_q3_K_impl(const float * GGML_RESTRICT x, block_q3_K * G
     int8_t Ls[QK_K / 16];
 
     for (int i = 0; i < nb; i++) {
+        const float * x_in = x;
+        const float * qw_in = quant_weights ? quant_weights + QK_K * i : NULL;
+        float x_pad[QK_K];
+        float qw_pad[QK_K];
+        if (n_per_row % QK_K != 0 && i == nb - 1) {
+            memset(x_pad, 0, QK_K * sizeof(float));
+            memcpy(x_pad, x, (n_per_row % QK_K) * sizeof(float));
+            x_in = x_pad;
+
+            if (quant_weights) {
+                memset(qw_pad, 0, QK_K * sizeof(float));
+                memcpy(qw_pad, qw_in, (n_per_row % QK_K) * sizeof(float));
+                qw_in = qw_pad;
+            }
+        }
 
         float sumx2 = 0;
-        for (int j = 0; j < QK_K; ++j) sumx2 += x[j]*x[j];
+        for (int j = 0; j < QK_K; ++j) sumx2 += x_in[j]*x_in[j];
         float sigma2 = 2*sumx2/QK_K;
 
         for (int j = 0; j < QK_K/16; ++j) {
             if (quant_weights) {
-                const float * qw = quant_weights + QK_K * i + 16*j;
-                for (int l = 0; l < 16; ++l) weight[l] = qw[l] * sqrtf(sigma2 + x[16*j+l]*x[16*j+l]);
+                const float * qw = qw_in + 16*j;
+                for (int l = 0; l < 16; ++l) weight[l] = qw[l] * sqrtf(sigma2 + x_in[16*j+l]*x_in[16*j+l]);
             } else {
-                for (int l = 0; l < 16; ++l) weight[l] = x[16*j+l]*x[16*j+l];
+                for (int l = 0; l < 16; ++l) weight[l] = x_in[16*j+l]*x_in[16*j+l];
             }
             float sumw = 0;
             for (int l = 0; l < 16; ++l) sumw += weight[l];
             sw[j] = sumw;
 
-            scales[j] = make_qx_quants(16, 4, x + 16*j, L + 16*j, 1, weight);
+            scales[j] = make_qx_quants(16, 4, x_in + 16*j, L + 16*j, 1, weight);
 
         }
 
@@ -1230,7 +1270,7 @@ static void quantize_row_q3_K_impl(const float * GGML_RESTRICT x, block_q3_K * G
                 continue;
             }
             for (int ii = 0; ii < 16; ++ii) {
-                int l = nearest_int(x[16*j + ii]/d);
+                int l = nearest_int(x_in[16*j + ii]/d);
                 l = MAX(-4, MIN(3, l));
                 L[16*j + ii] = l + 4;
             }
@@ -1278,8 +1318,7 @@ size_t quantize_q3_K(const float * GGML_RESTRICT src, void * GGML_RESTRICT dst, 
 // ====================== 4-bit (de)-quantization
 
 void quantize_row_q4_K_ref(const float * GGML_RESTRICT x, block_q4_K * GGML_RESTRICT y, int64_t k) {
-    assert(k % QK_K == 0);
-    const int nb = k / QK_K;
+    const int64_t nb = (k + QK_K - 1) / QK_K;
 
     uint8_t L[QK_K];
     uint8_t Laux[32];
@@ -1288,15 +1327,23 @@ void quantize_row_q4_K_ref(const float * GGML_RESTRICT x, block_q4_K * GGML_REST
     float scales[QK_K/32];
 
     for (int i = 0; i < nb; i++) {
+        const float * x_in = x;
+        float x_pad[QK_K];
+        if (k % QK_K != 0 && i == nb - 1) {
+            memset(x_pad, 0, QK_K * sizeof(float));
+            memcpy(x_pad, x, (k % QK_K) * sizeof(float));
+            x_in = x_pad;
+        }
+
         float max_scale = 0; // as we are deducting the min, scales are always positive
         float max_min = 0;
         for (int j = 0; j < QK_K/32; ++j) {
-            //scales[j] = make_qkx1_quants(32, 15, x + 32*j, L + 32*j, &mins[j], 9, 0.5f);
+            //scales[j] = make_qkx1_quants(32, 15, x_in + 32*j, L + 32*j, &mins[j], 9, 0.5f);
             float sum_x2 = 0;
-            for (int l = 0; l < 32; ++l) sum_x2 += x[32*j + l] * x[32*j + l];
+            for (int l = 0; l < 32; ++l) sum_x2 += x_in[32*j + l] * x_in[32*j + l];
             float av_x = sqrtf(sum_x2/32);
-            for (int l = 0; l < 32; ++l) weights[l] = av_x + fabsf(x[32*j + l]);
-            scales[j] = make_qkx2_quants(32, 15, x + 32*j, weights, L + 32*j, &mins[j], Laux, -1.f, 0.1f, 20, false);
+            for (int l = 0; l < 32; ++l) weights[l] = av_x + fabsf(x_in[32*j + l]);
+            scales[j] = make_qkx2_quants(32, 15, x_in + 32*j, weights, L + 32*j, &mins[j], Laux, -1.f, 0.1f, 20, false);
             float scale = scales[j];
             if (scale > max_scale) {
                 max_scale = scale;
@@ -1333,7 +1380,7 @@ void quantize_row_q4_K_ref(const float * GGML_RESTRICT x, block_q4_K * GGML_REST
             if (!d) continue;
             const float dm = GGML_FP16_TO_FP32(y[i].dmin) * m;
             for (int ii = 0; ii < 32; ++ii) {
-                int l = nearest_int((x[32*j + ii] + dm)/d);
+                int l = nearest_int((x_in[32*j + ii] + dm)/d);
                 l = MAX(0, MIN(15, l));
                 L[32*j + ii] = l;
             }
@@ -1374,8 +1421,7 @@ void dequantize_row_q4_K(const block_q4_K * GGML_RESTRICT x, float * GGML_RESTRI
 }
 
 static void quantize_row_q4_K_impl(const float * GGML_RESTRICT x, block_q4_K * GGML_RESTRICT y, int64_t n_per_row, const float * quant_weights) {
-    assert(n_per_row % QK_K == 0);
-    const int64_t nb = n_per_row / QK_K;
+    const int64_t nb = (n_per_row + QK_K - 1) / QK_K;
 
     uint8_t L[QK_K];
     uint8_t Laux[32];
@@ -1387,23 +1433,38 @@ static void quantize_row_q4_K_impl(const float * GGML_RESTRICT x, block_q4_K * G
     float   scales[QK_K/32];
 
     for (int i = 0; i < nb; i++) {
+        const float * x_in = x;
+        const float * qw_in = quant_weights ? quant_weights + QK_K * i : NULL;
+        float x_pad[QK_K];
+        float qw_pad[QK_K];
+        if (n_per_row % QK_K != 0 && i == nb - 1) {
+            memset(x_pad, 0, QK_K * sizeof(float));
+            memcpy(x_pad, x, (n_per_row % QK_K) * sizeof(float));
+            x_in = x_pad;
+
+            if (quant_weights) {
+                memset(qw_pad, 0, QK_K * sizeof(float));
+                memcpy(qw_pad, qw_in, (n_per_row % QK_K) * sizeof(float));
+                qw_in = qw_pad;
+            }
+        }
 
         float sum_x2 = 0;
-        for (int l = 0; l < QK_K; ++l) sum_x2 += x[l] * x[l];
+        for (int l = 0; l < QK_K; ++l) sum_x2 += x_in[l] * x_in[l];
         float sigma2 = 2*sum_x2/QK_K;
         float av_x = sqrtf(sigma2);
 
         for (int j = 0; j < QK_K/32; ++j) {
             if (quant_weights) {
-                const float * qw = quant_weights + QK_K*i + 32*j;
-                for (int l = 0; l < 32; ++l) weights[l] = qw[l] * sqrtf(sigma2 + x[32*j + l]*x[32*j + l]);
+                const float * qw = qw_in + 32*j;
+                for (int l = 0; l < 32; ++l) weights[l] = qw[l] * sqrtf(sigma2 + x_in[32*j + l]*x_in[32*j + l]);
             } else {
-                for (int l = 0; l < 32; ++l) weights[l] = av_x + fabsf(x[32*j + l]);
+                for (int l = 0; l < 32; ++l) weights[l] = av_x + fabsf(x_in[32*j + l]);
             }
             float sumw = 0;
             for (int l = 0; l < 32; ++l) sumw += weights[l];
             sw[j] = sumw;
-            scales[j] = make_qkx3_quants(32, 15, x + 32*j, weights, L + 32*j, &mins[j], Laux, -0.9f, 0.05f, 36, false);
+            scales[j] = make_qkx3_quants(32, 15, x_in + 32*j, weights, L + 32*j, &mins[j], Laux, -0.9f, 0.05f, 36, false);
         }
 
         float d_block = make_qp_quants(QK_K/32, 63, scales, Ls, sw);
@@ -1430,7 +1491,7 @@ static void quantize_row_q4_K_impl(const float * GGML_RESTRICT x, block_q4_K * G
             if (!d) continue;
             const float dm = GGML_FP16_TO_FP32(y[i].dmin) * m;
             for (int ii = 0; ii < 32; ++ii) {
-                int l = nearest_int((x[32*j + ii] + dm)/d);
+                int l = nearest_int((x_in[32*j + ii] + dm)/d);
                 l = MAX(0, MIN(15, l));
                 L[32*j + ii] = l;
             }
@@ -1465,8 +1526,7 @@ size_t quantize_q4_K(const float * GGML_RESTRICT src, void * GGML_RESTRICT dst, 
 // ====================== 5-bit (de)-quantization
 
 void quantize_row_q5_K_ref(const float * GGML_RESTRICT x, block_q5_K * GGML_RESTRICT y, int64_t k) {
-    assert(k % QK_K == 0);
-    const int64_t nb = k / QK_K;
+    const int64_t nb = (k + QK_K - 1) / QK_K;
 
     uint8_t L[QK_K];
     float mins[QK_K/32];
@@ -1475,15 +1535,23 @@ void quantize_row_q5_K_ref(const float * GGML_RESTRICT x, block_q5_K * GGML_REST
     uint8_t Laux[32];
 
     for (int i = 0; i < nb; i++) {
+        const float * x_in = x;
+        float x_pad[QK_K];
+        if (k % QK_K != 0 && i == nb - 1) {
+            memset(x_pad, 0, QK_K * sizeof(float));
+            memcpy(x_pad, x, (k % QK_K) * sizeof(float));
+            x_in = x_pad;
+        }
+
         float max_scale = 0; // as we are deducting the min, scales are always positive
         float max_min = 0;
         for (int j = 0; j < QK_K/32; ++j) {
-            //scales[j] = make_qkx1_quants(32, 31, x + 32*j, L + 32*j, &mins[j], 9, 0.5f);
+            //scales[j] = make_qkx1_quants(32, 31, x_in + 32*j, L + 32*j, &mins[j], 9, 0.5f);
             float sum_x2 = 0;
-            for (int l = 0; l < 32; ++l) sum_x2 += x[32*j + l] * x[32*j + l];
+            for (int l = 0; l < 32; ++l) sum_x2 += x_in[32*j + l] * x_in[32*j + l];
             float av_x = sqrtf(sum_x2/32);
-            for (int l = 0; l < 32; ++l) weights[l] = av_x + fabsf(x[32*j + l]);
-            scales[j] = make_qkx2_quants(32, 31, x + 32*j, weights, L + 32*j, &mins[j], Laux, -0.5f, 0.1f, 15, false);
+            for (int l = 0; l < 32; ++l) weights[l] = av_x + fabsf(x_in[32*j + l]);
+            scales[j] = make_qkx2_quants(32, 31, x_in + 32*j, weights, L + 32*j, &mins[j], Laux, -0.5f, 0.1f, 15, false);
             float scale = scales[j];
             if (scale > max_scale) {
                 max_scale = scale;
@@ -1520,7 +1588,7 @@ void quantize_row_q5_K_ref(const float * GGML_RESTRICT x, block_q5_K * GGML_REST
             if (!d) continue;
             const float dm = GGML_FP16_TO_FP32(y[i].dmin) * m;
             for (int ii = 0; ii < 32; ++ii) {
-                int l = nearest_int((x[32*j + ii] + dm)/d);
+                int l = nearest_int((x_in[32*j + ii] + dm)/d);
                 l = MAX(0, MIN(31, l));
                 L[32*j + ii] = l;
             }
@@ -1579,8 +1647,7 @@ void dequantize_row_q5_K(const block_q5_K * GGML_RESTRICT x, float * GGML_RESTRI
 }
 
 static void quantize_row_q5_K_impl(const float * GGML_RESTRICT x, block_q5_K * GGML_RESTRICT y, int64_t n_per_row, const float * quant_weights) {
-    assert(n_per_row % QK_K == 0);
-    const int64_t nb = n_per_row / QK_K;
+    const int64_t nb = (n_per_row + QK_K - 1) / QK_K;
 
     uint8_t L[QK_K];
     uint8_t Laux[32];
@@ -1592,24 +1659,39 @@ static void quantize_row_q5_K_impl(const float * GGML_RESTRICT x, block_q5_K * G
     float   weights[32];
 
     for (int i = 0; i < nb; i++) {
+        const float * x_in = x;
+        const float * qw_in = quant_weights ? quant_weights + QK_K * i : NULL;
+        float x_pad[QK_K];
+        float qw_pad[QK_K];
+        if (n_per_row % QK_K != 0 && i == nb - 1) {
+            memset(x_pad, 0, QK_K * sizeof(float));
+            memcpy(x_pad, x, (n_per_row % QK_K) * sizeof(float));
+            x_in = x_pad;
+
+            if (quant_weights) {
+                memset(qw_pad, 0, QK_K * sizeof(float));
+                memcpy(qw_pad, qw_in, (n_per_row % QK_K) * sizeof(float));
+                qw_in = qw_pad;
+            }
+        }
 
         float sum_x2 = 0;
-        for (int l = 0; l < QK_K; ++l) sum_x2 += x[l] * x[l];
+        for (int l = 0; l < QK_K; ++l) sum_x2 += x_in[l] * x_in[l];
         float sigma2 = 2*sum_x2/QK_K;
         float av_x = sqrtf(sigma2);
 
         for (int j = 0; j < QK_K/32; ++j) {
             if (quant_weights) {
-                const float * qw = quant_weights + QK_K*i + 32*j;
-                for (int l = 0; l < 32; ++l) weights[l] = qw[l] * sqrtf(sigma2 + x[32*j + l]*x[32*j + l]);
+                const float * qw = qw_in + 32*j;
+                for (int l = 0; l < 32; ++l) weights[l] = qw[l] * sqrtf(sigma2 + x_in[32*j + l]*x_in[32*j + l]);
             } else {
-                for (int l = 0; l < 32; ++l) weights[l] = av_x + fabsf(x[32*j + l]);
+                for (int l = 0; l < 32; ++l) weights[l] = av_x + fabsf(x_in[32*j + l]);
             }
             float sumw = 0;
             for (int l = 0; l < 32; ++l) sumw += weights[l];
             sw[j] = sumw;
 
-            scales[j] = make_qkx3_quants(32, 31, x + 32*j, weights, L + 32*j, &mins[j], Laux, -0.9f, 0.05f, 36, false);
+            scales[j] = make_qkx3_quants(32, 31, x_in + 32*j, weights, L + 32*j, &mins[j], Laux, -0.9f, 0.05f, 36, false);
         }
 
         float d_block = make_qp_quants(QK_K/32, 63, scales, Ls, sw);
@@ -1639,7 +1721,7 @@ static void quantize_row_q5_K_impl(const float * GGML_RESTRICT x, block_q5_K * G
             if (!d) continue;
             const float dm = GGML_FP16_TO_FP32(y[i].dmin) * m;
             for (int ii = 0; ii < 32; ++ii) {
-                int l = nearest_int((x[32*j + ii] + dm)/d);
+                int l = nearest_int((x_in[32*j + ii] + dm)/d);
                 l = MAX(0, MIN(31, l));
                 L[32*j + ii] = l;
             }
@@ -1690,20 +1772,26 @@ size_t quantize_q5_K(const float * GGML_RESTRICT src, void * GGML_RESTRICT dst, 
 // ====================== 6-bit (de)-quantization
 
 void quantize_row_q6_K_ref(const float * GGML_RESTRICT x, block_q6_K * GGML_RESTRICT y, int64_t k) {
-    assert(k % QK_K == 0);
-    const int64_t nb = k / QK_K;
+    const int64_t nb = (k + QK_K - 1) / QK_K;
 
     int8_t L[QK_K];
     float   scales[QK_K/16];
 
     for (int i = 0; i < nb; i++) {
+        const float * x_in = x;
+        float x_pad[QK_K];
+        if (k % QK_K != 0 && i == nb - 1) {
+            memset(x_pad, 0, QK_K * sizeof(float));
+            memcpy(x_pad, x, (k % QK_K) * sizeof(float));
+            x_in = x_pad;
+        }
 
         float max_scale = 0;
         float max_abs_scale = 0;
 
         for (int ib = 0; ib < QK_K/16; ++ib) {
 
-            const float scale = make_qx_quants(16, 32, x + 16*ib, L + 16*ib, 1, NULL);
+            const float scale = make_qx_quants(16, 32, x_in + 16*ib, L + 16*ib, 1, NULL);
             scales[ib] = scale;
 
             const float abs_scale = fabsf(scale);
@@ -1733,7 +1821,7 @@ void quantize_row_q6_K_ref(const float * GGML_RESTRICT x, block_q6_K * GGML_REST
                 continue;
             }
             for (int ii = 0; ii < 16; ++ii) {
-                int l = nearest_int(x[16*j + ii]/d);
+                int l = nearest_int(x_in[16*j + ii]/d);
                 l = MAX(-32, MIN(31, l));
                 L[16*j + ii] = l + 32;
             }
@@ -1791,14 +1879,28 @@ void dequantize_row_q6_K(const block_q6_K * GGML_RESTRICT x, float * GGML_RESTRI
 }
 
 static void quantize_row_q6_K_impl(const float * GGML_RESTRICT x, block_q6_K * GGML_RESTRICT y, int64_t n_per_row, const float * quant_weights) {
-    assert(n_per_row % QK_K == 0);
-    const int64_t nb = n_per_row / QK_K;
+    const int64_t nb = (n_per_row + QK_K - 1) / QK_K;
 
     int8_t L[QK_K];
     float   scales[QK_K/16];
     //float   weights[16];
 
     for (int i = 0; i < nb; i++) {
+        const float * x_in = x;
+        const float * qw_in = quant_weights ? quant_weights + QK_K * i : NULL;
+        float x_pad[QK_K];
+        float qw_pad[QK_K];
+        if (n_per_row % QK_K != 0 && i == nb - 1) {
+            memset(x_pad, 0, QK_K * sizeof(float));
+            memcpy(x_pad, x, (n_per_row % QK_K) * sizeof(float));
+            x_in = x_pad;
+
+            if (quant_weights) {
+                memset(qw_pad, 0, QK_K * sizeof(float));
+                memcpy(qw_pad, qw_in, (n_per_row % QK_K) * sizeof(float));
+                qw_in = qw_pad;
+            }
+        }
 
         //float sum_x2 = 0;
         //for (int j = 0; j < QK_K; ++j) sum_x2 += x[j]*x[j];
@@ -1811,12 +1913,12 @@ static void quantize_row_q6_K_impl(const float * GGML_RESTRICT x, block_q6_K * G
 
             float scale;
             if (quant_weights) {
-                const float * qw = quant_weights + QK_K*i + 16*ib;
-                //for (int j = 0; j < 16; ++j) weights[j] = qw[j] * sqrtf(sigma2 + x[16*ib + j]*x[16*ib + j]);
-                //scale = make_qx_quants(16, 32, x + 16*ib, L + 16*ib, 1, weights);
-                scale = make_qx_quants(16, 32, x + 16*ib, L + 16*ib, 1, qw);
+                const float * qw = qw_in + 16*ib;
+                //for (int j = 0; j < 16; ++j) weights[j] = qw[j] * sqrtf(sigma2 + x_in[16*ib + j]*x_in[16*ib + j]);
+                //scale = make_qx_quants(16, 32, x_in + 16*ib, L + 16*ib, 1, weights);
+                scale = make_qx_quants(16, 32, x_in + 16*ib, L + 16*ib, 1, qw);
             } else {
-                scale = make_qx_quants(16, 32, x + 16*ib, L + 16*ib, 1, NULL);
+                scale = make_qx_quants(16, 32, x_in + 16*ib, L + 16*ib, 1, NULL);
             }
             scales[ib] = scale;
 
@@ -1847,7 +1949,7 @@ static void quantize_row_q6_K_impl(const float * GGML_RESTRICT x, block_q6_K * G
                 continue;
             }
             for (int ii = 0; ii < 16; ++ii) {
-                int l = nearest_int(x[16*j + ii]/d);
+                int l = nearest_int(x_in[16*j + ii]/d);
                 l = MAX(-32, MIN(31, l));
                 L[16*j + ii] = l + 32;
             }
@@ -2553,17 +2655,23 @@ void dequantize_row_iq4_xs(const block_iq4_xs * GGML_RESTRICT x, float * GGML_RE
 //===================================== Q8_K ==============================================
 
 void quantize_row_q8_K_ref(const float * GGML_RESTRICT x, block_q8_K * GGML_RESTRICT y, int64_t k) {
-    assert(k % QK_K == 0);
-    const int64_t nb = k / QK_K;
+    const int64_t nb = (k + QK_K - 1) / QK_K;
 
     for (int i = 0; i < nb; i++) {
+        const float * x_in = x;
+        float x_pad[QK_K];
+        if (k % QK_K != 0 && i == nb - 1) {
+            memset(x_pad, 0, QK_K * sizeof(float));
+            memcpy(x_pad, x, (k % QK_K) * sizeof(float));
+            x_in = x_pad;
+        }
 
         float max = 0;
         float amax = 0;
         for (int j = 0; j < QK_K; ++j) {
-            float ax = fabsf(x[j]);
+            float ax = fabsf(x_in[j]);
             if (ax > amax) {
-                amax = ax; max = x[j];
+                amax = ax; max = x_in[j];
             }
         }
         if (!amax) {
@@ -2576,7 +2684,7 @@ void quantize_row_q8_K_ref(const float * GGML_RESTRICT x, block_q8_K * GGML_REST
         // We need this change for IQ2_XXS, else the AVX implementation becomes very awkward
         const float iscale = -127.f/max;
         for (int j = 0; j < QK_K; ++j) {
-            int v = nearest_int(iscale*x[j]);
+            int v = nearest_int(iscale*x_in[j]);
             y[i].qs[j] = MIN(127, v);
         }
         for (int j = 0; j < QK_K/16; ++j) {
@@ -3039,11 +3147,10 @@ static void quantize_row_iq2_xxs_impl(const float * GGML_RESTRICT x, void * GGML
     GGML_ASSERT(kgrid_q2xs      && "forgot to call ggml_quantize_init()?");
     GGML_ASSERT(kmap_q2xs       && "forgot to call ggml_quantize_init()?");
     GGML_ASSERT(kneighbors_q2xs && "forgot to call ggml_quantize_init()?");
-    GGML_ASSERT(n%QK_K == 0);
 
     const int kMaxQ = 3;
 
-    const int64_t nbl = n/QK_K;
+    const int64_t nbl = (n + QK_K - 1)/QK_K;
 
     block_iq2_xxs * y = vy;
 
@@ -3057,20 +3164,32 @@ static void quantize_row_iq2_xxs_impl(const float * GGML_RESTRICT x, void * GGML
     uint32_t q2[2*(QK_K/32)];
 
     for (int ibl = 0; ibl < nbl; ++ibl) {
+        const float * xbl = x + QK_K*ibl;
+        const float * qwbl = quant_weights + QK_K*ibl;
+        float x_pad[QK_K];
+        float qw_pad[QK_K];
+        if (n % QK_K != 0 && ibl == nbl - 1) {
+            memset(x_pad, 0, QK_K * sizeof(float));
+            memcpy(x_pad, xbl, (n % QK_K) * sizeof(float));
+            xbl = x_pad;
+
+            memset(qw_pad, 0, QK_K * sizeof(float));
+            memcpy(qw_pad, qwbl, (n % QK_K) * sizeof(float));
+            qwbl = qw_pad;
+        }
 
         y[ibl].d = GGML_FP32_TO_FP16(0.f);
         memset(q2, 0, QK_K/4);
 
         float max_scale = 0;
 
-        const float * xbl = x + QK_K*ibl;
         float sumx2 = 0;
         for (int i = 0; i < QK_K; ++i) sumx2 += xbl[i]*xbl[i];
         float sigma2 = sumx2/QK_K;
 
         for (int ib = 0; ib < QK_K/32; ++ib) {
             const float * xb = xbl + 32*ib;
-            const float * qw = quant_weights + QK_K*ibl + 32*ib;
+            const float * qw = qwbl + 32*ib;
             for (int i = 0; i < 32; ++i) weight[i] = qw[i] * sqrtf(sigma2 + xb[i]*xb[i]);
             for (int i = 0; i < 32; ++i) waux[i] = sqrtf(weight[i]);
             for (int k = 0; k < 4; ++k) {
@@ -3212,11 +3331,10 @@ static void quantize_row_iq2_xs_impl(const float * GGML_RESTRICT x, void * GGML_
     GGML_ASSERT(kmap_q2xs       && "forgot to call ggml_quantize_init()?");
     GGML_ASSERT(kgrid_q2xs      && "forgot to call ggml_quantize_init()?");
     GGML_ASSERT(kneighbors_q2xs && "forgot to call ggml_quantize_init()?");
-    GGML_ASSERT(n%QK_K == 0);
 
     const int kMaxQ = 3;
 
-    const int64_t nbl = n/QK_K;
+    const int64_t nbl = (n + QK_K - 1)/QK_K;
 
     block_iq2_xs * y = vy;
 
@@ -3232,6 +3350,19 @@ static void quantize_row_iq2_xs_impl(const float * GGML_RESTRICT x, void * GGML_
     uint16_t q2[2*(QK_K/16)];
 
     for (int ibl = 0; ibl < nbl; ++ibl) {
+        const float * xbl = x + QK_K*ibl;
+        const float * qwbl = quant_weights + QK_K*ibl;
+        float x_pad[QK_K];
+        float qw_pad[QK_K];
+        if (n % QK_K != 0 && ibl == nbl - 1) {
+            memset(x_pad, 0, QK_K * sizeof(float));
+            memcpy(x_pad, xbl, (n % QK_K) * sizeof(float));
+            xbl = x_pad;
+
+            memset(qw_pad, 0, QK_K * sizeof(float));
+            memcpy(qw_pad, qwbl, (n % QK_K) * sizeof(float));
+            qwbl = qw_pad;
+        }
 
         y[ibl].d = GGML_FP32_TO_FP16(0.f);
         memset(q2, 0, QK_K/4);
@@ -3239,14 +3370,13 @@ static void quantize_row_iq2_xs_impl(const float * GGML_RESTRICT x, void * GGML_
 
         float max_scale = 0;
 
-        const float * xbl = x + QK_K*ibl;
         float sumx2 = 0;
         for (int i = 0; i < QK_K; ++i) sumx2 += xbl[i]*xbl[i];
         float sigma2 = sumx2/QK_K;
 
         for (int ib = 0; ib < QK_K/16; ++ib) {
             const float * xb = xbl + 16*ib;
-            const float * qw = quant_weights + QK_K*ibl + 16*ib;
+            const float * qw = qwbl + 16*ib;
             for (int i = 0; i < 16; ++i) weight[i] = qw[i] * sqrtf(sigma2 + xb[i]*xb[i]);
             for (int i = 0; i < 16; ++i) waux[i] = sqrtf(weight[i]);
             for (int k = 0; k < 2; ++k) {
@@ -3381,8 +3511,8 @@ static void quantize_row_iq2_xs_impl(const float * GGML_RESTRICT x, void * GGML_
 }
 
 size_t quantize_iq2_xxs(const float * GGML_RESTRICT src, void * GGML_RESTRICT dst, int64_t nrow, int64_t n_per_row, const float * quant_weights) {
-    GGML_ASSERT(n_per_row%QK_K == 0);
-    int64_t nblock = n_per_row/QK_K;
+    //GGML_ASSERT(n_per_row%QK_K == 0);
+    int64_t nblock = (n_per_row + QK_K - 1)/QK_K;
     char * qrow = (char *)dst;
     for (int64_t row = 0; row < nrow; ++row) {
         quantize_row_iq2_xxs_impl(src, qrow, n_per_row, quant_weights);
@@ -3393,8 +3523,8 @@ size_t quantize_iq2_xxs(const float * GGML_RESTRICT src, void * GGML_RESTRICT ds
 }
 
 size_t quantize_iq2_xs(const float * GGML_RESTRICT src, void * GGML_RESTRICT dst, int64_t nrow, int64_t n_per_row, const float * quant_weights) {
-    GGML_ASSERT(n_per_row%QK_K == 0);
-    int64_t nblock = n_per_row/QK_K;
+    //GGML_ASSERT(n_per_row%QK_K == 0);
+    int64_t nblock = (n_per_row + QK_K - 1)/QK_K;
     char * qrow = (char *)dst;
     for (int64_t row = 0; row < nrow; ++row) {
         quantize_row_iq2_xs_impl(src, qrow, n_per_row, quant_weights);
@@ -3634,11 +3764,10 @@ static void quantize_row_iq3_xxs_impl(int grid_size, const float * GGML_RESTRICT
     GGML_ASSERT(kgrid_q3xs      && "forgot to call ggml_quantize_init()?");
     GGML_ASSERT(kmap_q3xs       && "forgot to call ggml_quantize_init()?");
     GGML_ASSERT(kneighbors_q3xs && "forgot to call ggml_quantize_init()?");
-    GGML_ASSERT(n%QK_K == 0);
 
     const int kMaxQ = 8;
 
-    const int64_t nbl = n/QK_K;
+    const int64_t nbl = (n + QK_K - 1)/QK_K;
 
     ggml_fp16_t * dh;
     uint8_t * qs;
@@ -3670,13 +3799,27 @@ static void quantize_row_iq3_xxs_impl(int grid_size, const float * GGML_RESTRICT
     uint8_t  * qh = q3 + 3*(QK_K/8);
 
     for (int ibl = 0; ibl < nbl; ++ibl) {
+        const float * xbl = x + QK_K*ibl;
+        const float * qwbl = quant_weights ? quant_weights + QK_K*ibl : NULL;
+        float x_pad[QK_K];
+        float qw_pad[QK_K];
+        if (n % QK_K != 0 && ibl == nbl - 1) {
+            memset(x_pad, 0, QK_K * sizeof(float));
+            memcpy(x_pad, xbl, (n % QK_K) * sizeof(float));
+            xbl = x_pad;
+
+            if (quant_weights) {
+                memset(qw_pad, 0, QK_K * sizeof(float));
+                memcpy(qw_pad, qwbl, (n % QK_K) * sizeof(float));
+                qwbl = qw_pad;
+            }
+        }
 
         dh[0] = GGML_FP32_TO_FP16(0.f);
         memset(q3, 0, 3*QK_K/8+QK_K/32);
 
         float max_scale = 0;
 
-        const float * xbl = x + QK_K*ibl;
         float sumx2 = 0;
         for (int i = 0; i < QK_K; ++i) sumx2 += xbl[i]*xbl[i];
         float sigma2 = 2*sumx2/QK_K;
@@ -3684,7 +3827,7 @@ static void quantize_row_iq3_xxs_impl(int grid_size, const float * GGML_RESTRICT
         for (int ib = 0; ib < QK_K/32; ++ib) {
             const float * xb = xbl + 32*ib;
             if (quant_weights) {
-                const float * qw = quant_weights + QK_K*ibl + 32*ib;
+                const float * qw = qwbl + 32*ib;
                 for (int i = 0; i < 32; ++i) weight[i] = qw[i] * sqrtf(sigma2 + xb[i]*xb[i]);
             } else {
                 for (int i = 0; i < 32; ++i) weight[i] = xb[i]*xb[i];
@@ -3835,8 +3978,8 @@ static void quantize_row_iq3_xxs_impl(int grid_size, const float * GGML_RESTRICT
 }
 
 size_t quantize_iq3_xxs(const float * GGML_RESTRICT src, void * GGML_RESTRICT dst, int64_t nrow, int64_t n_per_row, const float * quant_weights) {
-    GGML_ASSERT(n_per_row%QK_K == 0);
-    int64_t nblock = n_per_row/QK_K;
+    //GGML_ASSERT(n_per_row%QK_K == 0);
+    int64_t nblock = (n_per_row + QK_K - 1)/QK_K;
     char * qrow = (char *)dst;
     for (int64_t row = 0; row < nrow; ++row) {
         quantize_row_iq3_xxs_impl(256, src, qrow, n_per_row, quant_weights);
@@ -3873,11 +4016,10 @@ static void quantize_row_iq3_s_impl(int block_size, const float * GGML_RESTRICT 
     GGML_ASSERT(kgrid_q3xs      && "forgot to call ggml_quantize_init()?");
     GGML_ASSERT(kmap_q3xs       && "forgot to call ggml_quantize_init()?");
     GGML_ASSERT(kneighbors_q3xs && "forgot to call ggml_quantize_init()?");
-    GGML_ASSERT(n%QK_K == 0);
 
     const int kMaxQ = 8;
 
-    const int64_t nbl = n/QK_K;
+    const int64_t nbl = (n + QK_K - 1)/QK_K;
 
     block_iq3_s * y = vy;
 
@@ -3885,6 +4027,21 @@ static void quantize_row_iq3_s_impl(int block_size, const float * GGML_RESTRICT 
     const int bs8 = block_size/8;
 
     for (int ibl = 0; ibl < nbl; ++ibl) {
+        const float * xbl = x + QK_K*ibl;
+        const float * qwbl = quant_weights ? quant_weights + QK_K*ibl : NULL;
+        float x_pad[QK_K];
+        float qw_pad[QK_K];
+        if (n % QK_K != 0 && ibl == nbl - 1) {
+            memset(x_pad, 0, QK_K * sizeof(float));
+            memcpy(x_pad, xbl, (n % QK_K) * sizeof(float));
+            xbl = x_pad;
+
+            if (quant_weights) {
+                memset(qw_pad, 0, QK_K * sizeof(float));
+                memcpy(qw_pad, qwbl, (n % QK_K) * sizeof(float));
+                qwbl = qw_pad;
+            }
+        }
 
         memset(&y[ibl], 0, sizeof(block_iq3_s));
         y[ibl].d = GGML_FP32_TO_FP16(0.f);
@@ -3895,7 +4052,6 @@ static void quantize_row_iq3_s_impl(int block_size, const float * GGML_RESTRICT 
 
         float max_scale = 0;
 
-        const float * xbl = x + QK_K*ibl;
         float sumx2 = 0;
         for (int i = 0; i < QK_K; ++i) sumx2 += xbl[i]*xbl[i];
         float sigma2 = 2*sumx2/QK_K;
@@ -3903,7 +4059,7 @@ static void quantize_row_iq3_s_impl(int block_size, const float * GGML_RESTRICT 
         for (int ib = 0; ib < QK_K/block_size; ++ib) {
             const float * xb = xbl + block_size*ib;
             if (quant_weights) {
-                const float * qw = quant_weights + QK_K*ibl + block_size*ib;
+                const float * qw = qwbl + block_size*ib;
                 for (int i = 0; i < block_size; ++i) weight[i] = qw[i] * sqrtf(sigma2 + xb[i]*xb[i]);
             } else {
                 for (int i = 0; i < block_size; ++i) weight[i] = xb[i]*xb[i];
@@ -4035,8 +4191,7 @@ static void quantize_row_iq3_s_impl(int block_size, const float * GGML_RESTRICT 
 
 #define IQ3S_BLOCK_SIZE 32
 size_t quantize_iq3_s(const float * GGML_RESTRICT src, void * GGML_RESTRICT dst, int64_t nrow, int64_t n_per_row, const float * quant_weights) {
-    GGML_ASSERT(n_per_row%QK_K == 0);
-    int64_t nblock = n_per_row/QK_K;
+    int64_t nblock = (n_per_row + QK_K - 1)/QK_K;
     float scales[QK_K/IQ3S_BLOCK_SIZE];
     float weight[IQ3S_BLOCK_SIZE];
     float xval[IQ3S_BLOCK_SIZE];
@@ -4209,11 +4364,10 @@ static void quantize_row_iq1_s_impl(const float * GGML_RESTRICT x, void * GGML_R
     GGML_ASSERT(kgrid_q2xs      && "forgot to call ggml_quantize_init()?");
     GGML_ASSERT(kmap_q2xs       && "forgot to call ggml_quantize_init()?");
     GGML_ASSERT(kneighbors_q2xs && "forgot to call ggml_quantize_init()?");
-    GGML_ASSERT(n%QK_K == 0);
 
     block_iq1_s * y = vy;
 
-    const int64_t nbl = n/QK_K;
+    const int64_t nbl = (n + QK_K - 1)/QK_K;
 
     const int block_size = IQ1S_BLOCK_SIZE;
 
@@ -4224,6 +4378,19 @@ static void quantize_row_iq1_s_impl(const float * GGML_RESTRICT x, void * GGML_R
     int * idx = (int *)(pairs + 1);
 
     for (int ibl = 0; ibl < nbl; ++ibl) {
+        const float * xbl = x + QK_K*ibl;
+        const float * qwbl = quant_weights + QK_K*ibl;
+        float x_pad[QK_K];
+        float qw_pad[QK_K];
+        if (n % QK_K != 0 && ibl == nbl - 1) {
+            memset(x_pad, 0, QK_K * sizeof(float));
+            memcpy(x_pad, xbl, (n % QK_K) * sizeof(float));
+            xbl = x_pad;
+
+            memset(qw_pad, 0, QK_K * sizeof(float));
+            memcpy(qw_pad, qwbl, (n % QK_K) * sizeof(float));
+            qwbl = qw_pad;
+        }
 
         y[ibl].d = GGML_FP32_TO_FP16(0.f);
         memset(y[ibl].qs, 0, QK_K/8);
@@ -4231,14 +4398,13 @@ static void quantize_row_iq1_s_impl(const float * GGML_RESTRICT x, void * GGML_R
 
         float max_scale = 0;
 
-        const float * xbl = x + QK_K*ibl;
         float sumx2 = 0;
         for (int i = 0; i < QK_K; ++i) sumx2 += xbl[i]*xbl[i];
         float sigma2 = 2*sumx2/QK_K;
 
         for (int ib = 0; ib < QK_K/block_size; ++ib) {
             const float * xb = xbl + block_size*ib;
-            const float * qw = quant_weights + QK_K*ibl + block_size*ib;
+            const float * qw = qwbl + block_size*ib;
             for (int i = 0; i < block_size; ++i) weight[i] = qw[i] * sqrtf(sigma2 + xb[i]*xb[i]);
             float max = fabsf(xb[0]);
             for (int i = 1; i < block_size; ++i) max = MAX(max, fabsf(xb[i]));
@@ -4348,7 +4514,6 @@ static void quantize_row_iq1_s_impl(const float * GGML_RESTRICT x, void * GGML_R
 }
 
 size_t quantize_iq1_s(const float * GGML_RESTRICT src, void * GGML_RESTRICT dst, int64_t nrow, int64_t n_per_row, const float * quant_weights) {
-    GGML_ASSERT(n_per_row%QK_K == 0);
     float  scales[QK_K/IQ1S_BLOCK_SIZE];
     float  weight[IQ1S_BLOCK_SIZE];
     int8_t L[IQ1S_BLOCK_SIZE];
@@ -4357,7 +4522,7 @@ size_t quantize_iq1_s(const float * GGML_RESTRICT src, void * GGML_RESTRICT dst,
     float  pairs[2*IQ1S_BLOCK_SIZE];
     uint16_t index[IQ1S_BLOCK_SIZE/8];
     int8_t shifts[QK_K/IQ1S_BLOCK_SIZE];
-    int64_t nblock = n_per_row/QK_K;
+    int64_t nblock = (n_per_row + QK_K - 1)/QK_K;
     char * qrow = (char *)dst;
     for (int64_t row = 0; row < nrow; ++row) {
         quantize_row_iq1_s_impl(src, qrow, n_per_row, quant_weights, scales, weight, sumx, sumw, pairs, L, index, shifts);
@@ -4385,11 +4550,10 @@ static void quantize_row_iq1_m_impl(const float * GGML_RESTRICT x, void * GGML_R
     GGML_ASSERT(kgrid_q2xs      && "forgot to call ggml_quantize_init()?");
     GGML_ASSERT(kmap_q2xs       && "forgot to call ggml_quantize_init()?");
     GGML_ASSERT(kneighbors_q2xs && "forgot to call ggml_quantize_init()?");
-    GGML_ASSERT(n%QK_K == 0);
 
     block_iq1_m * y = vy;
 
-    const int64_t nbl = n/QK_K;
+    const int64_t nbl = (n + QK_K - 1)/QK_K;
 
     const int block_size = IQ1M_BLOCK_SIZE;
 
@@ -4405,13 +4569,28 @@ static void quantize_row_iq1_m_impl(const float * GGML_RESTRICT x, void * GGML_R
     const float * xx;
 
     for (int ibl = 0; ibl < nbl; ++ibl) {
+        const float * xbl = x + QK_K*ibl;
+        const float * qwbl = quant_weights ? quant_weights + QK_K*ibl : NULL;
+        float x_pad[QK_K];
+        float qw_pad[QK_K];
+        if (n % QK_K != 0 && ibl == nbl - 1) {
+            memset(x_pad, 0, QK_K * sizeof(float));
+            memcpy(x_pad, xbl, (n % QK_K) * sizeof(float));
+            xbl = x_pad;
+
+            if (quant_weights) {
+                memset(qw_pad, 0, QK_K * sizeof(float));
+                memcpy(qw_pad, qwbl, (n % QK_K) * sizeof(float));
+                qwbl = qw_pad;
+            }
+        }
+
         memset(y[ibl].qs, 0, QK_K/8);
         memset(y[ibl].qh, 0, QK_K/16);
         memset(y[ibl].scales, 0, QK_K/32);
 
         float max_scale = 0;
 
-        const float * xbl = x + QK_K*ibl;
         float sumx2 = 0;
         for (int i = 0; i < QK_K; ++i) sumx2 += xbl[i]*xbl[i];
         float sigma2 = 2*sumx2/QK_K;
@@ -4419,7 +4598,7 @@ static void quantize_row_iq1_m_impl(const float * GGML_RESTRICT x, void * GGML_R
         for (int ib = 0; ib < QK_K/block_size; ++ib) {
             const float * xb = xbl + block_size*ib;
             if (quant_weights) {
-                const float * qw = quant_weights + QK_K*ibl + block_size*ib;
+                const float * qw = qwbl + block_size*ib;
                 for (int i = 0; i < block_size; ++i) weight[i] = qw[i] * sqrtf(sigma2 + xb[i]*xb[i]);
             } else {
                 for (int i = 0; i < block_size; ++i) weight[i] = xb[i]*xb[i];
@@ -4616,14 +4795,13 @@ static void quantize_row_iq1_m_impl(const float * GGML_RESTRICT x, void * GGML_R
 }
 
 size_t quantize_iq1_m(const float * GGML_RESTRICT src, void * GGML_RESTRICT dst, int64_t nrow, int64_t n_per_row, const float * quant_weights) {
-    GGML_ASSERT(n_per_row%QK_K == 0);
     float  scales[QK_K/IQ1M_BLOCK_SIZE];
     float  weight[IQ1M_BLOCK_SIZE];
     int8_t L[IQ1M_BLOCK_SIZE];
     float  pairs[2*IQ1M_BLOCK_SIZE];
     uint16_t index[IQ1M_BLOCK_SIZE/8];
     int8_t shifts[QK_K/IQ1M_BLOCK_SIZE];
-    int64_t nblock = n_per_row/QK_K;
+    int64_t nblock = (n_per_row + QK_K - 1)/QK_K;
     char * qrow = (char *)dst;
     for (int64_t row = 0; row < nrow; ++row) {
         quantize_row_iq1_m_impl(src, qrow, n_per_row, quant_weights, scales, weight, pairs, L, index, shifts);
@@ -4747,8 +4925,7 @@ static void quantize_row_iq4_nl_impl(const int super_block_size, const int block
 }
 
 size_t quantize_iq4_nl(const float * GGML_RESTRICT src, void * GGML_RESTRICT dst, int64_t nrow, int64_t n_per_row, const float * quant_weights) {
-    GGML_ASSERT(n_per_row%QK4_NL == 0);
-    int64_t nblock = n_per_row/QK4_NL;
+    int64_t nblock = (n_per_row + QK4_NL - 1)/QK4_NL;
     char * qrow = (char *)dst;
     uint8_t L[QK4_NL];
     float weight[QK4_NL];
@@ -4758,8 +4935,24 @@ size_t quantize_iq4_nl(const float * GGML_RESTRICT src, void * GGML_RESTRICT dst
     for (int64_t row = 0; row < nrow; ++row) {
         block_iq4_nl * iq4 = (block_iq4_nl *)qrow;
         for (int ibl = 0; ibl < nblock; ++ibl) {
+            const float * xbl = src + QK4_NL*ibl;
+            float x_pad[QK4_NL];
+            float qw_pad[QK4_NL];
             const float * qw = quant_weights ? quant_weights + QK4_NL*ibl : NULL;
-            quantize_row_iq4_nl_impl(QK4_NL, 32, src + QK4_NL*ibl, &iq4[ibl].d, iq4[ibl].qs, &unused_h, unused_l,
+
+            if (n_per_row % QK4_NL != 0 && ibl == nblock - 1) {
+                memset(x_pad, 0, QK4_NL * sizeof(float));
+                memcpy(x_pad, xbl, (n_per_row % QK4_NL) * sizeof(float));
+                xbl = x_pad;
+
+                if (quant_weights) {
+                    memset(qw_pad, 0, QK4_NL * sizeof(float));
+                    memcpy(qw_pad, qw, (n_per_row % QK4_NL) * sizeof(float));
+                    qw = qw_pad;
+                }
+            }
+
+            quantize_row_iq4_nl_impl(QK4_NL, 32, xbl, &iq4[ibl].d, iq4[ibl].qs, &unused_h, unused_l,
                     &scale, weight, L, kvalues_iq4nl, qw, 7);
         }
         src += n_per_row;
@@ -4785,8 +4978,7 @@ void quantize_row_iq4_nl_ref(const float * GGML_RESTRICT x, block_iq4_nl * GGML_
 }
 
 size_t quantize_iq4_xs(const float * GGML_RESTRICT src, void * GGML_RESTRICT dst, int64_t nrow, int64_t n_per_row, const float * quant_weights) {
-    GGML_ASSERT(n_per_row%QK_K == 0);
-    int64_t nblock = n_per_row/QK_K;
+    int64_t nblock = (n_per_row + QK_K - 1)/QK_K;
     char * qrow = (char *)dst;
     uint8_t L[QK_K];
     float weight[32];
@@ -4794,8 +4986,24 @@ size_t quantize_iq4_xs(const float * GGML_RESTRICT src, void * GGML_RESTRICT dst
     for (int64_t row = 0; row < nrow; ++row) {
         block_iq4_xs * iq4 = (block_iq4_xs *)qrow;
         for (int ibl = 0; ibl < nblock; ++ibl) {
+            const float * xbl = src + QK_K*ibl;
+            float x_pad[QK_K];
+            float qw_pad[QK_K];
             const float * qw = quant_weights ? quant_weights + QK_K*ibl : NULL;
-            quantize_row_iq4_nl_impl(QK_K, 32, src + QK_K*ibl, &iq4[ibl].d, iq4[ibl].qs, &iq4[ibl].scales_h, iq4[ibl].scales_l,
+
+            if (n_per_row % QK_K != 0 && ibl == nblock - 1) {
+                memset(x_pad, 0, QK_K * sizeof(float));
+                memcpy(x_pad, xbl, (n_per_row % QK_K) * sizeof(float));
+                xbl = x_pad;
+
+                if (quant_weights) {
+                    memset(qw_pad, 0, QK_K * sizeof(float));
+                    memcpy(qw_pad, qw, (n_per_row % QK_K) * sizeof(float));
+                    qw = qw_pad;
+                }
+            }
+
+            quantize_row_iq4_nl_impl(QK_K, 32, xbl, &iq4[ibl].d, iq4[ibl].qs, &iq4[ibl].scales_h, iq4[ibl].scales_l,
                     scales, weight, L, kvalues_iq4nl, qw, 7);
         }
         src += n_per_row;
@@ -4822,11 +5030,11 @@ static void quantize_row_iq2_s_impl(const float * GGML_RESTRICT x, void * GGML_R
     GGML_ASSERT(kmap_q2xs       && "forgot to call ggml_quantize_init()?");
     GGML_ASSERT(kgrid_q2xs      && "forgot to call ggml_quantize_init()?");
     GGML_ASSERT(kneighbors_q2xs && "forgot to call ggml_quantize_init()?");
-    GGML_ASSERT(n%QK_K == 0);
+    //GGML_ASSERT(n%QK_K == 0);
 
     const int kMaxQ = 3;
 
-    const int64_t nbl = n/QK_K;
+    const int64_t nbl = (n + QK_K - 1)/QK_K;
 
     block_iq2_s * y = vy;
 
@@ -4841,13 +5049,27 @@ static void quantize_row_iq2_s_impl(const float * GGML_RESTRICT x, void * GGML_R
     uint8_t block_signs[2];
 
     for (int ibl = 0; ibl < nbl; ++ibl) {
+        const float * xbl = x + QK_K*ibl;
+        const float * qwbl = quant_weights ? quant_weights + QK_K*ibl : NULL;
+        float x_pad[QK_K];
+        float qw_pad[QK_K];
+        if (n % QK_K != 0 && ibl == nbl - 1) {
+            memset(x_pad, 0, QK_K * sizeof(float));
+            memcpy(x_pad, xbl, (n % QK_K) * sizeof(float));
+            xbl = x_pad;
+
+            if (quant_weights) {
+                memset(qw_pad, 0, QK_K * sizeof(float));
+                memcpy(qw_pad, qwbl, (n % QK_K) * sizeof(float));
+                qwbl = qw_pad;
+            }
+        }
 
         memset(&y[ibl], 0, sizeof(block_iq2_s));
         y[ibl].d = GGML_FP32_TO_FP16(0.f);
 
         float max_scale = 0;
 
-        const float * xbl = x + QK_K*ibl;
         float sumx2 = 0;
         for (int i = 0; i < QK_K; ++i) sumx2 += xbl[i]*xbl[i];
         float sigma2 = 2*sumx2/QK_K;
@@ -4855,7 +5077,7 @@ static void quantize_row_iq2_s_impl(const float * GGML_RESTRICT x, void * GGML_R
         for (int ib = 0; ib < QK_K/16; ++ib) {
             const float * xb = xbl + 16*ib;
             if (quant_weights) {
-                const float * qw = quant_weights + QK_K*ibl + 16*ib;
+                const float * qw = qwbl + 16*ib;
                 for (int i = 0; i < 16; ++i) weight[i] = qw[i] * sqrtf(sigma2 + xb[i]*xb[i]);
             } else {
                 for (int i = 0; i < 16; ++i) weight[i] = 0.25f*sigma2 + xb[i]*xb[i];
@@ -4980,8 +5202,8 @@ static void quantize_row_iq2_s_impl(const float * GGML_RESTRICT x, void * GGML_R
 }
 
 size_t quantize_iq2_s(const float * GGML_RESTRICT src, void * GGML_RESTRICT dst, int64_t nrow, int64_t n_per_row, const float * quant_weights) {
-    GGML_ASSERT(n_per_row%QK_K == 0);
-    int64_t nblock = n_per_row/QK_K;
+    //GGML_ASSERT(n_per_row%QK_K == 0);
+    int64_t nblock = (n_per_row + QK_K - 1)/QK_K;
     char * qrow = (char *)dst;
     for (int64_t row = 0; row < nrow; ++row) {
         quantize_row_iq2_s_impl(src, qrow, n_per_row, quant_weights);
