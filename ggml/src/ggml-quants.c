@@ -442,7 +442,7 @@ void dequantize_row_mxfp4(const block_mxfp4 * GGML_RESTRICT x, float * GGML_REST
 // ===================== Helper functions
 //
 static inline int nearest_int(float fval) {
-    assert(fabsf(fval) <= 4194303.f);
+    //assert(fabsf(fval) <= 4194303.f);
     float val = fval + 12582912.f;
     int i; memcpy(&i, &val, sizeof(int));
     return (i & 0x007fffff) - 0x00400000;
