@@ -708,6 +708,14 @@ static const struct ggml_type_traits type_traits[GGML_TYPE_COUNT] = {
         .is_quantized             = true,
         .from_float_ref           = (ggml_from_float_t) quantize_row_q8_1_ref,
     },
+    [GGML_TYPE_FP8] = {
+        .type_name                = "fp8",
+        .blck_size                = QK_FP8,
+        .type_size                = sizeof(block_fp8),
+        .is_quantized             = true,
+        .to_float                 = (ggml_to_float_t) dequantize_row_fp8,
+        .from_float_ref           = (ggml_from_float_t)quantize_row_fp8_ref,
+    },
     [GGML_TYPE_MXFP4] = {
         .type_name                = "mxfp4",
         .blck_size                = QK_MXFP4,
@@ -7521,6 +7529,12 @@ size_t ggml_quantize_chunk(
         case GGML_TYPE_Q5_1:    result = quantize_q5_1(src + start, (char *) dst + start_row * row_size, nrows, n_per_row, imatrix); break;
         case GGML_TYPE_Q8_0:    result = quantize_q8_0(src + start, (char *) dst + start_row * row_size, nrows, n_per_row, imatrix); break;
         case GGML_TYPE_MXFP4:   result = quantize_mxfp4(src + start, (char *) dst + start_row * row_size, nrows, n_per_row, imatrix); break;
+        case GGML_TYPE_FP8:
+            {
+                size_t elemsize = sizeof(block_fp8);
+                quantize_row_fp8_ref(src + start, (block_fp8 *)((char *)dst + start_row * row_size), n);
+                result = n * elemsize / QK_FP8;
+            } break;
         case GGML_TYPE_Q2_K:    result = quantize_q2_K(src + start, (char *) dst + start_row * row_size, nrows, n_per_row, imatrix); break;
         case GGML_TYPE_Q3_K:    result = quantize_q3_K(src + start, (char *) dst + start_row * row_size, nrows, n_per_row, imatrix); break;
         case GGML_TYPE_Q4_K:    result = quantize_q4_K(src + start, (char *) dst + start_row * row_size, nrows, n_per_row, imatrix); break;
