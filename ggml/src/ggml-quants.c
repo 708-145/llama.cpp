@@ -70,6 +70,31 @@ void quantize_row_q4_0_ref(const float * GGML_RESTRICT x, block_q4_0 * GGML_REST
     }
 }
 
+void quantize_row_fp8_ref(const float * GGML_RESTRICT x, block_fp8 * GGML_RESTRICT y, int64_t k) {
+    assert(QK_FP8 == 32);
+    assert(k % QK_FP8 == 0);
+    int64_t nb = k / QK_FP8;
+
+    for (int64_t i = 0; i < nb; i++) {
+        for (int j = 0; j < QK_FP8; j++) {
+            float v = x[i*QK_FP8 + j];
+            int best_idx = 0;
+            float best_diff = fabsf(v - kvalues_fp8[0]);
+            // TODO: bisect?
+            for (int l = 1; l < 256; l++) {
+                // skip NaNs
+                if (l == 127 || l == 255) continue;
+                float diff = fabsf(v - kvalues_fp8[l]);
+                if (diff < best_diff) {
+                    best_diff = diff;
+                    best_idx = l;
+                }
+            }
+            y[i].qs[j] = best_idx;
+        }
+    }
+}
+
 void quantize_row_q4_1_ref(const float * GGML_RESTRICT x, block_q4_1 * GGML_RESTRICT y, int64_t k) {
     const int qk = QK4_1;
 
@@ -410,6 +435,20 @@ void dequantize_row_q8_0(const block_q8_0 * GGML_RESTRICT x, float * GGML_RESTRI
 
         for (int j = 0; j < qk; ++j) {
             y[i*qk + j] = x[i].qs[j]*d;
+        }
+    }
+}
+
+void dequantize_row_fp8(const block_fp8 * GGML_RESTRICT x, float * GGML_RESTRICT y, int64_t k) {
+    static const int qk = QK_FP8;
+
+    assert(k % qk == 0);
+
+    const int nb = k / qk;
+
+    for (int i = 0; i < nb; i++) {
+        for (int j = 0; j < qk; ++j) {
+            y[i*qk + j] = kvalues_fp8[x[i].qs[j]];
         }
     }
 }
@@ -5220,6 +5259,10 @@ bool ggml_validate_row_data(enum ggml_type type, const void * data, size_t nbyte
         case GGML_TYPE_Q8_0:
             {
                 VALIDATE_ROW_DATA_D_F16_IMPL(block_q8_0, data, nb);
+            } break;
+        case GGML_TYPE_FP8:
+            {
+                // nothing to validate
             } break;
         case GGML_TYPE_MXFP4:
             {
