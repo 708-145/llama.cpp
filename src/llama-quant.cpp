@@ -2,8 +2,10 @@
 #include "llama-model.h"
 #include "llama-model-loader.h"
 #include "llama-ext.h"
+#include "llama-quant.h"
 
 #include <algorithm>
+#include <map>
 #include <cmath>
 #include <cstring>
 #include <cinttypes>
@@ -13,6 +15,21 @@
 #include <thread>
 #include <unordered_map>
 
+#include "../vendor/nlohmann/json.hpp" // Added for nlohmann::json
+
+SmartQuantConfig load_smart_quant_config(const std::string & fname) {
+    SmartQuantConfig config;
+    std::ifstream f(fname);
+    if (!f.is_open()) {
+        throw std::runtime_error(format("failed to open smartquant config file %s", fname.c_str()));
+    }
+    nlohmann::json data = nlohmann::json::parse(f);
+
+    for (auto& el : data.items()) {
+        config[el.key()] = (ggml_type)el.value().get<int>();
+    }
+    return config;
+}
 // result of parsing --tensor-type option
 // (changes to this struct must be reflected in tools/quantize/quantize.cpp)
 struct tensor_type_option {
@@ -901,6 +918,10 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
         }
         imatrix_data = & i_data;
         if (imatrix_data) {
+            LLAMA_LOG_INFO("================================ Have weights data with %zu entries\n", imatrix_data->size());
+            if (params->smart_quant_config) {
+                LLAMA_LOG_INFO("SmartQuant: parsed %zu entries\n", static_cast<const std::map<std::string, ggml_type>*>(params->smart_quant_config)->size());
+            }
             LLAMA_LOG_INFO("\n%s: have importance matrix data with %d entries\n",
                            __func__, (int)imatrix_data->size());
             qs.has_imatrix = true;
@@ -993,6 +1014,7 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
 
     // initialize quantization state counters and metadata categories
     init_quantize_state_counters(qs, metadata);
+    int64_t total_weights_all_tensors = 0;
 
     int idx = 0;
     uint16_t n_split = 1;
@@ -1129,14 +1151,20 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
             ml.load_data_for(tensor);
         }
 
-        LLAMA_LOG_INFO("[%4d/%4d] %-36s - [%s], type = %6s, ",
+        // Calculate and print average bpw for each tensor
+        int64_t total_weights = ggml_nelements(tensor);
+        double avg_bpw = (8.0 * ggml_nbytes(tensor)) / total_weights;
+        LLAMA_LOG_INFO("[%4d/%4d] %-36s - [%s], type = %6s, size = %8.3f MB (%.2f bpw)\n",
                ++idx, ml.n_tensors,
                ggml_get_name(tensor),
                llama_format_tensor_shape(tensor).c_str(),
-               ggml_type_name(tensor->type));
+               ggml_type_name(tensor->type),
+               ggml_nbytes(tensor)/1024.0/1024.0,
+               avg_bpw);
 
         const ggml_type cur_type = tensor->type;
-        const ggml_type new_type = tm.target_type;
+        ggml_type new_type = tm.target_type;
+        const std::string name = ggml_get_name(tensor);
 
         // If we've decided to quantize to the same type the tensor is already
         // in then there's nothing to do.
@@ -1148,6 +1176,16 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
         if (params->dry_run) {
             // the --dry-run option calculates the final quantization size without quantizing
             if (quantize) {
+                new_type = default_type;
+                // SmartQuant override
+                if (params->smart_quant_config) {
+                    const auto & smart_quant_config = *static_cast<const std::map<std::string, ggml_type>*>(params->smart_quant_config);
+                    auto it = smart_quant_config.find(name);
+                    if (it != smart_quant_config.end()) {
+                        LLAMA_LOG_DEBUG("(SmartQuant override %s -> %s) ", ggml_type_name(new_type), ggml_type_name(it->second));
+                        new_type = it->second;
+                    }
+                }
                 new_size = ggml_nrows(tensor) * ggml_row_size(new_type, tensor->ne[0]);
                 LLAMA_LOG_INFO("size = %8.2f MiB -> %8.2f MiB (%s)\n",
                                tensor_size/1024.0/1024.0,
@@ -1171,6 +1209,16 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
                 LLAMA_LOG_INFO("size = %8.3f MiB\n", tensor_size/1024.0/1024.0);
             } else {
                 const int64_t nelements = ggml_nelements(tensor);
+
+                // SmartQuant override
+                if (params->smart_quant_config) {
+                    const auto & smart_quant_config = *static_cast<const std::map<std::string, ggml_type>*>(params->smart_quant_config);
+                    auto it = smart_quant_config.find(name);
+                    if (it != smart_quant_config.end()) {
+                        LLAMA_LOG_DEBUG("(SmartQuant override %s -> %s) ", ggml_type_name(new_type), ggml_type_name(it->second));
+                        new_type = it->second;
+                    }
+                }
 
                 const float * imatrix = nullptr;
                 if (imatrix_data) {
@@ -1241,10 +1289,12 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
 
                     new_size += llama_tensor_quantize_impl(new_type, f32_data_03, new_data_03, chunk_size, nrows, n_per_row, imatrix_03, workers, nthread_use);
                 }
-                LLAMA_LOG_INFO("size = %8.2f MiB -> %8.2f MiB\n", tensor_size/1024.0/1024.0, new_size/1024.0/1024.0);
+                double new_bpw = (8.0 * new_size) / ggml_nelements(tensor);
+                LLAMA_LOG_INFO("size = %8.2f MiB -> %8.2f MiB (%.2f bpw)\n", ggml_nbytes(tensor)/1024.0/1024.0, new_size/1024.0/1024.0, new_bpw);
             }
-            total_size_org += tensor_size;
+            total_size_org += ggml_nbytes(tensor);
             total_size_new += new_size;
+            total_weights_all_tensors += ggml_nelements(tensor);
 
             // update the gguf meta data as we go
             gguf_set_tensor_type(ctx_outs[cur_split].get(), metadata[i].name.c_str(), new_type);
@@ -1261,8 +1311,12 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
         close_ofstream();
     }
 
-    LLAMA_LOG_INFO("%s: model size  = %8.2f MiB (%.2f BPW)\n", __func__, total_size_org/1024.0/1024.0, total_size_org*8.0/ml.n_elements);
-    LLAMA_LOG_INFO("%s: quant size  = %8.2f MiB (%.2f BPW)\n", __func__, total_size_new/1024.0/1024.0, total_size_new*8.0/ml.n_elements);
+    double effective_bpw_org = total_weights_all_tensors > 0 ? (8.0 * total_size_org) / total_weights_all_tensors : 0.0;
+    double effective_bpw_new = total_weights_all_tensors > 0 ? (8.0 * total_size_new) / total_weights_all_tensors : 0.0;
+
+    LLAMA_LOG_INFO("Total number of weights counted: %.2f B\n", total_weights_all_tensors / 1e9);
+    LLAMA_LOG_INFO("%s: model size  = %8.2f MiB (effective %.2f bpw) (%.2f BPW)\n", __func__, total_size_org/1024.0/1024.0, effective_bpw_org, total_size_org*8.0/ml.n_elements);
+    LLAMA_LOG_INFO("%s: quant size  = %8.2f MiB (effective %.2f bpw) (%.2f BPW)\n", __func__, total_size_new/1024.0/1024.0, effective_bpw_new, total_size_new*8.0/ml.n_elements);
 
     if (!params->imatrix && params->dry_run && will_require_imatrix) {
         LLAMA_LOG_WARN("%s: WARNING: dry run completed successfully, but actually completing this quantization will require an imatrix!\n",
@@ -1293,6 +1347,7 @@ llama_model_quantize_params llama_model_quantize_default_params() {
         /*.keep_split                  =*/ false,
         /*.dry_run                     =*/ false,
         /*.imatrix                     =*/ nullptr,
+        /*.smart_quant_config          =*/ nullptr,
         /*.kv_overrides                =*/ nullptr,
         /*.tensor_type                 =*/ nullptr,
         /*.prune_layers                =*/ nullptr

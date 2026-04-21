@@ -9,6 +9,9 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#ifdef __cplusplus
+#include <string>
+#endif
 #include <stdio.h>
 #include <stdbool.h>
 
@@ -406,6 +409,7 @@ extern "C" {
         bool keep_split;                                            // quantize to the same number of shards
         bool dry_run;                                               // calculate and show the final quantization size without performing quantization
         const struct llama_model_imatrix_data * imatrix;            // pointer to importance matrix data
+        void * smart_quant_config;           // pointer to smart quant config (map<string, ggml_type>)
         const struct llama_model_kv_override * kv_overrides;        // pointer to kv overrides
         const struct llama_model_tensor_override * tt_overrides;    // pointer to tensor overrides
         const int32_t * prune_layers;                               // pointer to layer indices to prune

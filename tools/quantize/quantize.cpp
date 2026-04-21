@@ -3,6 +3,7 @@
 #include "build-info.h"
 #include "common.h"
 
+#include "llama-quant.h" // Include for SmartQuantConfig
 #include "gguf.h"
 
 #include <algorithm>
@@ -24,6 +25,11 @@ struct tensor_type_option {
     std::string name;
     ggml_type type = GGML_TYPE_COUNT;
 };
+#include <cmath>
+#include <fstream>
+#include <memory> // For std::unique_ptr
+#include "../../vendor/nlohmann/json.hpp"
+
 
 struct quant_option {
     std::string name;
@@ -126,7 +132,7 @@ static bool try_parse_ftype(const std::string & ftype_str_in, llama_ftype & ftyp
 static void usage(const char * executable) {
     printf("usage: %s [--help] [--allow-requantize] [--leave-output-tensor] [--pure] [--imatrix] [--include-weights]\n", executable);
     printf("       [--exclude-weights] [--output-tensor-type] [--token-embedding-type] [--tensor-type] [--tensor-type-file]\n");
-    printf("       [--prune-layers] [--keep-split] [--override-kv] [--dry-run]\n");
+    printf("       [--prune-layers] [--keep-split] [--override-kv] [--dry-run] [--smartquant]\n");
     printf("       model-f32.gguf [model-quant.gguf] type [nthreads]\n\n");
     printf("  --allow-requantize\n");
     printf("                                      allow requantizing tensors that have already been quantized\n");
@@ -163,6 +169,7 @@ static void usage(const char * executable) {
     printf("  --override-kv KEY=TYPE:VALUE\n");
     printf("                                      override model metadata by key in the quantized model. may be specified multiple times.\n");
     printf("                                      WARNING: this is an advanced option, use with care.\n");
+    printf("  --smartquant file_name              path to a JSON file with quantization parameters\n");
     printf("  --dry-run\n");
     printf("                                      calculate and show the final quantization size without performing quantization\n");
     printf("                                      example: llama-quantize --dry-run model-f32.gguf Q4_K\n\n");
@@ -415,6 +422,28 @@ static ggml_type parse_ggml_type(const char * arg) {
     return GGML_TYPE_COUNT;
 }
 
+static void parse_json_params(const std::string & json_file, std::vector<llama_model_kv_override> & kv_overrides) {
+    std::ifstream f(json_file);
+    if (!f.is_open()) {
+        fprintf(stderr, "Could not open file %s\n", json_file.c_str());
+        exit(1);
+    }
+    nlohmann::json j;
+    f >> j;
+
+    if (j.is_object()) {
+        for (auto& item : j.items()) {
+            llama_model_kv_override kvo;
+            std::string key = "ggml.quantization_override." + item.key();
+            strncpy(kvo.key, key.c_str(), sizeof(kvo.key) - 1);
+            kvo.key[sizeof(kvo.key) - 1] = '\0';
+            kvo.tag = LLAMA_KV_OVERRIDE_TYPE_INT;
+            kvo.val_i64 = item.value().get<int64_t>();
+            kv_overrides.push_back(kvo);
+        }
+    }
+}
+
 static bool parse_tensor_type(const char * data, std::vector<tensor_type_option> & tensor_type) {
     const char * sep = strchr(data, '=');
     if (sep == nullptr) {
@@ -502,11 +531,18 @@ int main(int argc, char ** argv) {
     std::string imatrix_file;
     std::vector<std::string> included_weights, excluded_weights;
     std::vector<llama_model_kv_override> kv_overrides;
+    std::string smartquant_file;
     std::vector<tensor_type_option> tensor_type_opts;
     std::vector<int> prune_layers;
 
     for (; arg_idx < argc && strncmp(argv[arg_idx], "--", 2) == 0; arg_idx++) {
-        if (strcmp(argv[arg_idx], "--leave-output-tensor") == 0) {
+        if (strcmp(argv[arg_idx], "--smartquant") == 0) {
+            if (arg_idx < argc - 1) {
+                smartquant_file = argv[++arg_idx];
+            } else {
+                usage(argv[0]);
+            }
+        } else if (strcmp(argv[arg_idx], "--leave-output-tensor") == 0) {
             params.quantize_output_tensor = false;
         } else if (strcmp(argv[arg_idx], "--output-tensor-type") == 0) {
             if (arg_idx < argc-1) {
@@ -571,6 +607,11 @@ int main(int argc, char ** argv) {
         } else {
             usage(argv[0]);
         }
+    }
+    std::unique_ptr<SmartQuantConfig> smart_quant_config_ptr;
+    if (!smartquant_file.empty()) {
+        smart_quant_config_ptr = std::make_unique<SmartQuantConfig>(load_smart_quant_config(smartquant_file));
+        params.smart_quant_config = smart_quant_config_ptr.get();
     }
 
     if (argc - arg_idx < 2) {
