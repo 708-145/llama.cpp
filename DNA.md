@@ -2,7 +2,10 @@
 
 ## Key idea
 
-For each layer's MLP, use an approximated gate projection to decide which neurons are active. Compute the active neurons' gate/up/down in full precision, and replace silent neurons with their calibrated bias contribution. Compute the down projection only for active neurons (delta form) on the transposed matrix, with blocking and skipping.
+For each layer's MLP, use an approximated gate projection to decide which neurons are active.  
+Compute the active neurons' gate/up/down in full precision, and replace silent neurons with their calibrated bias contribution.  
+Compute the down projection only for active neurons (delta form) on the transposed matrix, with blocking and skipping.  
+Use CPU-first design and implementation approach. Use CPU flexibility and SIMD parallelism.  
 
 ## Core principles
 
@@ -16,9 +19,14 @@ For each layer's MLP, use an approximated gate projection to decide which neuron
 
 5. **Gate estimate is a router only.** The approximate gate (XOR sign scheme) is used only to decide silent vs active. It is never reused as the actual gate value — active neurons always get full-precision gate/up.
 
+6. **Online calibration during llama execution, zero interface change.** Calibration runs inside normal inference with no model-file or interface changes:
+   - **Collection mode (first N tokens / first pass):** every gate tensor that is computed for the first time is also packed into the binary gate predictor (`Sw` sign bits + per-block `aw` scales) on the fly, while simultaneously recording per-neuron gate statistics (`med`, `sd`, `b`) and the SwiGLU bias moments (`mu[i]` = mean h[i] when silent). No separate calibration script or precomputed npz is needed.
+   - **Prediction mode (after collection):** once per-layer statistics are sufficient, the estimator and dead zone switch to using the calibrated values, and inference speeds up via active-neuron skipping. Collection can be re-triggered or frozen via a runtime flag.
+   - **No interface impact:** model files, GGUF format, CLI args, and API surface are unchanged — calibration data lives in runtime memory alongside the existing K/V cache.
+
 ## Implementation
 
-### Offline calibration (per layer, once)
+### Calibration (per layer, once)
 
 For each gate neuron i:
 
@@ -35,6 +43,7 @@ For each gate neuron i:
      - aw[i][b]: per-block scale, fp16 = mean(|w|) over the block (mean-abs is L2-optimal for a sign code; do not use block max — it inflates small weights)
 
    Cost: 1 + 16/B bits per weight (1.5 bpw at B=32, 3 bpw at B=8). Full-precision gate/up/down stay in memory unchanged.
+   Optional: Encode fp16 as 3bit select for 5bit exponent + 3 bit mantissa into 6 bit. 1 + 6/B is 1.375 bpw at B=16.
 
 ### Online inference (per token, per layer)
 
@@ -78,8 +87,8 @@ For each gate neuron i:
 
 ## Validation plan (in order)
 
-1. Offline on cached activations: estimator error, quadrant stats (exp4: wrong-sign + large-magnitude = dangerous misses), active% vs T, bias quality (|mu[i]| distribution, |c0| / |y|). If |c0|/|y| is not negligible, the bias is load-bearing.
-2. Per-layer MLP output cos-sim of DNA vs dense against active%. Goal: > 0.99 at <= 50% active before touching llama.cpp. If the sign-only estimator cannot reach it, add 2-bit x or B = 8 first.
-3. End-to-end top-1 match and KL on a text set (exp13/exp14 style), all layers at once. Per-layer errors compound (exp14: 0.61 hidden cos-sim -> 48% top-1 change; exp13: KL inverts top-1 ranking at low hot fractions, so report both). Report hidden cos-sim, top-1 match, KL(full||hybrid).
-4. Only then write llama.cpp CPU kernels: popcount gate op, masked/index-list gate+up op, axpy-style down op with pre-added c0.
+1. Collect offline information and analyze collected data.  
+2. Check prediction quality and adjust deadzone size.  
+3. Measure end-to-end perplexity and KL on a text set (wikipedia).  
+
 
