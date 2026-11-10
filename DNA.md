@@ -2,154 +2,84 @@
 
 ## Key idea
 
-- for each layers MLP use a approximated gate projection to determine active neurons
-- compute the active neurons full gate and up precision and compute SwiGLU et al
-  - fill in learned bias term for silent neurons (skippable if done implicit in down projection)
-- compute down projection only for active neurons on transposed matrix
-  - add bias terms for silent neurons
-  - use blocking and skipping
+For each layer's MLP, use an approximated gate projection to decide which neurons are active. Compute the active neurons' gate/up/down in full precision, and replace silent neurons with their calibrated bias contribution. Compute the down projection only for active neurons (delta form) on the transposed matrix, with blocking and skipping.
 
-## details
+## Core principles
 
-### approximate gate projection
+1. **Per-neuron bias.** A neuron's gate pre-activation idles at a neuron-specific median (typically 0.7–2.1 std from 0). down_input median is near 0 because the symmetric up projection hides the offset. Bias holds 31–55% of down_input energy — ignoring it is not an option.
 
-- use only sign from original gate
-- use simple XOR scheme for compute
+2. **Two-sided dead zone on gate deviation.** Silence is defined by distance from the per-neuron bias, not by raw gate magnitude. A neuron is silent when |z| < threshold where z = (g - median) / std (or a cheap proxy). Both large-positive and large-negative deviations are active. One-sided rules (only z > 0) fail end-to-end.
 
+3. **Selection by distance-from-bias.** Select active neurons by |s - b| (deviation of SiLU(gate) from bias contribution), not by raw |gate| or |gate_approx|. Distance-from-bias selection + bias fill beats magnitude selection + zero fill by 15–22x in KL.
 
-### determine active neurons
+4. **Bias fill (mu[i], c0).** For silent neurons, h[i] = silu(g[i]) * u[i] is replaced by its calibration mean mu[i]. Precompute c0 = Wdown @ mu once per layer. Down projection: y = c0 + sum_active Wdown[:, i] * (h[i] - mu[i]). The delta form is exact: silent neurons contribute mu[i] (folded into c0); active neurons contribute their true h[i].
 
-- use dead zone: smaller and larger values are considered active
-- optional: use sign of gate approximation for +- bias correction
+5. **Gate estimate is a router only.** The approximate gate (XOR sign scheme) is used only to decide silent vs active. It is never reused as the actual gate value — active neurons always get full-precision gate/up.
 
+## Implementation
 
-### full precision partial gate and up projection
+### Offline calibration (per layer, once)
 
-- compute only for active neurons
-- CPU friendly
-- optional: compute in GPU shaders
+For each gate neuron i:
 
+1. Per-neuron bias statistics (from cached activations, ~10k tokens):
+   - med[i] = median of gate_raw[i] over calibration tokens
+   - sd[i] = std of gate_raw[i] over calibration tokens
+   - b[i] = silu(med[i]) — the bias contribution to SwiGLU output
+   - mu[i] = E[h[i] | silent] — mean SwiGLU output of neuron i when it is silent (computed with the same dead-zone rule used at inference)
+   - c0 = Wdown @ mu — all-silent residual bias vector (n_embd), precomputed once per layer
 
-### transposed biased down projection
+2. Gate weight packing (for the XOR estimator):
+   - For each gate row i, in blocks of B = 32 (B = 8 gives better quality):
+     - Sw[i]: K bits, bit = (w >= 0), stored as K/32 uint32 per row
+     - aw[i][b]: per-block scale, fp16 = mean(|w|) over the block (mean-abs is L2-optimal for a sign code; do not use block max — it inflates small weights)
 
-- compute full residual contribution vector for each active neuron
-  - stripes: pointers to N (16) columns and an N wide activation vector -> 1 residual vector
-  - add vectors for all stripes (add per thread, then sum those)
-- residual contribution of inactive neurons
-  - depends on gate sign?
-  - if no, then 
-    - remove idle background from down weights -> active neurons compute the delta to inactive state
-    - add an all-inactive bias residual vector
+   Cost: 1 + 16/B bits per weight (1.5 bpw at B=32, 3 bpw at B=8). Full-precision gate/up/down stay in memory unchanged.
 
+### Online inference (per token, per layer)
 
+1. Gate estimate (router signal only):
+   - Quantize input x (after FFN norm) once per token:
+     - Sx: K bits, bit = (x >= 0)
+     - ax[b]: mean(|x|) per block of B
+   - Per row i, per block b:
+     agree = B - 2 * popcount(Sw[i][b] XOR Sx[b])   // sum of sign(w)*sign(x), range [-B, B]
+     g~[i] += aw[i][b] * ax[b] * agree
+   - g~[i] is used ONLY to decide silent vs active. Never reused as the actual gate value.
+   - XOR + popcount = one op per 32 weights (AVX2 / AVX-512 VPOPCNT / NEON cnt). Memory traffic ~1/10 of f16 gate.
+   - If estimator error is too high, first try 2-bit x (sign + large flag) or B = 8.
 
+2. Dead zone (two-sided, bias-relative):
+   - Per layer and token: m = mean_i |g~[i]| (one extra reduction), or calibrated per-layer constant.
+   - silent[i] = |g~[i] - bias_proxy[i]| < T * m   // band around per-neuron bias
+   - active[i] = !silent[i]                          // large positive OR large negative deviation
+   - bias_proxy[i] is a cheap proxy for med[i] (e.g., per-row median of g~, or the calibrated med[i] itself).
+   - Sweep T in {0.25, 0.5, 0.75, 1.0}; look for the knee. Floor: keep at least 2% active per layer.
+   - Optional decode prior: active[i] |= prior_active[i] from previous token (exp11).
 
-## Implementation draft (v1, bias-centric, untested)
+3. Active-neuron computation (full precision, delta down projection):
+   For each active i:
+   - g[i] = full-precision dot(Wgate[i], x)
+   - u[i] = full-precision dot(Wup[i], x)
+   - h[i] = silu(g[i]) * u[i]
+   - d[i] = h[i] - mu[i]   // delta over silent baseline
 
-Status: design proposal derived from the vllm/pred1.md experiments plus the correction that bias terms of silent neurons must be modelled explicitly. Early runs that treated silent neurons as zero failed; restoring their bias via a calibrated residual mean improved results substantially. No number below has been measured for this exact scheme.
+   Down projection (transposed matrix, column i contiguous):
+   y = c0 + sum_{i in active} Wdown[:, i] * (h[i] - mu[i])
 
-Evidence used from pred1.md:
-- exp23/24: threshold routing on an approximate gate with an accurate per-block scale beats fixed top-k (match 0.736 @T=0.5, 0.818 @T=0.20 with ~88% hot). So the dead zone must be narrow.
-- exp21/22: a coarsely scaled approximate gate (E8M0, power of two) over-activates cold channels. Use a fine scale (fp16 or E5M3).
-- exp20: do NOT replace up/down of silent neurons with a cheap approximation. Errors multiply in SwiGLU.
-- exp4: wrong-sign + large-magnitude channels are the dangerous misses (~1.3% of channel-tokens).
-- exp11: the previous token's approximate gate is a free, good prior (decode only).
+   - c0 added once per layer (one vector add).
+   - Axpy-style: for each active column i, add (h[i] - mu[i]) * Wdown[:, i] onto y.
+   - Stripes of 16 columns; per-thread partial residual vectors summed at the end.
 
-### 1. Offline packing (per layer, once)
+4. Optional sign-conditioned bias (only if calibration shows a gain):
+   - mu_p[i], mu_n[i] = mean h[i] when silent with g~ > 0 / g~ < 0.
+   - Build c0 from mu_n. For silent neurons with g~ > 0 add Wdown[:, i] * (mu_p[i] - mu_n[i]).
+   - Restrict to a precomputed list of biased neurons (top ~1%).
 
-For each gate row i (length K = n_embd), in blocks of B = 32 (B = 8 is better for quality, see exp19):
-- `Sw[i]`: K bits, bit = (w >= 0), stored as K/32 uint32 per row.
-- `aw[i][b]`: per-block scale, fp16 = mean(|w|) over the block (E5M3 is acceptable). Mean-abs is the L2-optimal scale for a sign code. Do not use block max (exp17: it inflates small weights).
+## Validation plan (in order)
 
-Cost: 1 + 16/B bits per weight (1.5 bpw at B=32, 3 bpw at B=8). The full-precision gate/up/down stay in memory unchanged.
-
-### 2. Online gate estimate (per token, per layer)
-
-Quantize the input x (after the FFN norm) once per token:
-- `Sx`: K bits, bit = (x >= 0)
-- `ax[b]`: mean(|x|) per block of B
-
-Per row i, per block b:
-
-    agree = B - 2 * popcount(Sw[i][b] XOR Sx[b])    // sum of sign(w)*sign(x), range [-B, B]
-    g~[i] = sum_b aw[i][b] * ax[b] * agree
-
-Notes:
-- XOR + popcount is one op per 32 weights (AVX2 / AVX-512 VPOPCNT / NEON cnt). Memory traffic is ~1/10 of the f16 gate.
-- Sign(x) * sign(w) discards magnitude correlation inside a block. If the error is too high, first try a 2-bit x (sign + "large" flag, two XOR/popcount passes weighted 1 and 2) or B = 8, before changing anything else.
-- Fixed point is fine: aw*ax as int16 per block, accumulate in int32.
-- The estimate g~[i] is used ONLY to decide silent vs active. It is never reused as the actual gate value.
-
-### 3. Dead zone (silent vs active)
-
-Per layer and token, `m = mean_i |g~[i]|` (one extra reduction), or a calibrated per-layer constant if the reduction is too costly.
-
-    silent[i] = |g~[i]| < T * m        // band around zero -> silent
-    active[i] = !silent[i]             // large positive OR large negative -> active
-
-Why a band around zero and not "negative = silent":
-- the estimate is least reliable for large negative values (the exp4 "dangerous" quadrant), and those neurons are cheap to keep.
-- the exp24 sweep rewards a small T.
-
-Starting values (tune per layer by sweep, report active% and hidden cos-sim):
-- Sweep T in {0.25, 0.5, 0.75, 1.0} and look for the knee. Expect ~80-90% active at T = 0.25 (exp24), which saves little. Real savings need the estimate to be sharper than in exp24.
-- Floor: keep at least 2% of neurons active per layer (cheap insurance against dead layers; exp24 says unneeded).
-- Optional prior (decode): `active[i] |= prior_active[i]` from the previous token's g~ (exp11). One bitmask OR.
-
-### 4. Bias terms for silent neurons (core, not optional)
-
-Silent neurons are NOT treated as zero. Their activation h[i] = silu(g[i]) * u[i] is replaced by its calibration mean mu[i]. Modelling this bias explicitly is what makes the scheme viable; dropping it collapses quality.
-
-Calibration (offline, ~10k tokens of representative text, real layer inputs, same estimator and T as inference):
-- `mu[i] = E[h[i] | silent]`, per neuron. Because silent means |g| small, silu(g) ~ g/2 and h[i] ~ g[i]/2 * u[i], so mu[i] is often small but not zero; channels with systematic offsets keep a noticeable mu[i].
-- `c0 = Wdown @ mu` (n_embd vector) = the all-silent residual bias vector, precomputed once per layer.
-
-### 5. Active-neuron computation with delta down projection
-
-For i in active (bitmask converted to an index list in blocks of 16/32 rows):
-- `g[i]` = full precision dot(Wgate[i], x). The sign estimate is NOT reused.
-- `u[i]` = full precision dot(Wup[i], x)
-- `h[i]` = silu(g[i]) * u[i]
-- `d[i]` = h[i] - mu[i]    // delta of this active neuron over its silent baseline
-
-Down projection (transposed matrix, column i contiguous):
-
-    y = c0 + sum_{i in active} Wdown[:, i] * (h[i] - mu[i])
-
-- c0 is added once per layer (one vector add).
-- Every active neuron contributes its full SwiGLU output h[i]. Because Wdown[:,i]*mu[i] is already inside c0, the delta form d[i] = h[i] - mu[i] is exact: a neuron that turns out to be silent in reality still contributes exactly mu[i] (via c0), while an active neuron contributes its true h[i].
-- The down projection runs axpy-style: for each active column i, add (h[i] - mu[i]) * Wdown[:, i] onto y. Stripes of 16 columns, per-thread partial residual vectors, summed at the end.
-- Per-token bias cost is one vector add per layer plus storing/reading c0 per layer.
-
-### 6. Optional sign-conditioned bias (only if calibration shows a gain)
-
-- `mu_p[i]`, `mu_n[i]` = mean h[i] when silent with g~ > 0 / g~ < 0.
-- Build c0 from mu_n. For silent neurons with g~ > 0 add Wdown[:,i]*(mu_p[i] - mu_n[i]).
-- Restrict to a precomputed list of "biased" neurons (top ~1%) so the extra cost stays small.
-
-### 7. Validation plan (in order)
-
-1. Offline in Python on cached activations: estimator error, quadrant stats (as exp4: right/wrong sign x large/small), active% vs T, AND bias quality: |mu[i]| distribution and |c0|/|y|. If |c0|/|y| is not negligible, the bias is load-bearing.
-2. Per-layer MLP output cos-sim of DNA vs dense against active%. Goal: > 0.99 at <= 50% active before touching llama.cpp. If the sign-only estimator cannot reach it, add the 2-bit x or B = 8 first.
-3. End-to-end top-1 match and KL on a text set (exp13/exp14 style), all layers at once. Per-layer errors compound (exp14: 0.61 hidden cos-sim → 48% top-1 change; exp13: KL inverts the top-1 ranking at low hot fractions, so report both). Report hidden cos-sim, top-1 match, and KL(full‖hybrid).
-4. Only then write llama.cpp CPU kernels: a popcount gate op, a masked/index-list gate+up op, an axpy-style down op with pre-added c0.
-
-
-### Related: vllm/RIN.md — Reduced Input Neuron (bias factorisation)
-
-`RIN.md` documents the same bias-centric idea empirically (offline, no inference):
-- **RIN1/RIN1b**: per-neuron gate bias confirmed — `gate_raw` median is 0.7–2.1 std from 0; bias holds 31–55% of `down_input` energy.
-- **RIN3**: selection by distance-from-bias `|s-b|` + bias fill `b*up` beats magnitude selection `|s|` + zero fill at 20% kept (KL 0.007–0.062 vs 0.175–0.254).
-- **RIN4/RIN5**: soft rule `x(z) = 1 - exp(-(z/1.05)^2)` for z > 0, else 0 — dead zone is at/below z=0 in gate-deviation space.
-- **RIN6/RIN7**: one-sided rule fails e2e (~95% strict perturbation). **Two-sided `|z| > threshold` works**: `|z| > 0.5` (62% hot) → 7.1% strict, 1.1% thermal@0.7, KL 0.025. Bias-filled top-k by `|s-b|` vs no-bias top-k by `|s|`: KL 0.268 vs 4.06 at 20% hot (15× lower), 0.023 vs 0.524 at 50% (22× lower).
-- **Cost floor**: 0.44 of dense because gate GEMM is still dense; useful points at 0.64–0.85 (`topk 0.4` = 0.70 cost, 2.9% thermal@0.7).
-
-Implication for DNA: the dead zone must be **two-sided** on gate deviation from a per-neuron bias (median), not a one-sided band around zero in raw gate space. Bias fill (`mu[i]`, `c0`) is load-bearing — dropping it collapses KL by an order of magnitude. The XOR sign estimator in section 2 is a cheap proxy for the z-score; calibrate its dead zone against `|s-b|` distance.
-
-### 8. Open risks
-
-- Sparsity in SwiGLU models is much lower than in ReLU models. Exp24 needed ~88% hot for good quality. With the extra estimator pass (~1.5-3 bpw read), DNA probably only wins if active% is below roughly 50-60%. This is the main unknown.
-- Prefill batches activate the union of neurons over the batch, so DNA mainly helps single-token decode.
-- Gather efficiency of skipped gate/up rows should be checked on the CPU target.
-- Bias calibration must use the same estimator/T as inference, otherwise mu[i] and c0 mismatch the actual silent distribution.
+1. Offline on cached activations: estimator error, quadrant stats (exp4: wrong-sign + large-magnitude = dangerous misses), active% vs T, bias quality (|mu[i]| distribution, |c0| / |y|). If |c0|/|y| is not negligible, the bias is load-bearing.
+2. Per-layer MLP output cos-sim of DNA vs dense against active%. Goal: > 0.99 at <= 50% active before touching llama.cpp. If the sign-only estimator cannot reach it, add 2-bit x or B = 8 first.
+3. End-to-end top-1 match and KL on a text set (exp13/exp14 style), all layers at once. Per-layer errors compound (exp14: 0.61 hidden cos-sim -> 48% top-1 change; exp13: KL inverts top-1 ranking at low hot fractions, so report both). Report hidden cos-sim, top-1 match, KL(full||hybrid).
+4. Only then write llama.cpp CPU kernels: popcount gate op, masked/index-list gate+up op, axpy-style down op with pre-added c0.
 
