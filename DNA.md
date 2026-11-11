@@ -92,3 +92,22 @@ For each gate neuron i:
 3. Measure end-to-end perplexity and KL on a text set (wikipedia).  
 
 
+
+## Implementation status (CPU, llama.cpp)
+
+Code: `src/llama-dna.{h,cpp}` (state, calibration, kernels), hooks in `llm_graph_context::build_ffn` (`src/llama-graph.cpp`) and `llama_context` (`src/llama-context.cpp`). The CPU backend exports `ggml_get_type_traits_cpu` through `ggml_backend_reg_get_proc_address` so the active rows use the native quantized dot products.
+
+Enabled with environment variables only, no CLI or API change:
+
+| variable | default | meaning |
+|---|---|---|
+| `LLAMA_DNA=1` | off | enable DNA for dense SwiGLU FFNs whose weights are in plain host memory (no biases, no LoRA, no repacked buffers: use `--no-repack` for Q4_0 on x86) |
+| `LLAMA_DNA_T` | 0.5 | dead zone half-width T |
+| `LLAMA_DNA_ZMODE` | 0 | 0: band = T * mean(abs(g~)) per layer, 1: band = T * std(g~) per neuron |
+| `LLAMA_DNA_BLOCK` | 32 | estimator block size B (8, 16, 32, 64) |
+| `LLAMA_DNA_CALIB` | 4096 | tokens per calibration phase (two phases: gate statistics, then silent bias mu) |
+| `LLAMA_DNA_MIN_ACTIVE` | 0.02 | floor on the active fraction, the band is shrunk at the end of calibration if needed |
+| `LLAMA_DNA_MAX_BATCH` | 32 | ubatches larger than this use the dense FFN after calibration (set to 512 to evaluate perplexity with DNA) |
+| `LLAMA_DNA_VERBOSE` | 0 | print per-layer active fraction and kernel times when the context is freed |
+
+Per layer the runtime state holds the packed gate (1 + 16/B bpw), the transposed f16 copy of W_down (2 bpw) and the per-neuron `med`, `band`, `mu` plus `c0`. Calibration messages are logged at info level (`--verbose` in the tools). With `LLAMA_DNA_T=0` every neuron is active and the output equals the dense FFN (checked: identical perplexity on F16 and Q4_0 test models).

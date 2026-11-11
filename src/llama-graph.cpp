@@ -1,6 +1,7 @@
 #include "llama-graph.h"
 
 #include "llama-impl.h"
+#include "llama-dna.h"
 #include "llama-model.h"
 #include "llama-moe-cache.h"
 #include "llama-batch.h"
@@ -1583,6 +1584,7 @@ llm_graph_context::llm_graph_context(const llm_graph_params & params) :
     moe_cache        (params.moe_cache),
     prec_policy      (params.prec_policy),
     hdmd             (params.hdmd),
+    dna              (params.dna),
     layer_inp_dev    (params.layer_inp_dev),
     layer_inp_src    (params.layer_inp_src),
     h_nextn_dev      (params.h_nextn_dev),
@@ -2011,6 +2013,34 @@ ggml_tensor * llm_graph_context::build_ffn(
     GGML_ASSERT(!gate_s || !is_scaled_low_precision(gate) || !has_lora(gate));
     GGML_ASSERT(!down_s || !is_scaled_low_precision(down) || !has_lora(down));
 
+    llama_dna_layer * dna_layer = nullptr;
+    if (dna && !cparams.warmup && il >= 0 && gate && up && down && type_op == LLM_FFN_SILU && type_gate == LLM_FFN_PAR &&
+        !up_b && !gate_b && !down_b && !up_s && !gate_s && !down_s && !act_scales &&
+        !has_lora(up) && !has_lora(gate) && !has_lora(down) && hparams.swiglu_clamp_shexp[il] <= 1e-6f &&
+        cur->type == GGML_TYPE_F32 && cur->ne[2] == 1 && cur->ne[3] == 1) {
+        dna_layer = dna->get_layer(il, gate, up, down);
+    }
+
+    if (dna_layer && llama_dna::layer_is_predict(dna_layer)) {
+        if (cur->ne[1] > dna->params.max_batch) {
+            dna_layer = nullptr; // dense FFN, no observer needed after calibration
+        }
+    }
+
+    if (dna_layer && llama_dna::layer_is_predict(dna_layer)) {
+        ggml_tensor * args[3] = { cur, gate, up };
+        cur = ggml_custom_4d(ctx0, GGML_TYPE_F32, gate->ne[1], cur->ne[1], 1, 1, args, 3, llama_dna::op_route, GGML_N_TASKS_MAX, dna_layer);
+        cb(cur, "dna_delta", il);
+
+        ggml_tensor * args_down[1] = { cur };
+        cur = ggml_custom_4d(ctx0, GGML_TYPE_F32, down->ne[1], cur->ne[1], 1, 1, args_down, 1, llama_dna::op_down, GGML_N_TASKS_MAX, dna_layer);
+        cb(cur, "dna_down", il);
+
+        return cur;
+    }
+
+    ggml_tensor * inp = cur;
+
     ggml_tensor * tmp = up ? build_lora_mm(up, cur) : cur;
     cb(tmp, "ffn_up", il);
 
@@ -2048,6 +2078,13 @@ ggml_tensor * llm_graph_context::build_ffn(
             cb(cur, "ffn_gate_s", il);
         }
 
+        if (dna_layer) {
+            // calibration: observe the dense gate/up outputs, the FFN result is unchanged
+            ggml_tensor * args[3] = { inp, cur, tmp };
+            ggml_tensor * obs = ggml_custom_4d(ctx0, GGML_TYPE_F32, 1, 1, 1, 1, args, 3, llama_dna::op_observe, GGML_N_TASKS_MAX, dna_layer);
+            cb(obs, "dna_observe", il);
+            ggml_build_forward_expand(gf, obs);
+        }
     } else {
         cur = tmp;
     }

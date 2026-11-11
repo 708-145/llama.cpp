@@ -24,6 +24,8 @@ struct llama_prec_policy;
 struct llama_hadamard;
 
 class llama_moe_cache;
+class llama_dna;
+struct llama_dna_layer;
 
 struct llama_memory_context_i;
 
@@ -811,6 +813,9 @@ struct llm_graph_params {
 
     const llama_hadamard * hdmd = nullptr;
 
+    llama_dna * dna       = nullptr;
+    uint32_t    dna_epoch = 0; // changes when a DNA layer switches from calibration to prediction
+
     ggml_tensor * layer_inp_dev = nullptr; // own layer input device buffer (write)
     ggml_tensor * layer_inp_src = nullptr; // ctx_other's layer input device buffer (read)
     ggml_tensor * h_nextn_dev   = nullptr; // own h_nextn device buffer (write)
@@ -877,6 +882,10 @@ struct llm_graph_params {
         }
 
         if (n_outputs != other.n_outputs) {
+            return false;
+        }
+
+        if (dna_epoch != other.dna_epoch) {
             return false;
         }
 
@@ -1085,6 +1094,8 @@ struct llm_graph_context {
     const llama_prec_policy * prec_policy;
 
     const llama_hadamard * hdmd;
+
+    llama_dna * dna;
 
     ggml_tensor * layer_inp_dev;
     ggml_tensor * layer_inp_src;
