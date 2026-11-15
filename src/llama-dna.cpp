@@ -277,15 +277,11 @@ static void llama_dna_row_to_float(const ggml_tensor * w, int64_t row, float * d
 
 static bool llama_dna_row_is_readable(const ggml_tensor * w) {
     if (!w || !w->data || !w->buffer || !ggml_backend_buffer_is_host(w->buffer)) {
-        fprintf(stderr, "DNA_DEBUG: tensor %s rejected: data=%p buffer=%p is_host=%d type=%d\n", w ? w->name : "(null)",
-            w ? (void *) w->data : nullptr, w ? (void *) w->buffer : nullptr,
-            w && w->buffer ? ggml_backend_buffer_is_host(w->buffer) : 0, w ? (int) w->type : -1);
         return false;
     }
     // repacked extra buffer types have a different data layout
     const std::string name = ggml_backend_buffer_name(w->buffer);
     if (name != "CPU" && name != "CPU_Mapped") {
-        fprintf(stderr, "DNA_DEBUG: tensor %s rejected: buffer name '%s' (type %d)\n", w->name, name.c_str(), (int) w->type);
         return false;
     }
     return w->type == GGML_TYPE_F32 || ggml_get_type_traits(w->type)->to_float != nullptr;
