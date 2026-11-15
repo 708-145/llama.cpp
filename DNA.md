@@ -110,4 +110,66 @@ Enabled with environment variables only, no CLI or API change:
 | `LLAMA_DNA_MAX_BATCH` | 32 | ubatches larger than this use the dense FFN after calibration (set to 512 to evaluate perplexity with DNA) |
 | `LLAMA_DNA_VERBOSE` | 0 | print per-layer active fraction and kernel times when the context is freed |
 
-Per layer the runtime state holds the packed gate (1 + 16/B bpw), the transposed f16 copy of W_down (2 bpw) and the per-neuron `med`, `band`, `mu` plus `c0`. Calibration messages are logged at info level (`--verbose` in the tools). With `LLAMA_DNA_T=0` every neuron is active and the output equals the dense FFN (checked: identical perplexity on F16 and Q4_0 test models).
+## Usage / How to run
+
+DNA is enabled via environment variables only — no CLI or API change is needed:
+
+```bash
+# Enable DNA with verbose stats (stats print when the context is freed, i.e. on exit)
+# NOTE: the common CLI sets log verbosity to ERROR by default, so you must raise it
+# with -lv 3 (INFO) or -lv 2 (WARN) to see DNA startup and per-layer messages.
+LLAMA_DNA=1 LLAMA_DNA_VERBOSE=1 ./llama-cli -m model-f32.gguf -p "hello world" -lv 3
+
+# DNA disabled (default)
+./llama-cli -m model-f32.gguf -p "hello world"
+```
+
+The common CLI (`tools/cli/`) sets `params.verbosity = LOG_LEVEL_ERROR` by default
+(`tools/cli/cli.cpp:36`), which suppresses all `LLAMA_LOG_INFO` / `LLAMA_LOG_WARN`
+messages — including the "DNA enabled" startup line and per-layer "DNA disabled"
+warnings. Use `-lv 3` (INFO) or `-lv 2` (WARN) to see them.
+
+Stats are printed per layer at context destruction:
+
+```
+DNA: layer  3: 12345 tokens predicted, active = 12.5%, per token: observe 0.001 ms, route 0.004 ms, down 0.003 ms
+```
+
+- `active = 12.5%` is the fraction of FFN neurons actually computed — lower means more compute saved.
+- Calibration messages are logged at info level (`--verbose` in the tools).
+- With `LLAMA_DNA_T=0` every neuron is active and the output equals the dense FFN (checked: identical perplexity on F16 and Q4_0 test models).
+
+DNA only takes effect on layers that pass all of these checks (enforced in `llm_graph_context::build_ffn` and `llama_dna_layer::get_layer`):
+
+- Dense SwiGLU FFN (`type_op == LLM_FFN_SILU && type_gate == LLM_FFN_PAR`)
+- Weights in plain host memory (buffer name `"CPU"` or `"CPU_Mapped"`; repacked extra buffers rejected)
+- Weight type F32 or convertible via `ggml_get_type_traits(type)->to_float`
+- No biases (`up_b`, `gate_b`, `down_b` all null)
+- No per-tensor scales (`up_s`, `gate_s`, `down_s` all null; scaled low-precision types NVFP4/F8_E4M3 rejected)
+- No LoRA on gate/up/down
+- F32 activations (`cur->type == GGML_TYPE_F32`, 2D tensor)
+- Batch size ≤ `LLAMA_DNA_MAX_BATCH` (default 32); larger batches fall back to dense FFN
+- Model not in `no_alloc` mode
+
+Note: quantized GGUF models (e.g. Q4_0, IQ4_XS) use per-tensor scales and repacked buffers, so DNA layers are rejected for those models. Use an unquantized F32 model to test DNA.
+
+## Known restrictions
+
+The following restrictions are currently enforced. Each has a corresponding TODO to lift it.
+
+| # | Restriction | TODO |
+|---|-------------|------|
+| 0 | **silent DNA skip** — DNA silently skips if requirements (see below) aren't met. | Need to print the skip reason in all logging modes |
+| 1 | **CPU backend only** — DNA ops (`op_route`, `op_down`) have no GPU/HIP/SYCL backend implementations. | This is fine and accepted |
+| 2 | **Dense SwiGLU FFNs only** — MoE / shared-expert / other activation variants are skipped (`type_op == LLM_FFN_SILU && type_gate == LLM_FFN_PAR`). | TODO: extend support to MoE layers and other activation functions. |
+| 3 | **No biases** — `up_b`, `gate_b`, `down_b` must all be null. | TODO: support per-neuron bias tensors in the delta down projection. |
+| 4 | **No per-tensor scales** — `up_s`, `gate_s`, `down_s` must all be null; scaled low-precision types (NVFP4/F8_E4M3) rejected. | TODO: support quantized weight scales in the XOR estimator and down projection. |
+| 5 | **No LoRA** — `has_lora(up/gate/down)` must be false. | TODO: combine DNA with LoRA path (skip neurons before LoRA adaptation). |
+| 6 | **Weights in plain host memory only** — buffer name must be `"CPU"` or `"CPU_Mapped"`; repacked extra buffers rejected (`llama_dna_row_is_readable`). | TODO: support repacked / extra-buffer weight layouts by unpacking on the fly or adding a repacked path. |
+| 7 | **F32 activations only** — `cur->type == GGML_TYPE_F32` required. | TODO: support quantized activations (all GGUF quant types) in route/down kernels. |
+| 8 | **Batch size limit** — ubatches larger than `LLAMA_DNA_MAX_BATCH` (default 32) fall back to dense FFN. | TODO: implement batched route/down for large batches to avoid the dense fallback. |
+| 9 | **Not compatible with `no_alloc` mode** — DNA is only created when `!model.no_alloc()`. | TODO: support DNA in metadata-only / no_alloc model loading. |
+| 10 | **Stats print only at context destruction** — no real-time or per-token stats during inference. | TODO: add periodic / per-turn stats logging (e.g. after each turn in llama-cli). |
+| 11 | **`--no-repack` referenced in the env table does not exist** as a CLI flag in this codebase. | TODO: implement `--no-repack` CLI flag, or remove the reference and document the required GGUF load mode instead. |
+
+Per layer the runtime state holds the packed gate (1 + 16/B bpw), the transposed f16 copy of W_down (2 bpw) and the per-neuron `med`, `band`, `mu` plus `c0`. Calibration messages are logged at info level (`--verbose` in the tools).
