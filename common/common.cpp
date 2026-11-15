@@ -1700,6 +1700,13 @@ struct llama_model_params common_model_params_to_llama(common_params & params) {
     mparams.use_extra_bufts = !params.no_extra_bufts;
     mparams.no_host         = params.no_host;
 
+    // DNA needs mmap'ed host weights and no repacked extra buffers; already forced by arg
+    // parsing, assert to catch tools that bypass it.
+    if (params.dna) {
+        GGML_ASSERT(mparams.load_mode == LLAMA_LOAD_MODE_MMAP || mparams.load_mode == LLAMA_LOAD_MODE_MMAP_MLOCK);
+        GGML_ASSERT(!mparams.use_extra_bufts);
+    }
+
     if (params.kv_overrides.empty()) {
         mparams.kv_overrides = NULL;
     } else {
@@ -1767,6 +1774,7 @@ struct llama_context_params common_context_params_to_llama(const common_params &
     cparams.op_offload        = !params.no_op_offload;
     cparams.swa_full          = params.swa_full;
     cparams.kv_unified        = params.kv_unified;
+    cparams.dna               = params.dna;
 
     cparams.type_k = params.cache_type_k;
     cparams.type_v = params.cache_type_v;

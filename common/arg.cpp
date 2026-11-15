@@ -904,6 +904,23 @@ static bool common_params_parse_ex(int argc, char ** argv, common_params_context
         throw std::invalid_argument("error: --prompt-cache-all not supported in interactive mode yet\n");
     }
 
+    if (params.dna) {
+        if (params.load_mode != LLAMA_LOAD_MODE_AUTO &&
+            params.load_mode != LLAMA_LOAD_MODE_MMAP && params.load_mode != LLAMA_LOAD_MODE_MMAP_MLOCK) {
+            throw std::invalid_argument(string_format(
+                "error: DNA requires memory-mapped weights, but --load-mode was set to \"%s\"; use --load-mode=mmap or remove the override (DNA reads host weights directly)\n",
+                llama_load_mode_name(params.load_mode)));
+        }
+        if (params.load_mode == LLAMA_LOAD_MODE_AUTO) {
+            params.load_mode = LLAMA_LOAD_MODE_MMAP;
+        }
+        if (params.no_extra_bufts) {
+            // explicitly disabled repacking: compatible
+        } else {
+            params.no_extra_bufts = true; // DNA is forced to no-repack
+        }
+    }
+
     const bool skip_model_download =
         // server will call common_params_handle_models() later, so we skip it here
         ctx_arg.ex == LLAMA_EXAMPLE_SERVER ||
@@ -2398,6 +2415,13 @@ common_params_context common_params_parser_init(common_params & params, llama_ex
             params.no_extra_bufts = !value;
         }
     ).set_env("LLAMA_ARG_REPACK"));
+    add_opt(common_arg(
+        {"--dna"},
+        "enable Dynamic Neuron Activation (DNA); requires --load-mode=mmap and --no-repack (both forced; explicit overrides throw an error)",
+        [](common_params & params) {
+            params.dna = true;
+        }
+    ).set_env("LLAMA_ARG_DNA"));
     add_opt(common_arg(
         {"--no-host"},
         "bypass host buffer allowing extra buffers to be used",

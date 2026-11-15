@@ -1697,6 +1697,12 @@ bool llama_model_base::load_tensors(llama_model_loader & ml) {
         }
     }
 
+    // load_mode is already forced to mmap when DNA is on; if the platform/device demoted
+    // it to none above, that is now a hard error.
+    if (!ml.use_mmap && params.load_mode == LLAMA_LOAD_MODE_MMAP) {
+        throw std::runtime_error("mmap mode requested but mmap is not available");
+    }
+
     // resolve AUTO on systems without mmap support (e.g. iGPUs): fall back to OFF unless mmap is in use; see #28160, #31943
     if (ml.lazy.mode == LLAMA_LAZY_MODE_AUTO && !ml.use_mmap) {
         for (const auto & dev : devices) {

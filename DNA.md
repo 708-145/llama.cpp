@@ -97,11 +97,22 @@ For each gate neuron i:
 
 Code: `src/llama-dna.{h,cpp}` (state, calibration, kernels), hooks in `llm_graph_context::build_ffn` (`src/llama-graph.cpp`) and `llama_context` (`src/llama-context.cpp`). The CPU backend exports `ggml_get_type_traits_cpu` through `ggml_backend_reg_get_proc_address` so the active rows use the native quantized dot products.
 
-Enabled with environment variables only, no CLI or API change:
+## Enable / disable
 
-| variable | default | meaning |
+DNA is controlled by `--dna` (general setting, `common/arg.cpp`, env `LLAMA_ARG_DNA`) and the booleans flow `common_params.dna` → `mparams` (`common_model_params_to_llama`) and `cparams.dna` (`common_context_params_to_llama`). The runtime enablement now checks `cparams.dna` (`src/llama-context.cpp`), not an env var. Per-layer checks remain in `llama_dna::get_layer()` (`src/llama-dna.cpp:525`) and `llama_dna_row_is_readable()` (`src/llama-dna.cpp:278).
+
+When `--dna` is set, the CLI forces the load defaults DNA needs and will error if they were overridden explicitly:
+
+- `--load-mode=mmap` (or `mmap+mlock`); if a device demotes mmap→none, that's now a hard error (`src/llama-model.cpp:1700`), matching `llama-model-loader.cpp:917` for unsupported platforms
+- `--no-repack` (i.e. `use_extra_bufts=false`)
+
+| switch | default | effect |
 |---|---|---|
-| `LLAMA_DNA=1` | off | enable DNA for dense SwiGLU FFNs whose weights are in plain host memory (no biases, no LoRA, no repacked buffers: use `--no-repack` for Q4_0 on x86) |
+| `--dna` / `LLAMA_ARG_DNA` | off | enable DNA for dense SwiGLU FFNs whose weights are in plain host memory (no biases, no LoRA, no repacked buffers) |
+| `--no-dna` | — | explicitly disable DNA |
+
+| tuning variable | default | meaning |
+|---|---|---|
 | `LLAMA_DNA_T` | 0.5 | dead zone half-width T |
 | `LLAMA_DNA_ZMODE` | 0 | 0: band = T * mean(abs(g~)) per layer, 1: band = T * std(g~) per neuron |
 | `LLAMA_DNA_BLOCK` | 32 | estimator block size B (8, 16, 32, 64) |
@@ -112,13 +123,11 @@ Enabled with environment variables only, no CLI or API change:
 
 ## Usage / How to run
 
-DNA is enabled via environment variables only — no CLI or API change is needed:
-
 ```bash
 # Enable DNA with verbose stats (stats print when the context is freed, i.e. on exit)
 # NOTE: the common CLI sets log verbosity to ERROR by default, so you must raise it
 # with -lv 3 (INFO) or -lv 2 (WARN) to see DNA startup and per-layer messages.
-LLAMA_DNA=1 LLAMA_DNA_VERBOSE=1 ./llama-cli -m model-f32.gguf -p "hello world" -lv 3
+./llama-cli --dna -m model-f32.gguf -p "hello world" -lv 3
 
 # DNA disabled (default)
 ./llama-cli -m model-f32.gguf -p "hello world"
@@ -217,10 +226,10 @@ LLAMA_DNA=1 LLAMA_DNA_VERBOSE=1 ./llama-cli -m model-f32.gguf -p "hello" -lv 3 -
 LLAMA_DNA=1 LLAMA_ARG_FIT=0 ./llama-cli -m model-f32.gguf -p "hello"
 ```
 
-> Note: `--no-repack` is **not** what makes DNA work here. Repacking is orthogonal
-> (`use_extra_bufts`, default on); the flag that matters is `--fit off`.
-> Also note in the README the env table claims `--no-repack` covers repacked buffers — that
-> statement is true and still applies, just unrelated to `no_alloc`.
+> **--fit off is orthogonal to DNA enablement.** `--fit` uses `no_alloc=true` for the
+> probe only; DNA's checks no longer gate on it. Use `--dna` (not `LLAMA_DNA=1`) — the
+> env var is removed. DNA keeps tuning knobs via env (`LLAMA_DNA_T`, etc. in
+> `src/llama-dna.cpp:453-463`).
 
 ## compile:
 
@@ -236,18 +245,18 @@ The following restrictions are currently enforced. Each has a corresponding TODO
 
 | # | Restriction | TODO |
 |---|-------------|------|
-| 0 | **Silent DNA skip** — DNA previously skipped layers without any visible message when requirements weren't met (log level was WARN/INFO, suppressed by the CLI's default ERROR verbosity). | ✅ Fixed: skip reasons now logged at `LLAMA_LOG_ERROR` level in `llama-dna.cpp`, `llama-graph.cpp`, and `llama-context.cpp`, so they appear even at default CLI verbosity. |
-| 1 | **CPU backend only** — DNA ops (`op_route`, `op_down`) have no GPU/HIP/SYCL backend implementations. | This is fine and accepted |
+| 0 ✅ | **Silent DNA skip** — DNA previously skipped layers without any visible message when requirements weren't met (log level was WARN/INFO, suppressed by the CLI's default ERROR verbosity). | ✅ Fixed: skip reasons now logged at `LLAMA_LOG_ERROR` level in `llama-dna.cpp`, `llama-graph.cpp`, and `llama-context.cpp`, so they appear even at default CLI verbosity. |
+| 1 ✅ | **CPU backend only** — DNA ops (`op_route`, `op_down`) have no GPU/HIP/SYCL backend implementations. | This is fine and accepted |
 | 2 | **Dense SwiGLU FFNs only** — MoE / shared-expert / other activation variants are skipped (`type_op == LLM_FFN_SILU && type_gate == LLM_FFN_PAR`). | TODO: extend support to MoE layers and other activation functions. |
 | 3 | **No biases** — `up_b`, `gate_b`, `down_b` must all be null. | TODO: support per-neuron bias tensors in the delta down projection. |
 | 4 | **No per-tensor scales** — `up_s`, `gate_s`, `down_s` must all be null; scaled low-precision types (NVFP4/F8_E4M3) rejected. | TODO: support quantized weight scales in the XOR estimator and down projection. |
-| 5 | **No LoRA** — `has_lora(up/gate/down)` must be false. | TODO: combine DNA with LoRA path (skip neurons before LoRA adaptation). |
-| 6 | **Weights in plain host memory only** — buffer name must be `"CPU"` or `"CPU_Mapped"`; repacked extra buffers rejected (`llama_dna_row_is_readable`). | TODO: support repacked / extra-buffer weight layouts by unpacking on the fly or adding a repacked path. |
+| 5 ✅ | **No LoRA** — `has_lora(up/gate/down)` must be false. | This is fine and accepted |
+| 6 ✅ | **Weights in plain host memory only** — default is mmap and no repack | currently also needs --fit off |
 | 7 | **F32 activations only** — `cur->type == GGML_TYPE_F32` required. | TODO: support quantized activations (all GGUF quant types) in route/down kernels. |
 | 8 | **Batch size limit** — ubatches larger than `LLAMA_DNA_MAX_BATCH` (default 32) fall back to dense FFN. | TODO: implement batched route/down for large batches to avoid the dense fallback. |
-| 9 | ~~**Not compatible with `no_alloc` mode**~~ — Previously DNA was disabled when `model.no_alloc()` was true, but that flag is misleading: `--fit` (default on) does an internal `no_alloc=true` probe load, and the real inference model always has `no_alloc=false`. The guard has been removed; per-layer weight readability (`llama_dna_row_is_readable`) already rejects genuinely metadata-only loads. | ✅ Fixed: whole-model `no_alloc` gate removed from `llama-context.cpp` (see "The `no_alloc` / `--fit` footgun (root cause)" above). |
+| 9 ✅ | ~~**Not compatible with `no_alloc` mode**~~ — Previously DNA was disabled when `model.no_alloc()` was true, but that flag is misleading: `--fit` (default on) does an internal `no_alloc=true` probe load, and the real inference model always has `no_alloc=false`. The guard has been removed; per-layer weight readability (`llama_dna_row_is_readable`) already rejects genuinely metadata-only loads. | ✅ Fixed: whole-model `no_alloc` gate removed from `llama-context.cpp` (see "The `no_alloc` / `--fit` footgun (root cause)" above). |
 | 10 | **Stats print only at context destruction** — no real-time or per-token stats during inference. | TODO: add periodic / per-turn stats logging (e.g. after each turn in llama-cli). |
-| 11 | ~~**`--no-repack` referenced in the env table does not exist**~~ — The flag now exists (`common/arg.cpp:2395` `-nr`/`--no-repack`); it gates the CPU repack extra-buffer (`use_extra_bufts`, default on). Pass `--no-repack` on CPU (x86) when using a Q4_0 model so DNA layers aren't rejected for repacked buffers. | ✅ Fixed: `--no-repack` is wired through `common_params.no_extra_bufts` → `mparams.use_extra_bufts` (`common/common.cpp:1700`). Note: this is unrelated to `no_alloc` — the `no_alloc` workaround is `--fit off` (see above). !! no-repack should be the default for DNA mode !! |
-| 12 | **mmap mode** | TODO: needs to work in mmap mode! DNA will use neurons sparsely so most can stay on disk | 
+| 11 ✅ | ~~**`--no-repack` referenced in the env table does not exist**~~ — The flag now exists (`common/arg.cpp:2395` `-nr`/`--no-repack`); it gates the CPU repack extra-buffer (`use_extra_bufts`, default on). DNA forces `--no-repack` on (`common/arg.cpp:917` post-parse: `params.no_extra_bufts = true`, so `use_extra_bufts=false` down to `make_cpu_buft_list`, `src/llama-model.cpp:1262`), and throws if the user supplied an incompatible explicit override. | ✅ Fixed: `--dna` defaults `--load-mode=mmap` and `--no-repack` via parse-time mutation in `common/arg.cpp` (before `common_model_params_to_llama`, which also asserts the invariants). DNA no longer depends on the user remembering `--no-repack`. `--fit` still correctly forces `no_alloc=true` for probe measurement only; the `no_alloc` workaround (`--fit off`) is orthogonal. |
+| 12 ✅ | **mmap mode** | Works today via `CPU_Mapped` buffer (`ggml/src/ggml-backend.cpp:2958`), which DNA whitelists (`src/llama-dna.cpp:284`), so `w->data` reads valid bytes via the mapping. Remaining gap is sparse/lazy I/O: `lazy_mode` (`TENSOR_READ_LAZY`, `common/arg.cpp:2681`, `src/llama-model-loader.cpp:1183`, requires mmap) and per-neuron unmapping (`unmap_weight`, `src/llama-model-loader.cpp:1620`) are not implemented for DNA, so silent rows still cost a page fault per touch and a cold neuron's 4K page is only skipped if never touched. | TODO: per-neuron read path / `madvise(DONTNEED)` for silent rows; today DNA reads `w->data` rows directly and will fault any touched page. |
 
 Per layer the runtime state holds the packed gate (1 + 16/B bpw), the transposed f16 copy of W_down (2 bpw) and the per-neuron `med`, `band`, `mu` plus `c0`. Calibration messages are logged at info level (`--verbose` in the tools).
