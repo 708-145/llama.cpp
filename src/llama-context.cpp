@@ -615,8 +615,12 @@ llama_context::llama_context(
             LLAMA_LOG_INFO("%s: pipeline parallelism enabled\n", __func__);
         }
 
-        if (const char * env = getenv("LLAMA_DNA"); env && atoi(env) != 0 && !model.no_alloc()) {
-            dna = std::make_unique<llama_dna>(model, backend_cpu, llama_dna_params::from_env());
+        if (const char * env = getenv("LLAMA_DNA"); env && atoi(env) != 0) {
+            if (model.no_alloc()) {
+                LLAMA_LOG_ERROR("%s: DNA requested via LLAMA_DNA but model is in no_alloc mode, DNA disabled\n", __func__);
+            } else {
+                dna = std::make_unique<llama_dna>(model, backend_cpu, llama_dna_params::from_env());
+            }
         }
 
         if (cparams.moe_cache_size > 0) {

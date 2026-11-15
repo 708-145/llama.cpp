@@ -159,7 +159,7 @@ The following restrictions are currently enforced. Each has a corresponding TODO
 
 | # | Restriction | TODO |
 |---|-------------|------|
-| 0 | **silent DNA skip** — DNA silently skips if requirements (see below) aren't met. | Need to print the skip reason in all logging modes |
+| 0 | **Silent DNA skip** — DNA previously skipped layers without any visible message when requirements weren't met (log level was WARN/INFO, suppressed by the CLI's default ERROR verbosity). | ✅ Fixed: skip reasons now logged at `LLAMA_LOG_ERROR` level in `llama-dna.cpp`, `llama-graph.cpp`, and `llama-context.cpp`, so they appear even at default CLI verbosity. |
 | 1 | **CPU backend only** — DNA ops (`op_route`, `op_down`) have no GPU/HIP/SYCL backend implementations. | This is fine and accepted |
 | 2 | **Dense SwiGLU FFNs only** — MoE / shared-expert / other activation variants are skipped (`type_op == LLM_FFN_SILU && type_gate == LLM_FFN_PAR`). | TODO: extend support to MoE layers and other activation functions. |
 | 3 | **No biases** — `up_b`, `gate_b`, `down_b` must all be null. | TODO: support per-neuron bias tensors in the delta down projection. |

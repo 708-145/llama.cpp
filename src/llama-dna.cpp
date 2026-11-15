@@ -514,7 +514,7 @@ llama_dna_layer * llama_dna::get_layer(int il, const ggml_tensor * gate, const g
     auto & slot = layers[gate];
 
     auto reject = [&](const char * why) -> llama_dna_layer * {
-        LLAMA_LOG_WARN("%s: layer %d: DNA disabled: %s\n", __func__, il, why);
+        LLAMA_LOG_ERROR("%s: layer %d: DNA disabled: %s\n", __func__, il, why);
         return nullptr;
     };
 

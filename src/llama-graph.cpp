@@ -2014,11 +2014,15 @@ ggml_tensor * llm_graph_context::build_ffn(
     GGML_ASSERT(!down_s || !is_scaled_low_precision(down) || !has_lora(down));
 
     llama_dna_layer * dna_layer = nullptr;
-    if (dna && !cparams.warmup && il >= 0 && gate && up && down && type_op == LLM_FFN_SILU && type_gate == LLM_FFN_PAR &&
-        !up_b && !gate_b && !down_b && !up_s && !gate_s && !down_s && !act_scales &&
-        !has_lora(up) && !has_lora(gate) && !has_lora(down) && hparams.swiglu_clamp_shexp[il] <= 1e-6f &&
-        cur->type == GGML_TYPE_F32 && cur->ne[2] == 1 && cur->ne[3] == 1) {
-        dna_layer = dna->get_layer(il, gate, up, down);
+    if (dna && !cparams.warmup && il >= 0) {
+        if (gate && up && down && type_op == LLM_FFN_SILU && type_gate == LLM_FFN_PAR &&
+            !up_b && !gate_b && !down_b && !up_s && !gate_s && !down_s && !act_scales &&
+            !has_lora(up) && !has_lora(gate) && !has_lora(down) && hparams.swiglu_clamp_shexp[il] <= 1e-6f &&
+            cur->type == GGML_TYPE_F32 && cur->ne[2] == 1 && cur->ne[3] == 1) {
+            dna_layer = dna->get_layer(il, gate, up, down);
+        } else {
+            LLAMA_LOG_ERROR("%s: layer %d: DNA skipped (FFN requirements not met)\n", __func__, il);
+        }
     }
 
     if (dna_layer && llama_dna::layer_is_predict(dna_layer)) {
