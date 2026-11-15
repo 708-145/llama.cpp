@@ -616,11 +616,11 @@ llama_context::llama_context(
         }
 
         if (const char * env = getenv("LLAMA_DNA"); env && atoi(env) != 0) {
-            if (model.no_alloc()) {
-                LLAMA_LOG_ERROR("%s: DNA requested via LLAMA_DNA but model is in no_alloc mode, DNA disabled\n", __func__);
-            } else {
-                dna = std::make_unique<llama_dna>(model, backend_cpu, llama_dna_params::from_env());
-            }
+            // Note: model.no_alloc() is not a valid gate here. --fit (default on) runs a
+            // no_alloc probe load internally, but the real inference model is loaded with
+            // no_alloc=false. Per-layer weight readability is already enforced by
+            // llama_dna::get_layer() via llama_dna_row_is_readable().
+            dna = std::make_unique<llama_dna>(model, backend_cpu, llama_dna_params::from_env());
         }
 
         if (cparams.moe_cache_size > 0) {

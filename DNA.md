@@ -149,9 +149,86 @@ DNA only takes effect on layers that pass all of these checks (enforced in `llm_
 - No LoRA on gate/up/down
 - F32 activations (`cur->type == GGML_TYPE_F32`, 2D tensor)
 - Batch size ≤ `LLAMA_DNA_MAX_BATCH` (default 32); larger batches fall back to dense FFN
-- Model not in `no_alloc` mode
 
 Note: quantized GGUF models (e.g. Q4_0, IQ4_XS) use per-tensor scales and repacked buffers, so DNA layers are rejected for those models. Use an unquantized F32 model to test DNA.
+
+### The `no_alloc` / `--fit` footgun (root cause)
+
+`llama_model_params.no_alloc` (`common/common.h:784`, default `false`) is **not** set by any
+CLI flag. It flows unchanged through `common_model_params_to_llama()` (`common/common.cpp:1719`)
+→ `common_model_load()` → `llama_model_load_from_file()`.
+
+The trap: **`--fit` is on by default** (`common/common.h:497: bool fit_params = true;`).
+Before the real model is loaded, `common_init_result` calls `common_fit_apply()`
+(`common/common.cpp:1281`), which runs `common_fit_params()` → `common_params_fit_impl()`
+(`common/fit.cpp:980`), which measures memory via
+
+```cpp
+// common/fit.cpp:70-72 (also :178-180 in common_fit_measure)
+llama_model_params mparams_copy = *mparams;
+mparams_copy.no_alloc  = true;
+mparams_copy.load_mode = LLAMA_LOAD_MODE_NONE;
+```
+
+This is a *probe-only metadata pass* to estimate device memory. **But** the real inference
+model is then loaded with the *original* `mparams` — and, crucially, the probe itself creates
+a `llama_context` (`llama_init_from_model`, `fit.cpp:79`) whose constructor
+(`llama_context()`, `src/llama-context.cpp:618-624`) evaluates
+
+```cpp
+if (const char * env = getenv("LLAMA_DNA"); env && atoi(env) != 0) {
+    if (model.no_alloc()) {
+        LLAMA_LOG_ERROR("%s: DNA requested via LLAMA_DNA but model is in no_alloc mode, DNA disabled\n", __func__);
+    } else {
+        dna = std::make_unique<llama_dna>(...);
+    }
+}
+```
+
+For the **probe** model this fires with `no_alloc == true`, so DNA is disabled **for every
+probe context**, and the error is printed — even though the real model (loaded next with
+`no_alloc == false`) would have worked. That is exactly the symptom:
+
+```
+Loading model... |0.00.382.135 E llama_context: DNA requested via LLAMA_DNA but model is in
+no_alloc mode, DNA disabled
+```
+
+**Why `model.no_alloc()` is the wrong gate.** The `no_alloc` flag is a global, coarse
+"metadata-only" marker plumbed through `LlamaFastSearch` — it is not a per-weight property.
+DNA's real requirements are *per-tensor*: plain host memory, exact buffer name `"CPU"` /
+`"CPU_Mapped"`, valid `w->data` pointer. Those are already enforced per layer by
+`llama_dna_row_is_readable()` (`src/llama-dna.cpp:278-288`), which checks
+`w->data`, `w->buffer`, `ggml_backend_buffer_is_host()` and the buffer name.
+
+**Fix.** The whole-model `model.no_alloc()` gate was removed from `src/llama-context.cpp:618-624`:
+DNA is now always created when `LLAMA_DNA != 0`; per-layer readability checks in
+`llama_dna::get_layer()` (`src/llama-dna.cpp:525`) reject genuinely metadata-only loads
+(same `LLAMA_LOG_ERROR` path, per layer). No other code depends on the model-level `no_alloc`
+gate for DNA.
+
+**Workarounds (without the fix):**
+
+```bash
+# 1) Disable the fit probe entirely (cleanest workaround)
+LLAMA_DNA=1 LLAMA_DNA_VERBOSE=1 ./llama-cli -m model-f32.gguf -p "hello" -lv 3 --fit off
+
+# 2) Same, via env (see arg.cpp:2873: -fit/--fit, env LLAMA_ARG_FIT)
+LLAMA_DNA=1 LLAMA_ARG_FIT=0 ./llama-cli -m model-f32.gguf -p "hello"
+```
+
+> Note: `--no-repack` is **not** what makes DNA work here. Repacking is orthogonal
+> (`use_extra_bufts`, default on); the flag that matters is `--fit off`.
+> Also note in the README the env table claims `--no-repack` covers repacked buffers — that
+> statement is true and still applies, just unrelated to `no_alloc`.
+
+## compile:
+
+```
+# inside /mnt/c/Users/tobia/Desktop/tobifun/sandbox/forks/llama.cpp
+cmake -B build -DBUILD_SHARED_LIBS=OFF -DLLAMA_CURL=OFF
+cmake --build build --config Release -j4 --target llama-cli
+```
 
 ## Known restrictions
 
@@ -168,8 +245,8 @@ The following restrictions are currently enforced. Each has a corresponding TODO
 | 6 | **Weights in plain host memory only** — buffer name must be `"CPU"` or `"CPU_Mapped"`; repacked extra buffers rejected (`llama_dna_row_is_readable`). | TODO: support repacked / extra-buffer weight layouts by unpacking on the fly or adding a repacked path. |
 | 7 | **F32 activations only** — `cur->type == GGML_TYPE_F32` required. | TODO: support quantized activations (all GGUF quant types) in route/down kernels. |
 | 8 | **Batch size limit** — ubatches larger than `LLAMA_DNA_MAX_BATCH` (default 32) fall back to dense FFN. | TODO: implement batched route/down for large batches to avoid the dense fallback. |
-| 9 | **Not compatible with `no_alloc` mode** — DNA is only created when `!model.no_alloc()`. | TODO: support DNA in metadata-only / no_alloc model loading. |
+| 9 | ~~**Not compatible with `no_alloc` mode**~~ — Previously DNA was disabled when `model.no_alloc()` was true, but that flag is misleading: `--fit` (default on) does an internal `no_alloc=true` probe load, and the real inference model always has `no_alloc=false`. The guard has been removed; per-layer weight readability (`llama_dna_row_is_readable`) already rejects genuinely metadata-only loads. | ✅ Fixed: whole-model `no_alloc` gate removed from `llama-context.cpp` (see "The `no_alloc` / `--fit` footgun (root cause)" above). |
 | 10 | **Stats print only at context destruction** — no real-time or per-token stats during inference. | TODO: add periodic / per-turn stats logging (e.g. after each turn in llama-cli). |
-| 11 | **`--no-repack` referenced in the env table does not exist** as a CLI flag in this codebase. | TODO: implement `--no-repack` CLI flag, or remove the reference and document the required GGUF load mode instead. |
+| 11 | ~~**`--no-repack` referenced in the env table does not exist**~~ — The flag now exists (`common/arg.cpp:2395` `-nr`/`--no-repack`); it gates the CPU repack extra-buffer (`use_extra_bufts`, default on). Pass `--no-repack` on CPU (x86) when using a Q4_0 model so DNA layers aren't rejected for repacked buffers. | ✅ Fixed: `--no-repack` is wired through `common_params.no_extra_bufts` → `mparams.use_extra_bufts` (`common/common.cpp:1700`). Note: this is unrelated to `no_alloc` — the `no_alloc` workaround is `--fit off` (see above). |
 
 Per layer the runtime state holds the packed gate (1 + 16/B bpw), the transposed f16 copy of W_down (2 bpw) and the per-neuron `med`, `band`, `mu` plus `c0`. Calibration messages are logged at info level (`--verbose` in the tools).
