@@ -46,6 +46,14 @@ struct llama_dna_layer {
     const ggml_tensor * up   = nullptr;
     const ggml_tensor * down = nullptr;
 
+    // affine terms (Restrictions 3, 4), copied out at get_layer time; empty = absent
+    std::vector<float> gate_b; // [n_ff]
+    std::vector<float> up_b;   // [n_ff]
+    std::vector<float> down_b; // [n_embd]
+    float gate_s = 1.0f; // per-tensor scalar, applied after gate_b
+    float up_s   = 1.0f; // per-tensor scalar, applied after up_b
+    float down_s = 1.0f; // per-tensor scalar, applied to the down projection result
+
     ggml_vec_dot_t   vec_dot_gate    = nullptr;
     ggml_vec_dot_t   vec_dot_up      = nullptr;
     ggml_from_float_t from_float_gate = nullptr;
@@ -275,6 +283,40 @@ static void llama_dna_row_to_float(const ggml_tensor * w, int64_t row, float * d
     tr->to_float(src, dst, w->ne[0]);
 }
 
+// read a 1-D dense tensor (bias {n} or scale {1}) into an f32 vector; rejects non-host / unreadable tensors
+// forward-declared: llama_dna_row_is_readable is defined below
+static bool llama_dna_row_is_readable(const ggml_tensor * w);
+
+static bool llama_dna_read_dense(const ggml_tensor * w, int64_t n_expect, std::vector<float> & dst) {
+    if (!w) {
+        dst.clear();
+        return true;
+    }
+    if (w->ne[1] != 1 || w->ne[2] != 1 || w->ne[3] != 1 || w->ne[0] != n_expect) {
+        return false;
+    }
+    if (!llama_dna_row_is_readable(w)) {
+        return false;
+    }
+    dst.resize((size_t) n_expect);
+    llama_dna_row_to_float(w, 0, dst.data());
+    return true;
+}
+
+// read a scalar scale tensor {1}; absent -> 1.0f
+static bool llama_dna_read_scale(const ggml_tensor * w, float & s) {
+    s = 1.0f;
+    if (!w) {
+        return true;
+    }
+    std::vector<float> v;
+    if (!llama_dna_read_dense(w, 1, v)) {
+        return false;
+    }
+    s = v[0];
+    return true;
+}
+
 static bool llama_dna_row_is_readable(const ggml_tensor * w) {
     if (!w || !w->data || !w->buffer || !ggml_backend_buffer_is_host(w->buffer)) {
         return false;
@@ -398,21 +440,29 @@ static void llama_dna_finalize_bias(llama_dna_layer & L) {
         }
     }
 
-    // c0 = Wdown @ mu, and the transposed f16 copy of Wdown for the sparse delta projection
+    // c0 = down_s * (Wdown @ mu + down_b), and the transposed f16 copy of Wdown
+    // scaled by down_s for the sparse delta projection, so op_down needs no extra multiply.
+    // Dense order is (Wdown @ h + down_b) * down_s; the delta form becomes
+    // y = c0 + sum_active (down_s * Wdown[:, i]) * (h[i] - mu[i]).
     L.c0.assign(L.n_embd, 0.0f);
     L.down_t.resize((size_t) L.n_ff * L.n_embd);
 
     std::vector<float> rowf(L.n_ff);
+    std::vector<float> rowscaled(L.n_ff);
     std::vector<ggml_fp16_t> rowh(L.n_ff);
     for (int64_t j = 0; j < L.n_embd; ++j) {
         llama_dna_row_to_float(L.down, j, rowf.data());
-        ggml_fp32_to_fp16_row(rowf.data(), rowh.data(), L.n_ff);
+        for (int64_t i = 0; i < L.n_ff; ++i) {
+            rowscaled[i] = rowf[i] * L.down_s;
+        }
+        ggml_fp32_to_fp16_row(rowscaled.data(), rowh.data(), L.n_ff);
         double c = 0.0;
+        const double bj = L.down_b.empty() ? 0.0 : (double) L.down_b[(size_t) j];
         for (int64_t i = 0; i < L.n_ff; ++i) {
             L.down_t[(size_t) i*L.n_embd + j] = rowh[i];
             c += (double) rowf[i] * L.mu[i];
         }
-        L.c0[j] = (float) c;
+        L.c0[j] = (float) ((c + bj) * (double) L.down_s);
     }
 
     LLAMA_LOG_INFO("%s: layer %3d: bias over %u tokens: active = %.1f%%, energy(active) = %.1f%%, energy(bias) = %.1f%%, band scale = %.3f, down_t = %.1f MiB\n",
@@ -508,7 +558,10 @@ llama_dna::~llama_dna() {
     }
 }
 
-llama_dna_layer * llama_dna::get_layer(int il, const ggml_tensor * gate, const ggml_tensor * up, const ggml_tensor * down) {
+llama_dna_layer * llama_dna::get_layer(int il,
+        const ggml_tensor * gate, const ggml_tensor * up, const ggml_tensor * down,
+        const ggml_tensor * gate_b, const ggml_tensor * up_b, const ggml_tensor * down_b,
+        const ggml_tensor * gate_s, const ggml_tensor * up_s, const ggml_tensor * down_s) {
     auto it = layers.find(gate);
     if (it != layers.end()) {
         return it->second.get();
@@ -537,6 +590,28 @@ llama_dna_layer * llama_dna::get_layer(int il, const ggml_tensor * gate, const g
     if (n_embd % 64 != 0) {
         return reject("n_embd is not a multiple of 64");
     }
+    // affine terms: bias shapes must match the neuron / output dims, scales must be scalars;
+    // all must be readable host tensors (no repacked / device-resident affine tensors)
+    std::vector<float> gate_b_v, up_b_v, down_b_v;
+    float gate_s_v = 1.0f, up_s_v = 1.0f, down_s_v = 1.0f;
+    if (!llama_dna_read_dense(gate_b, n_ff, gate_b_v)) {
+        return reject("unreadable or unexpected-shape gate_b");
+    }
+    if (!llama_dna_read_dense(up_b, n_ff, up_b_v)) {
+        return reject("unreadable or unexpected-shape up_b");
+    }
+    if (!llama_dna_read_dense(down_b, n_embd, down_b_v)) {
+        return reject("unreadable or unexpected-shape down_b");
+    }
+    if (!llama_dna_read_scale(gate_s, gate_s_v)) {
+        return reject("unreadable or unexpected-shape gate_s");
+    }
+    if (!llama_dna_read_scale(up_s, up_s_v)) {
+        return reject("unreadable or unexpected-shape up_s");
+    }
+    if (!llama_dna_read_scale(down_s, down_s_v)) {
+        return reject("unreadable or unexpected-shape down_s");
+    }
 
     const ggml_type_traits_cpu * tr_gate = get_traits(gate->type);
     const ggml_type_traits_cpu * tr_up   = get_traits(up->type);
@@ -561,6 +636,13 @@ llama_dna_layer * llama_dna::get_layer(int il, const ggml_tensor * gate, const g
     L.gate     = gate;
     L.up       = up;
     L.down     = down;
+
+    L.gate_b = std::move(gate_b_v);
+    L.up_b   = std::move(up_b_v);
+    L.down_b = std::move(down_b_v);
+    L.gate_s = gate_s_v;
+    L.up_s   = up_s_v;
+    L.down_s = down_s_v;
 
     L.vec_dot_gate    = tr_gate->vec_dot;
     L.vec_dot_up      = tr_up->vec_dot;
@@ -838,6 +920,15 @@ void llama_dna::op_route(ggml_tensor * dst, int ith, int nth, void * userdata) {
             float g, u;
             L.vec_dot_gate((int) L.n_embd, &g, 0, (const char *) L.gate->data + i*L.gate->nb[1], 0, xq_gate.data(), 0, 1);
             L.vec_dot_up  ((int) L.n_embd, &u, 0, (const char *) L.up->data   + i*L.up->nb[1],   0, xq_u,           0, 1);
+            // dense order: (W x + b) * s, then silu(g) * u
+            if (!L.gate_b.empty()) {
+                g += L.gate_b[(size_t) i];
+            }
+            g *= L.gate_s;
+            if (!L.up_b.empty()) {
+                u += L.up_b[(size_t) i];
+            }
+            u *= L.up_s;
             out[i] = llama_dna_silu(g) * u - L.mu[i];
             n_act++;
         }

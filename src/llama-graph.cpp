@@ -2016,12 +2016,20 @@ ggml_tensor * llm_graph_context::build_ffn(
     llama_dna_layer * dna_layer = nullptr;
     if (dna && !cparams.warmup && il >= 0) {
         if (gate && up && down && type_op == LLM_FFN_SILU && type_gate == LLM_FFN_PAR &&
-            !up_b && !gate_b && !down_b && !up_s && !gate_s && !down_s && !act_scales &&
+            !act_scales &&
             !has_lora(up) && !has_lora(gate) && !has_lora(down) && hparams.swiglu_clamp_shexp[il] <= 1e-6f &&
-            cur->type == GGML_TYPE_F32 && cur->ne[2] == 1 && cur->ne[3] == 1) {
-            dna_layer = dna->get_layer(il, gate, up, down);
+            cur->ne[2] == 1 && cur->ne[3] == 1) {
+            dna_layer = dna->get_layer(il, gate, up, down, gate_b, up_b, down_b, gate_s, up_s, down_s);
+            // get_layer logs the precise rejection reason when it returns nullptr
         } else {
             LLAMA_LOG_ERROR("%s: layer %d: DNA skipped (FFN requirements not met)\n", __func__, il);
+        }
+    }
+
+    if (dna_layer && !llama_dna::layer_is_predict(dna_layer)) {
+        if (cur->type != GGML_TYPE_F32) {
+            cur = ggml_cast(ctx0, cur, GGML_TYPE_F32);
+            cb(cur, "dna_x_f32", il);
         }
     }
 
@@ -2032,6 +2040,10 @@ ggml_tensor * llm_graph_context::build_ffn(
     }
 
     if (dna_layer && llama_dna::layer_is_predict(dna_layer)) {
+        if (cur->type != GGML_TYPE_F32) {
+            cur = ggml_cast(ctx0, cur, GGML_TYPE_F32);
+            cb(cur, "dna_x_f32", il);
+        }
         ggml_tensor * args[3] = { cur, gate, up };
         cur = ggml_custom_4d(ctx0, GGML_TYPE_F32, gate->ne[1], cur->ne[1], 1, 1, args, 3, llama_dna::op_route, GGML_N_TASKS_MAX, dna_layer);
         cb(cur, "dna_delta", il);
@@ -2084,6 +2096,7 @@ ggml_tensor * llm_graph_context::build_ffn(
 
         if (dna_layer) {
             // calibration: observe the dense gate/up outputs, the FFN result is unchanged
+            // `inp` carries the F32 cast from the DNA gate above, so op_observe can assume F32
             ggml_tensor * args[3] = { inp, cur, tmp };
             ggml_tensor * obs = ggml_custom_4d(ctx0, GGML_TYPE_F32, 1, 1, 1, 1, args, 3, llama_dna::op_observe, GGML_N_TASKS_MAX, dna_layer);
             cb(obs, "dna_observe", il);

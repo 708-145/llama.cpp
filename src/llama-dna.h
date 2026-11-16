@@ -6,6 +6,13 @@
 // A binary (sign + block scale) estimate of the gate projection routes each neuron to silent or active.
 // Active neurons get the full precision gate/up/down, silent neurons contribute a calibrated bias.
 // Calibration runs on the first tokens of normal inference, no model file or API change is needed.
+//
+// Supported affine terms (Restrictions 3, 4):
+//   up_b / gate_b  / down_b  : per-neuron / per-output biases, stored as f32 vectors
+//   up_s / gate_s  / down_s  : per-tensor scalar scales, shape {1}; applied in dense graph order
+//                              (bias then scale for gate/up, scale after down projection for down)
+// Activations (Restriction 7): non-F32 inputs are cast to F32 in the graph before the DNA ops;
+//                              the kernels always see F32.
 
 #include "ggml.h"
 #include "ggml-backend.h"
@@ -52,7 +59,12 @@ public:
     ~llama_dna();
 
     // state for the dense FFN of layer il, nullptr when the layer cannot use DNA
-    llama_dna_layer * get_layer(int il, const ggml_tensor * gate, const ggml_tensor * up, const ggml_tensor * down);
+    // the *_b / *_s tensors may be nullptr (absent affine terms); non-null ones must be
+    // readable f32 host tensors with shapes gate_b/up_b={n_ff}, down_b={n_embd}, *_s={1}
+    llama_dna_layer * get_layer(int il,
+        const ggml_tensor * gate, const ggml_tensor * up, const ggml_tensor * down,
+        const ggml_tensor * gate_b, const ggml_tensor * up_b, const ggml_tensor * down_b,
+        const ggml_tensor * gate_s, const ggml_tensor * up_s, const ggml_tensor * down_s);
 
     // apply pending calibration results, returns a counter that changes when the graph topology must change
     uint32_t update();

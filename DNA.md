@@ -165,13 +165,12 @@ DNA only takes effect on layers that pass all of these checks (enforced in `llm_
 - Dense SwiGLU FFN (`type_op == LLM_FFN_SILU && type_gate == LLM_FFN_PAR`)
 - Weights in plain host memory (buffer name `"CPU"` or `"CPU_Mapped"`; repacked extra buffers rejected)
 - Weight type F32 or convertible via `ggml_get_type_traits(type)->to_float`
-- No biases (`up_b`, `gate_b`, `down_b` all null)
-- No per-tensor scales (`up_s`, `gate_s`, `down_s` all null; scaled low-precision types NVFP4/F8_E4M3 rejected)
+- Affine terms **supported** (Restrictions 3, 4 lifted): `up_b`/`gate_b`/`down_b` and `up_s`/`gate_s`/`down_s` are copied into the layer at `get_layer` time and reproduced in dense order — `(W·x + b)·s` for gate/up in `op_route`, `(W_down·h + down_b)·down_s` for the down projection (folded into `c0`/`down_t`). Each must be a readable host tensor with the right shape (`gate_b`/`up_b` `{n_ff}`, `down_b` `{n_embd}`, `*_s` `{1}`); otherwise the layer is rejected.
 - No LoRA on gate/up/down
-- F32 activations (`cur->type == GGML_TYPE_F32`, 2D tensor)
+- Activations: any type via graph-level cast (Restriction 7 lifted) — non-F32 `cur` is `ggml_cast` to F32 before the DNA ops (`dna_x_f32`); the kernels always see F32. 2D tensor required (`cur->ne[2] == 1 && cur->ne[3] == 1`).
 - Batch size ≤ `LLAMA_DNA_MAX_BATCH` (default 32); larger batches fall back to dense FFN
 
-Note: quantized GGUF models (e.g. Q4_0, IQ4_XS) use per-tensor scales and repacked buffers, so DNA layers are rejected for those models. Use an unquantized F32 model to test DNA.
+Note: quantized GGUF models (e.g. Q4_0, IQ4_XS) use repacked buffers, so DNA layers are rejected for those models via the host-memory check. Per-tensor scales alone no longer reject a layer. Use an unquantized F32 model to test DNA.
 
 ### The `no_alloc` / `--fit` footgun (root cause)
 
@@ -260,11 +259,11 @@ The following restrictions are currently enforced. Each has a corresponding TODO
 | 0 ✅ | **Silent DNA skip** — DNA previously skipped layers without any visible message when requirements weren't met (log level was WARN/INFO, suppressed by the CLI's default ERROR verbosity). | ✅ Fixed: skip reasons now logged at `LLAMA_LOG_ERROR` level in `llama-dna.cpp`, `llama-graph.cpp`, and `llama-context.cpp`, so they appear even at default CLI verbosity. |
 | 1 ✅ | **CPU backend only** — DNA ops (`op_route`, `op_down`) have no GPU/HIP/SYCL backend implementations. | This is fine and accepted |
 | 2 | **Dense SwiGLU FFNs only** — MoE / shared-expert / other activation variants are skipped (`type_op == LLM_FFN_SILU && type_gate == LLM_FFN_PAR`). | TODO: extend support to MoE layers and other activation functions. |
-| 3 | **No biases** — `up_b`, `gate_b`, `down_b` must all be null. | TODO: support per-neuron bias tensors in the delta down projection. |
-| 4 | **No per-tensor scales** — `up_s`, `gate_s`, `down_s` must all be null; scaled low-precision types (NVFP4/F8_E4M3) rejected. | TODO: support quantized weight scales in the XOR estimator and down projection. |
+| 3 ✅ | ~~**No biases** — `up_b`, `gate_b`, `down_b` must all be null.~~ | ✅ Fixed: biases are copied at `get_layer` time (`llama_dna_read_dense`, shape-checked `n_ff`/`n_embd`) and applied in dense order in `op_route` (`(W·x + b)·s`) and in `llama_dna_finalize_bias` (`c0 = down_s·(W_down@mu + down_b)`, `down_t` pre-scaled by `down_s`). |
+| 4 ✅ | ~~**No per-tensor scales** — `up_s`, `gate_s`, `down_s` must all be null; scaled low-precision types (NVFP4/F8_E4M3) rejected.~~ | ✅ Fixed: scalar scales `{1}` are read by `llama_dna_read_scale` and applied in the same spots as the biases (see row 3). NVFP4/F8_E4M3 weights already have `to_float` + CPU `vec_dot`, so they pass once the post-matmul multiply is reproduced. |
 | 5 ✅ | **No LoRA** — `has_lora(up/gate/down)` must be false. | This is fine and accepted |
 | 6 ✅ | **Weights in plain host memory only** — default is mmap and no repack | currently also needs --fit off |
-| 7 | **F32 activations only** — `cur->type == GGML_TYPE_F32` required. | TODO: support quantized activations (all GGUF quant types) in route/down kernels. |
+| 7 ✅ | ~~**F32 activations only** — `cur->type == GGML_TYPE_F32` required.~~ | ✅ Fixed: non-F32 inputs are `ggml_cast` to F32 in `build_ffn` before the DNA ops (both calibration-observe and predict paths), reusing ggml's cast kernels for all GGUF quant types; the kernels keep the F32 assumption. |
 | 8 | **Batch size limit** — ubatches larger than `LLAMA_DNA_MAX_BATCH` (default 32) fall back to dense FFN. | TODO: implement batched route/down for large batches to avoid the dense fallback. |
 | 9 ✅ | ~~**Not compatible with `no_alloc` mode**~~ — Previously DNA was disabled when `model.no_alloc()` was true, but that flag is misleading: `--fit` (default on) does an internal `no_alloc=true` probe load, and the real inference model always has `no_alloc=false`. The guard has been removed; per-layer weight readability (`llama_dna_row_is_readable`) already rejects genuinely metadata-only loads. | ✅ Fixed: whole-model `no_alloc` gate removed from `llama-context.cpp` (see "The `no_alloc` / `--fit` footgun (root cause)" above). |
 | 10 ✅ | **Stats print only at context destruction** — previous: `LLAMA_DNA_VERBOSE=1` only printed at destruction, no per-turn stats. | ✅ Fixed: server-side per-turn `LLAMA_LOG_INFO` in `server_slot::print_timings()` (`tools/server/server-context.cpp`) via `llama_dna::get_stats()` (`src/llama-dna.cpp`) and `llama_get_dna()` (`include/llama.h`, `src/llama.cpp`, `src/llama-context.cpp`). Shows on/off per layer, calibration `done/total` with phase breakdown, and prediction min/avg/max active fraction. Visible with `-lv 3` (INFO). |
