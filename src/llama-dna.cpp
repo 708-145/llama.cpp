@@ -33,8 +33,15 @@ struct llama_dna_layer {
     int64_t n_embd = 0;
     int64_t n_ff   = 0;
 
-    int n_words  = 0; // uint32 sign words per gate row
-    int n_blocks = 0; // scale blocks per gate row
+    enum llama_dna_act act = LLAMA_DNA_ACT_SILU;
+
+    // MoE expert fields (when is_moe): expert index and the two slices of the
+    // concatenated gate_up_exps tensor. For dense layers gate/up/down point at the
+    // layer's ffn_gate/ffn_up/ffn_down tensors.
+    bool is_moe = false;
+    int expert = -1;
+    const ggml_tensor * gate_up_exps = nullptr; // [n_embd, 2*n_ff, n_expert] PAR
+    int64_t n_ff_expert_rows = 0; // n_ff for gate_up_exps row layout
 
     const ggml_tensor * gate = nullptr;
     const ggml_tensor * up   = nullptr;
@@ -59,10 +66,6 @@ struct llama_dna_layer {
 
     uint32_t n_tok      = 0; // tokens seen in the current phase, synced by llama_dna::update()
     uint32_t n_tok_next = 0; // running total written by op_observe, applied by llama_dna::update()
-
-    // packed gate estimator (XOR predictor)
-    std::vector<uint32_t>    sw; // [n_ff][n_words]  sign bits, bit = (w >= 0)
-    std::vector<ggml_fp16_t> aw; // [n_ff][n_blocks] mean |w| per block
 
     // packed gate estimator (quant predictor, --dnapred <type>): re-quantized gate rows
     // in pred_type layout, plus the native CPU vec_dot / from_float for pred_type
@@ -107,16 +110,28 @@ static std::vector<float> g_f16_table; // fp16 -> fp32, filled once
 static bool g_x86_fast = false; // avx2 + fma + f16c + popcnt
 #endif
 
-static inline int llama_dna_popcount(uint32_t x) {
-#if defined(_MSC_VER)
-    return (int) __popcnt(x);
-#else
-    return __builtin_popcount(x);
-#endif
-}
-
 static inline float llama_dna_silu(float x) {
     return x / (1.0f + expf(-x));
+}
+
+// GeGLU uses the tanh approximation, exactly as ggml_vec_gelu_f32 in ggml-cpu/vec.h:
+// gelu(x) = 0.5 * x * (1 + tanh(sqrt(2/pi) * x * (1 + 0.044715 * x^2)))
+static inline float llama_dna_gelu(float x) {
+    return 0.5f * x * (1.0f + tanhf(0.7978845608028654f * x * (1.0f + 0.044715f * x * x)));
+}
+
+static inline float llama_dna_gelu_erf(float x) {
+    return 0.5f * x * (1.0f + erff(x * 0.7071067811865475f));
+}
+
+static inline float llama_dna_act(enum llama_dna_act act, float x) {
+    switch (act) {
+        case LLAMA_DNA_ACT_SILU:     return llama_dna_silu(x);
+        case LLAMA_DNA_ACT_GELU:     return llama_dna_gelu(x);
+        case LLAMA_DNA_ACT_GELU_ERF: return llama_dna_gelu_erf(x);
+        case LLAMA_DNA_ACT_RELU:     return x > 0.0f ? x : 0.0f;
+    }
+    return x;
 }
 
 static void llama_dna_f16_to_f32_generic(const ggml_fp16_t * x, float * y, int n) {
@@ -179,75 +194,6 @@ static inline void llama_dna_axpy_f16(float * y, const ggml_fp16_t * w, float d,
     }
 #endif
     llama_dna_axpy_f16_generic(y, w, d, n);
-}
-
-// sign bits and per-block mean |x| of a float row
-static void llama_dna_pack_row(const float * x, int64_t n, int B, uint32_t * sx, float * ax) {
-    const int n_words = (int) (n / 32);
-    for (int w = 0; w < n_words; ++w) {
-        uint32_t bits = 0;
-        for (int b = 0; b < 32; ++b) {
-            bits |= (uint32_t) (x[w*32 + b] >= 0.0f) << b;
-        }
-        sx[w] = bits;
-    }
-    const int n_blocks = (int) (n / B);
-    for (int b = 0; b < n_blocks; ++b) {
-        float s = 0.0f;
-        for (int k = 0; k < B; ++k) {
-            s += fabsf(x[b*B + k]);
-        }
-        ax[b] = s / B;
-    }
-}
-
-// g~ = sum_b aw[b] * ax[b] * (B - 2 * popcount(sw[b] ^ sx[b]))
-static inline float llama_dna_estimate_impl(const uint32_t * sw, const float * awf, const uint32_t * sx, const float * ax, int n_words, int B) {
-    float acc = 0.0f;
-    if (B >= 32) {
-        const int wpb = B / 32;
-        const int n_blocks = n_words / wpb;
-        for (int b = 0; b < n_blocks; ++b) {
-            int pc = 0;
-            for (int k = 0; k < wpb; ++k) {
-                pc += llama_dna_popcount(sw[b*wpb + k] ^ sx[b*wpb + k]);
-            }
-            acc += awf[b] * ax[b] * (float) (B - 2*pc);
-        }
-    } else {
-        const int bpw = 32 / B;
-        const uint32_t mask = (1u << B) - 1;
-        for (int w = 0; w < n_words; ++w) {
-            const uint32_t x = sw[w] ^ sx[w];
-            for (int k = 0; k < bpw; ++k) {
-                const int pc = llama_dna_popcount((x >> (k*B)) & mask);
-                const int b = w*bpw + k;
-                acc += awf[b] * ax[b] * (float) (B - 2*pc);
-            }
-        }
-    }
-    return acc;
-}
-
-#if defined(LLAMA_DNA_X86)
-__attribute__((target("avx2,fma,f16c,popcnt")))
-static float llama_dna_estimate_x86(const uint32_t * sw, const float * awf, const uint32_t * sx, const float * ax, int n_words, int B) {
-    return llama_dna_estimate_impl(sw, awf, sx, ax, n_words, B);
-}
-#endif
-
-static inline float llama_dna_estimate(const llama_dna_layer & L, int64_t i, const uint32_t * sx, const float * ax, float * awf) {
-    const uint32_t    * sw = L.sw.data() + i*L.n_words;
-    const ggml_fp16_t * aw = L.aw.data() + i*L.n_blocks;
-    const int B = L.params->block;
-#if defined(LLAMA_DNA_X86)
-    if (g_x86_fast) {
-        llama_dna_f16_to_f32_x86(aw, awf, L.n_blocks);
-        return llama_dna_estimate_x86(sw, awf, sx, ax, L.n_words, B);
-    }
-#endif
-    llama_dna_f16_to_f32_generic(aw, awf, L.n_blocks);
-    return llama_dna_estimate_impl(sw, awf, sx, ax, L.n_words, B);
 }
 
 // quant predictor: native CPU vec_dot of the re-quantized gate row against the
@@ -344,41 +290,22 @@ static bool llama_dna_row_is_readable(const ggml_tensor * w) {
 static void llama_dna_pack_gate(llama_dna_layer & L) {
     std::vector<float> wf(L.n_embd);
 
-    if (L.params->pred_kind == LLAMA_DNA_PRED_QUANT) {
-        // any quant with a CPU from_float (the .c from_float_ref entries; e.g. iq4_xs, q4_0, q8_0)
-        // ggml_get_type_traits(pred_type)->from_float_ref quantizes the dequantized gate row.
-        // for predictor types without from_float_ref (iq2_xxs/iq2_xs/iq1_s/iq1_m/iq2_s gated on imatrix)
-        // from_float_ref is null and the layer is rejected earlier in get_layer.
-        const ggml_type_traits * tr = ggml_get_type_traits(L.params->pred_type);
-        GGML_ASSERT(tr->from_float_ref);
-        L.pred_q.assign((size_t) L.n_ff*L.pred_row_size, 0);
-        for (int64_t i = 0; i < L.n_ff; ++i) {
-            llama_dna_row_to_float(L.gate, i, wf.data());
-            tr->from_float_ref(wf.data(), L.pred_q.data() + i*L.pred_row_size, L.n_embd);
-        }
-        return;
-    }
-
-    const int B = L.params->block;
-
-    L.sw.resize((size_t) L.n_ff*L.n_words);
-    L.aw.resize((size_t) L.n_ff*L.n_blocks);
-
-    std::vector<float> awf(L.n_blocks);
-
+    // quant predictor only: any quant with a CPU from_float (e.g. iq4_xs, q4_0, q8_0)
+    // ggml_get_type_traits(pred_type)->from_float_ref quantizes the dequantized gate row.
+    // for predictor types without from_float_ref (iq2_xxs/iq2_xs/iq1_s/iq1_m/iq2_s gated on imatrix)
+    // from_float_ref is null and the layer is rejected earlier in get_layer.
+    const ggml_type_traits * tr = ggml_get_type_traits(L.params->pred_type);
+    GGML_ASSERT(tr->from_float_ref);
+    L.pred_q.assign((size_t) L.n_ff*L.pred_row_size, 0);
     for (int64_t i = 0; i < L.n_ff; ++i) {
         llama_dna_row_to_float(L.gate, i, wf.data());
-        llama_dna_pack_row(wf.data(), L.n_embd, B, L.sw.data() + i*L.n_words, awf.data());
-        ggml_fp32_to_fp16_row(awf.data(), L.aw.data() + i*L.n_blocks, L.n_blocks);
+        tr->from_float_ref(wf.data(), L.pred_q.data() + i*L.pred_row_size, L.n_embd);
     }
 }
 
 // predictor memory size in bytes for the pack log line
 static size_t llama_dna_pred_bytes(const llama_dna_layer & L) {
-    if (L.params->pred_kind == LLAMA_DNA_PRED_QUANT) {
-        return L.pred_q.size();
-    }
-    return L.sw.size()*sizeof(uint32_t) + L.aw.size()*sizeof(ggml_fp16_t);
+    return L.pred_q.size();
 }
 
 static void llama_dna_finalize_stats(llama_dna_layer & L) {
@@ -538,15 +465,12 @@ static int llama_dna_env_int(const char * name, int def) {
 
 bool llama_dna_pred_from_name(const char * name, enum llama_dna_pred_kind & kind, enum ggml_type & type) {
     if (!name || !*name) {
-        kind = LLAMA_DNA_PRED_XOR;
+        kind = LLAMA_DNA_PRED_QUANT;
+        type = GGML_TYPE_IQ4_XS; // IQ4_XS is the default predictor
         return true;
     }
     std::string s(name);
     std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return std::tolower(c); });
-    if (s == "xor") {
-        kind = LLAMA_DNA_PRED_XOR;
-        return true;
-    }
     for (int t = 0; t < GGML_TYPE_COUNT; ++t) {
         if (s == ggml_type_name((enum ggml_type) t)) {
             kind = LLAMA_DNA_PRED_QUANT;
@@ -559,10 +483,10 @@ bool llama_dna_pred_from_name(const char * name, enum llama_dna_pred_kind & kind
 
 void llama_dna_params::set_pred_from_name(const char * name) {
     enum llama_dna_pred_kind kind;
-    enum ggml_type type = GGML_TYPE_F32;
+    enum ggml_type type = GGML_TYPE_IQ4_XS;
     if (!llama_dna_pred_from_name(name, kind, type)) {
         throw std::runtime_error(std::string("DNA: unknown predictor \"") + (name ? name : "") +
-                "\", expected \"xor\" or a ggml type name (e.g. iq4_xs, q8_0, f16)");
+                "\", expected a ggml type name (e.g. iq4_xs, q8_0, f16)");
     }
     pred_kind = kind;
     pred_type = type;
@@ -574,7 +498,6 @@ llama_dna_params llama_dna_params::from_env() {
     //   --dna (LLAMA_ARG_DNA) -> common_params.dna -> llama_context_params.dna
     // DNA tuning knobs remain env-overridable here.
     p.thresh     = llama_dna_env_float("LLAMA_DNA_T",          p.thresh);
-    p.block      = llama_dna_env_int  ("LLAMA_DNA_BLOCK",      p.block);
     p.n_calib    = llama_dna_env_int  ("LLAMA_DNA_CALIB",      p.n_calib);
     p.min_active = llama_dna_env_float("LLAMA_DNA_MIN_ACTIVE", p.min_active);
     p.zmode      = llama_dna_env_int  ("LLAMA_DNA_ZMODE",      p.zmode);
@@ -591,11 +514,7 @@ llama_dna_params llama_dna_params::from_env() {
 //
 
 llama_dna::llama_dna(const llama_model & model, ggml_backend_t backend_cpu, const llama_dna_params & params) : params(params), model(model) {
-    if (params.pred_kind == LLAMA_DNA_PRED_XOR &&
-        params.block != 8 && params.block != 16 && params.block != 32 && params.block != 64) {
-        throw std::runtime_error("DNA: block size must be 8, 16, 32 or 64");
-    }
-    if (params.pred_kind == LLAMA_DNA_PRED_QUANT) {
+    {
         const ggml_type_traits * tr = ggml_get_type_traits(params.pred_type);
         if (!tr || !tr->from_float_ref) {
             throw std::runtime_error(std::string("DNA: predictor type ") + ggml_type_name(params.pred_type) +
@@ -627,10 +546,10 @@ llama_dna::llama_dna(const llama_model & model, ggml_backend_t backend_cpu, cons
 #if defined(LLAMA_DNA_X86)
     fast = g_x86_fast;
 #endif
-    LLAMA_LOG_ERROR("%s: DNA enabled: pred = %s, T = %.2f, block = %d, calib = %u tokens/phase, min_active = %.1f%%, zmode = %d, max_batch = %d, simd = %d\n",
+    LLAMA_LOG_ERROR("%s: DNA enabled: pred = %s, T = %.2f, calib = %u tokens/phase, min_active = %.1f%%, zmode = %d, max_batch = %d, simd = %d\n",
             __func__,
-            params.pred_kind == LLAMA_DNA_PRED_QUANT ? ggml_type_name(params.pred_type) : "xor",
-            params.thresh, params.block, params.n_calib, 100.0f*params.min_active, params.zmode, params.max_batch, fast);
+            ggml_type_name(params.pred_type),
+            params.thresh, params.n_calib, 100.0f*params.min_active, params.zmode, params.max_batch, fast);
 }
 
 llama_dna::~llama_dna() {
@@ -639,10 +558,29 @@ llama_dna::~llama_dna() {
     }
 }
 
+void llama_dna_init_layer_traits(llama_dna * self, llama_dna_layer & L) {
+    const ggml_type_traits_cpu * tr_pred = self->get_traits(self->params.pred_type);
+    L.pred_vec_dot    = tr_pred->vec_dot;
+    L.pred_vdt        = tr_pred->vec_dot_type;
+    L.pred_from_float = self->get_traits(L.pred_vdt)->from_float;
+    L.pred_row_size   = ggml_row_size(self->params.pred_type, L.n_embd);
+
+    const int R = LLAMA_DNA_RESERVOIR;
+    L.res       .assign((size_t) L.n_ff*R, 0.0f);
+    L.res_est   .assign((size_t) L.n_ff*R, 0.0f);
+    L.sum_g     .assign(L.n_ff, 0.0);
+    L.sum_g2    .assign(L.n_ff, 0.0);
+    L.sum_ge    .assign(L.n_ff, 0.0);
+    L.sum_ge2   .assign(L.n_ff, 0.0);
+    L.sum_gge   .assign(L.n_ff, 0.0);
+    L.sum_abs_ge.assign(L.n_ff, 0.0);
+}
+
 llama_dna_layer * llama_dna::get_layer(int il,
         const ggml_tensor * gate, const ggml_tensor * up, const ggml_tensor * down,
         const ggml_tensor * gate_b, const ggml_tensor * up_b, const ggml_tensor * down_b,
-        const ggml_tensor * gate_s, const ggml_tensor * up_s, const ggml_tensor * down_s) {
+        const ggml_tensor * gate_s, const ggml_tensor * up_s, const ggml_tensor * down_s,
+        enum llama_dna_act act) {
     auto it = layers.find(gate);
     if (it != layers.end()) {
         return it->second.get();
@@ -671,7 +609,7 @@ llama_dna_layer * llama_dna::get_layer(int il,
     if (n_embd % 64 != 0) {
         return reject("n_embd is not a multiple of 64");
     }
-    if (params.pred_kind == LLAMA_DNA_PRED_QUANT) {
+    {
         if (n_embd % ggml_blck_size(params.pred_type) != 0) {
             return reject("n_embd is not a multiple of the predictor block size");
         }
@@ -723,10 +661,9 @@ llama_dna_layer * llama_dna::get_layer(int il,
 
     L.params   = &params;
     L.il       = il;
+    L.act      = act;
     L.n_embd   = n_embd;
     L.n_ff     = n_ff;
-    L.n_words  = (int) (n_embd / 32);
-    L.n_blocks = (int) (n_embd / params.block);
     L.gate     = gate;
     L.up       = up;
     L.down     = down;
@@ -745,23 +682,7 @@ llama_dna_layer * llama_dna::get_layer(int il,
     L.from_float_gate = ff_gate;
     L.from_float_up   = ff_up;
 
-    if (params.pred_kind == LLAMA_DNA_PRED_QUANT) {
-        const ggml_type_traits_cpu * tr_pred = get_traits(params.pred_type);
-        L.pred_vec_dot    = tr_pred->vec_dot;
-        L.pred_vdt        = tr_pred->vec_dot_type;
-        L.pred_from_float = get_traits(L.pred_vdt)->from_float;
-        L.pred_row_size   = ggml_row_size(params.pred_type, n_embd);
-    }
-
-    const int R = LLAMA_DNA_RESERVOIR;
-    L.res       .assign((size_t) n_ff*R, 0.0f);
-    L.res_est   .assign((size_t) n_ff*R, 0.0f);
-    L.sum_g     .assign(n_ff, 0.0);
-    L.sum_g2    .assign(n_ff, 0.0);
-    L.sum_ge    .assign(n_ff, 0.0);
-    L.sum_ge2   .assign(n_ff, 0.0);
-    L.sum_gge   .assign(n_ff, 0.0);
-    L.sum_abs_ge.assign(n_ff, 0.0);
+    llama_dna_init_layer_traits(this, L);
 
     const int64_t t0 = ggml_time_us();
     llama_dna_pack_gate(L);
@@ -769,12 +690,23 @@ llama_dna_layer * llama_dna::get_layer(int il,
 
     LLAMA_LOG_ERROR("%s: layer %3d: packed gate %s [%" PRId64 ", %" PRId64 "] with pred %s into %.1f MiB (%.2f bpw) in %.0f ms\n",
             __func__, il, ggml_type_name(gate->type), n_embd, n_ff,
-            params.pred_kind == LLAMA_DNA_PRED_QUANT ? ggml_type_name(params.pred_type) : "xor",
+            ggml_type_name(params.pred_type),
             llama_dna_pred_bytes(L) / (1024.0*1024.0),
             8.0*llama_dna_pred_bytes(L) / ((double) n_embd*n_ff),
             (t1 - t0) / 1000.0);
 
     return slot.get();
+}
+
+llama_dna_layer * llama_dna::get_shared_layer(int il,
+        const ggml_tensor * gate, const ggml_tensor * up, const ggml_tensor * down,
+        const ggml_tensor * gate_b, const ggml_tensor * up_b, const ggml_tensor * down_b,
+        const ggml_tensor * gate_s, const ggml_tensor * up_s, const ggml_tensor * down_s,
+        enum llama_dna_act act) {
+    // shared expert is the same dense FFN layout; reuse get_layer (its arch check
+    // verifies ffn_gate/ffn_up/ffn_down of the layer, which is the shared expert for
+    // MoE layers in gemma4/deepseek-style models)
+    return get_layer(il, gate, up, down, gate_b, up_b, down_b, gate_s, up_s, down_s, act);
 }
 
 uint32_t llama_dna::update() {
@@ -803,6 +735,133 @@ uint32_t llama_dna::update() {
 
 bool llama_dna::layer_is_predict(const llama_dna_layer * layer) {
     return layer && layer->phase == LLAMA_DNA_PHASE_PREDICT;
+}
+
+// MoE: one dna_layer per expert. gate_up_exps is [n_embd, 2*n_ff, n_expert] PAR
+// (gate rows 0..n_ff-1, up rows n_ff..2*n_ff-1); when null, gate_exps/up_exps are
+// the separate [n_embd, n_ff, n_expert] tensors. down_exps is [n_ff, n_embd, n_expert].
+// Per-expert layers live in `layers` keyed by the down_exps tensor pointer.
+llama_dna_layer * llama_dna::get_moe_expert(int il, int expert,
+        const ggml_tensor * gate_up_exps, const ggml_tensor * gate_exps, const ggml_tensor * up_exps,
+        const ggml_tensor * down_exps, enum llama_dna_act act) {
+    const ggml_tensor * key = down_exps;
+    auto it = layers.find(key);
+    if (it != layers.end()) {
+        return it->second.get();
+    }
+    auto & slot = layers[key];
+
+    auto reject = [&](const char * why) -> llama_dna_layer * {
+        LLAMA_LOG_ERROR("%s: layer %d expert %d: DNA disabled: %s\n", __func__, il, expert, why);
+        return nullptr;
+    };
+
+    const ggml_tensor * gate_w = gate_up_exps ? gate_up_exps : gate_exps;
+    const ggml_tensor * up_w   = gate_up_exps ? gate_up_exps : up_exps;
+    if (!gate_w || !up_w || !down_exps) {
+        return reject("missing expert weights");
+    }
+    if (!llama_dna_row_is_readable(gate_w) || !llama_dna_row_is_readable(up_w) || !llama_dna_row_is_readable(down_exps)) {
+        return reject("weights are not in plain host memory");
+    }
+    const int64_t n_embd = gate_w->ne[0];
+    const int64_t n_ff2  = gate_w->ne[1];
+    const int64_t n_expert = gate_w->ne[2];
+    if (expert < 0 || expert >= n_expert) {
+        return reject("expert out of range");
+    }
+    const int64_t n_ff = gate_up_exps ? n_ff2 / 2 : n_ff2;
+    if (down_exps->ne[0] != n_ff || down_exps->ne[1] != n_embd || down_exps->ne[2] != n_expert) {
+        return reject("unexpected expert down shape");
+    }
+    if (n_embd % 64 != 0) {
+        return reject("n_embd is not a multiple of 64");
+    }
+    if (n_embd % ggml_blck_size(params.pred_type) != 0) {
+        return reject("n_embd is not a multiple of the predictor block size");
+    }
+    const ggml_type_traits_cpu * tr_pred = get_traits(params.pred_type);
+    if (!tr_pred->vec_dot) {
+        return reject("no CPU vec_dot for the predictor type");
+    }
+    if (!get_traits(tr_pred->vec_dot_type)->from_float) {
+        return reject("no CPU from_float for the predictor activation type");
+    }
+    const ggml_type_traits_cpu * tr_gate = get_traits(gate_w->type);
+    const ggml_type_traits_cpu * tr_up   = get_traits(up_w->type);
+    if (!tr_gate->vec_dot || !tr_up->vec_dot) {
+        return reject("no CPU dot product for the expert gate/up types");
+    }
+    if (!get_traits(tr_gate->vec_dot_type)->from_float || !get_traits(tr_up->vec_dot_type)->from_float) {
+        return reject("no CPU quantization for the expert gate/up activation types");
+    }
+
+    slot = std::make_unique<llama_dna_layer>();
+    llama_dna_layer & L = *slot;
+
+    L.params   = &params;
+    L.il       = il;
+    L.act      = act;
+    L.n_embd   = n_embd;
+    L.n_ff     = n_ff;
+    L.is_moe   = true;
+    L.expert   = expert;
+    L.gate_up_exps = gate_up_exps;
+    // for packing/layout; rows are expert slices (see pack_gate in this function)
+    L.gate     = gate_w;
+    L.up       = up_w;
+    L.down     = down_exps;
+
+    L.vec_dot_gate    = tr_gate->vec_dot;
+    L.vec_dot_up      = tr_up->vec_dot;
+    L.vdt_gate        = tr_gate->vec_dot_type;
+    L.vdt_up          = tr_up->vec_dot_type;
+    L.from_float_gate = get_traits(tr_gate->vec_dot_type)->from_float;
+    L.from_float_up   = get_traits(tr_up->vec_dot_type)->from_float;
+
+    llama_dna_init_layer_traits(this, L);
+
+    {
+        std::vector<float> wf(L.n_embd);
+        const ggml_type_traits * tr = ggml_get_type_traits(L.params->pred_type);
+        L.pred_q.assign((size_t) L.n_ff*L.pred_row_size, 0);
+        for (int64_t i = 0; i < L.n_ff; ++i) {
+            const ggml_tensor * src = gate_up_exps ? gate_up_exps : gate_exps;
+            const char * row = (const char *) src->data + expert*src->nb[2] + i*src->nb[1];
+            const ggml_type_traits * wtr = ggml_get_type_traits(src->type);
+            wtr->to_float(row, wf.data(), L.n_embd);
+            tr->from_float_ref(wf.data(), L.pred_q.data() + i*L.pred_row_size, L.n_embd);
+        }
+    }
+
+    LLAMA_LOG_ERROR("%s: layer %3d expert %d: packed gate %s [%" PRId64 ", %" PRId64 "] with pred %s into %.1f MiB (%.2f bpw)\n",
+            __func__, il, expert, ggml_type_name(gate_w->type), n_embd, n_ff,
+            ggml_type_name(params.pred_type),
+            llama_dna_pred_bytes(L) / (1024.0*1024.0),
+            8.0*llama_dna_pred_bytes(L) / ((double) n_embd*n_ff));
+
+    return slot.get();
+}
+
+llama_dna_moe_layer * llama_dna::get_moe_layer(int il,
+        const ggml_tensor * gate_up_exps, const ggml_tensor * gate_exps, const ggml_tensor * up_exps,
+        const ggml_tensor * down_exps, enum llama_dna_act act) {
+    const ggml_tensor * key = down_exps ? down_exps : gate_up_exps;
+    auto it = moe_layers.find(key);
+    if (it != moe_layers.end()) {
+        return it->second.get();
+    }
+    auto & slot = moe_layers[key];
+    slot = std::make_unique<llama_dna_moe_layer>();
+    llama_dna_moe_layer & M = *slot;
+    M.il = il;
+    const ggml_tensor * ref = gate_up_exps ? gate_up_exps : (gate_exps ? gate_exps : up_exps);
+    M.n_expert = ref ? (int) ref->ne[2] : 0;
+    M.experts.assign(M.n_expert, nullptr);
+    for (int e = 0; e < M.n_expert; ++e) {
+        M.experts[e] = get_moe_expert(il, e, gate_up_exps, gate_exps, up_exps, down_exps, act);
+    }
+    return slot.get();
 }
 
 void llama_dna::print_stats() const {
@@ -893,6 +952,18 @@ llama_dna_stats llama_dna::get_stats() const {
     return s;
 }
 
+bool llama_dna::moe_is_predict(const llama_dna_moe_layer * moe) {
+    if (!moe || moe->experts.empty()) {
+        return false;
+    }
+    for (llama_dna_layer * L : moe->experts) {
+        if (L && L->phase != LLAMA_DNA_PHASE_PREDICT) {
+            return false;
+        }
+    }
+    return true;
+}
+
 void llama_dna::print_turn_stats() const {
     llama_dna_stats s = get_stats();
     // ALWAYS visible at ERROR level so the CLI (verbosity default ERROR) actually prints it.
@@ -922,38 +993,24 @@ void llama_dna::op_observe(ggml_tensor * dst, int ith, int nth, void * userdata)
     const int64_t i0 = L.n_ff*ith/nth;
     const int64_t i1 = L.n_ff*(ith + 1)/nth;
 
-    const int B = L.params->block;
     const int R = LLAMA_DNA_RESERVOIR;
-    const bool quant_pred = L.params->pred_kind == LLAMA_DNA_PRED_QUANT;
 
     const int64_t t_start = ggml_time_us();
 
-    thread_local std::vector<uint32_t> sx;
-    thread_local std::vector<float> ax, awf;
     thread_local std::vector<uint8_t> xq_pred;
-    sx.resize(L.n_words);
-    ax.resize(L.n_blocks);
-    awf.resize(L.n_blocks);
-    if (quant_pred) {
-        xq_pred.resize(ggml_row_size(L.pred_vdt, L.n_embd));
-    }
+    xq_pred.resize(ggml_row_size(L.pred_vdt, L.n_embd));
 
     for (int64_t t = 0; t < n_tokens; ++t) {
         const float * xr = (const float *) ((const char *) x->data  + t*x->nb[1]);
         const float * gr = (const float *) ((const char *) go->data + t*go->nb[1]);
         const float * ur = (const float *) ((const char *) uo->data + t*uo->nb[1]);
 
-        if (quant_pred) {
-            L.pred_from_float(xr, xq_pred.data(), L.n_embd);
-        } else {
-            llama_dna_pack_row(xr, L.n_embd, B, sx.data(), ax.data());
-        }
+        L.pred_from_float(xr, xq_pred.data(), L.n_embd);
 
         const uint32_t k = (uint32_t) t; // reservoir index within this ubatch; n_tok_next accumulates across ubatches
 
         for (int64_t i = i0; i < i1; ++i) {
-            const float ge = quant_pred ? llama_dna_estimate_quant(L, i, xq_pred.data())
-                                         : llama_dna_estimate(L, i, sx.data(), ax.data(), awf.data());
+            const float ge = llama_dna_estimate_quant(L, i, xq_pred.data());
             const float g  = gr[i];
 
             if (L.phase == LLAMA_DNA_PHASE_STATS) {
@@ -966,7 +1023,7 @@ void llama_dna::op_observe(ggml_tensor * dst, int ith, int nth, void * userdata)
                 L.sum_gge[i]    += (double) g*ge;
                 L.sum_abs_ge[i] += fabsf(ge);
             } else {
-                const float h   = llama_dna_silu(g) * ur[i];
+                const float h   = llama_dna_act(L.act, g) * ur[i];
                 const float dev = fabsf(ge - L.med_est[i]);
                 L.sum_h2[i] += (double) h*h;
                 if (dev < L.band[i]) {
@@ -996,25 +1053,15 @@ void llama_dna::op_route(ggml_tensor * dst, int ith, int nth, void * userdata) {
     const int64_t i0 = L.n_ff*ith/nth;
     const int64_t i1 = L.n_ff*(ith + 1)/nth;
 
-    const int B = L.params->block;
-    const bool quant_pred = L.params->pred_kind == LLAMA_DNA_PRED_QUANT;
-
     const int64_t t_start = ggml_time_us();
 
     const size_t sz_gate = ggml_row_size(L.vdt_gate, L.n_embd);
     const size_t sz_up   = ggml_row_size(L.vdt_up,   L.n_embd);
 
-    thread_local std::vector<uint32_t> sx;
-    thread_local std::vector<float> ax, awf;
     thread_local std::vector<uint8_t> xq_gate, xq_up, xq_pred;
-    sx.resize(L.n_words);
-    ax.resize(L.n_blocks);
-    awf.resize(L.n_blocks);
     xq_gate.resize(sz_gate);
     xq_up.resize(sz_up);
-    if (quant_pred) {
-        xq_pred.resize(ggml_row_size(L.pred_vdt, L.n_embd));
-    }
+    xq_pred.resize(ggml_row_size(L.pred_vdt, L.n_embd));
 
     const bool same_vdt = L.vdt_gate == L.vdt_up;
 
@@ -1024,11 +1071,7 @@ void llama_dna::op_route(ggml_tensor * dst, int ith, int nth, void * userdata) {
         const float * xr  = (const float *) ((const char *) x->data + t*x->nb[1]);
         float       * out = (float *) ((char *) dst->data + t*dst->nb[1]);
 
-        if (quant_pred) {
-            L.pred_from_float(xr, xq_pred.data(), L.n_embd);
-        } else {
-            llama_dna_pack_row(xr, L.n_embd, B, sx.data(), ax.data());
-        }
+        L.pred_from_float(xr, xq_pred.data(), L.n_embd);
         L.from_float_gate(xr, xq_gate.data(), L.n_embd);
         if (!same_vdt) {
             L.from_float_up(xr, xq_up.data(), L.n_embd);
@@ -1036,8 +1079,7 @@ void llama_dna::op_route(ggml_tensor * dst, int ith, int nth, void * userdata) {
         const void * xq_u = same_vdt ? xq_gate.data() : xq_up.data();
 
         for (int64_t i = i0; i < i1; ++i) {
-            const float ge = quant_pred ? llama_dna_estimate_quant(L, i, xq_pred.data())
-                                         : llama_dna_estimate(L, i, sx.data(), ax.data(), awf.data());
+            const float ge = llama_dna_estimate_quant(L, i, xq_pred.data());
             if (fabsf(ge - L.med_est[i]) < L.band[i]) {
                 out[i] = 0.0f;
                 continue;
@@ -1054,7 +1096,7 @@ void llama_dna::op_route(ggml_tensor * dst, int ith, int nth, void * userdata) {
                 u += L.up_b[(size_t) i];
             }
             u *= L.up_s;
-            out[i] = llama_dna_silu(g) * u - L.mu[i];
+            out[i] = llama_dna_act(L.act, g) * u - L.mu[i];
             n_act++;
         }
     }
@@ -1098,5 +1140,170 @@ void llama_dna::op_down(ggml_tensor * dst, int ith, int nth, void * userdata) {
 
     if (ith == 0) {
         L.t_down_us += ggml_time_us() - t_start;
+    }
+}
+
+// op_expert_observe: userdata is llama_dna_moe_layer*, src0 = x, src1 = gate out,
+// src2 = up out, src3 = selected_experts
+void llama_dna::op_expert_observe(ggml_tensor * dst, int ith, int nth, void * userdata) {
+    llama_dna_moe_layer & M = *(llama_dna_moe_layer *) userdata;
+    const ggml_tensor * x  = dst->src[0];
+    const ggml_tensor * go = dst->src[1];
+    const ggml_tensor * uo = dst->src[2];
+    const ggml_tensor * sel = dst->src[3];
+
+    const int64_t n_tokens = x->ne[1];
+    const int64_t n_slots = sel->ne[0];
+    const int64_t n_ff = go->ne[0];
+    const int R = LLAMA_DNA_RESERVOIR;
+
+    const int64_t s0 = n_slots*ith/nth;
+    const int64_t s1 = n_slots*(ith + 1)/nth;
+
+    for (int64_t s = s0; s < s1; ++s) {
+        for (int64_t t = 0; t < n_tokens; ++t) {
+            const int32_t e = ((const int32_t *) sel->data)[t*sel->nb[1]/sizeof(int32_t) + s];
+            llama_dna_layer * L = M.experts[e];
+            if (!L) {
+                continue;
+            }
+            const float * xr = (const float *) ((const char *) x->data + t*x->nb[1]);
+            const float * gr = (const float *) ((const char *) go->data + s*go->nb[1] + t*go->nb[2]);
+            const float * ur = (const float *) ((const char *) uo->data + s*uo->nb[1] + t*uo->nb[2]);
+            thread_local std::vector<uint8_t> xq_pred;
+            xq_pred.assign(ggml_row_size(L->pred_vdt, L->n_embd), 0);
+            L->pred_from_float(xr, xq_pred.data(), L->n_embd);
+            const uint32_t k = (uint32_t) t;
+            for (int64_t i = 0; i < n_ff; ++i) {
+                const float ge = llama_dna_estimate_quant(*L, i, xq_pred.data());
+                const float g  = gr[i];
+                if (L->phase == LLAMA_DNA_PHASE_STATS) {
+                    llama_dna_reservoir_push(L->res.data()     + i*R, (uint32_t) (2*i),     k, g);
+                    llama_dna_reservoir_push(L->res_est.data() + i*R, (uint32_t) (2*i + 1), k, ge);
+                    L->sum_g[i]      += g;
+                    L->sum_g2[i]     += (double) g*g;
+                    L->sum_ge[i]     += ge;
+                    L->sum_ge2[i]    += (double) ge*ge;
+                    L->sum_gge[i]    += (double) g*ge;
+                    L->sum_abs_ge[i] += fabsf(ge);
+                } else {
+                    const float h   = llama_dna_act(L->act, g) * ur[i];
+                    const float dev = fabsf(ge - L->med_est[i]);
+                    L->sum_h2[i] += (double) h*h;
+                    if (dev < L->band[i]) {
+                        L->mu_sum[i] += h;
+                        L->mu_cnt[i]++;
+                    } else {
+                        L->sum_h2_act[i] += (double) h*h;
+                        L->n_act[i]++;
+                    }
+                    llama_dna_reservoir_push(L->res.data() + i*R, (uint32_t) (2*i), k, L->band[i] > 0.0f ? dev / L->band[i] : 0.0f);
+                }
+            }
+        }
+    }
+
+    if (ith == 0) {
+        for (llama_dna_layer * L : M.experts) {
+            if (L) {
+                L->n_tok_next += (uint32_t) n_tokens;
+            }
+        }
+    }
+}
+
+// MoE ops: userdata is llama_dna_moe_layer*
+// op_expert_route: src0 = x, src1 = gate_up_exps, src2 = selected_experts
+//   -> delta [n_ff, n_expert_used, n_tokens]
+void llama_dna::op_expert_route(ggml_tensor * dst, int ith, int nth, void * userdata) {
+    llama_dna_moe_layer & M = *(llama_dna_moe_layer *) userdata;
+    const ggml_tensor * x  = dst->src[0];
+    const ggml_tensor * gate_up = dst->src[1];
+    const ggml_tensor * sel = dst->src[2];
+
+    const int64_t n_tokens = x->ne[1];
+    const int64_t n_slots  = sel->ne[0];
+    const int64_t n_ff     = dst->ne[0];
+
+    const int64_t s0 = n_slots*ith/nth;
+    const int64_t s1 = n_slots*(ith + 1)/nth;
+
+    for (int64_t s = s0; s < s1; ++s) {
+        for (int64_t t = 0; t < n_tokens; ++t) {
+            const int32_t e = ((const int32_t *) sel->data)[t*sel->nb[1]/sizeof(int32_t) + s];
+            llama_dna_layer * L = M.experts[e];
+            float * out = (float *) ((char *) dst->data + s*dst->nb[1] + t*dst->nb[2]);
+            if (!L || L->phase != LLAMA_DNA_PHASE_PREDICT) {
+                memset(out, 0, n_ff*sizeof(float));
+                continue;
+            }
+            const float * xr = (const float *) ((const char *) x->data + t*x->nb[1]);
+            thread_local std::vector<uint8_t> xq_gate, xq_up, xq_pred;
+            xq_gate.assign(ggml_row_size(L->vdt_gate, L->n_embd), 0);
+            xq_up.assign(ggml_row_size(L->vdt_up, L->n_embd), 0);
+            xq_pred.assign(ggml_row_size(L->pred_vdt, L->n_embd), 0);
+            L->pred_from_float(xr, xq_pred.data(), L->n_embd);
+            L->from_float_gate(xr, xq_gate.data(), L->n_embd);
+            if (L->vdt_gate != L->vdt_up) {
+                L->from_float_up(xr, xq_up.data(), L->n_embd);
+            }
+            const void * xq_u = L->vdt_gate == L->vdt_up ? xq_gate.data() : xq_up.data();
+            for (int64_t i = 0; i < n_ff; ++i) {
+                const float ge = llama_dna_estimate_quant(*L, i, xq_pred.data());
+                if (fabsf(ge - L->med_est[i]) < L->band[i]) {
+                    out[i] = 0.0f;
+                    continue;
+                }
+                float g, u;
+                const char * grow = (const char *) gate_up->data + e*gate_up->nb[2] + i*gate_up->nb[1];
+                const char * urow = (const char *) gate_up->data + e*gate_up->nb[2] + (i + n_ff)*gate_up->nb[1];
+                L->vec_dot_gate((int) L->n_embd, &g, 0, grow, 0, xq_gate.data(), 0, 1);
+                L->vec_dot_up  ((int) L->n_embd, &u, 0, urow, 0, xq_u,           0, 1);
+                out[i] = llama_dna_act(L->act, g) * u - L->mu[i];
+            }
+        }
+    }
+}
+
+// op_expert_down: src0 = delta, src1 = weights [1, n_expert_used, n_tokens],
+// src2 = selected_experts -> y [n_embd, n_tokens]
+void llama_dna::op_expert_down(ggml_tensor * dst, int ith, int nth, void * userdata) {
+    llama_dna_moe_layer & M = *(llama_dna_moe_layer *) userdata;
+    const ggml_tensor * delta = dst->src[0];
+    const ggml_tensor * weights = dst->src[1];
+    const ggml_tensor * sel = dst->src[2];
+
+    const int64_t n_embd = dst->ne[0];
+    const int64_t n_tokens = dst->ne[1];
+    const int64_t n_slots = delta->ne[1];
+    const int64_t n_ff = delta->ne[0];
+
+    const int64_t per = ((n_embd + nth - 1)/nth + 7) & ~(int64_t) 7;
+    const int64_t j0 = std::min<int64_t>(per*ith, n_embd);
+    const int64_t j1 = std::min<int64_t>(j0 + per, n_embd);
+    if (j0 >= j1) {
+        return;
+    }
+
+    for (int64_t t = 0; t < n_tokens; ++t) {
+        float * y = (float *) ((char *) dst->data + t*dst->nb[1]);
+        memset(y + j0, 0, (j1 - j0)*sizeof(float));
+        for (int64_t s = 0; s < n_slots; ++s) {
+            const int32_t e = ((const int32_t *) sel->data)[t*sel->nb[1]/sizeof(int32_t) + s];
+            llama_dna_layer * L = M.experts[e];
+            if (!L) {
+                continue;
+            }
+            const float w = ((const float *) weights->data)[t*weights->nb[1]/sizeof(float) + s*weights->nb[0]/sizeof(float)];
+            for (int64_t j = j0; j < j1; ++j) {
+                y[j] += w * L->c0[j];
+            }
+            const float * d = (const float *) ((const char *) delta->data + s*delta->nb[1] + t*delta->nb[2]);
+            for (int64_t i = 0; i < n_ff; ++i) {
+                if (d[i] != 0.0f) {
+                    llama_dna_axpy_f16(y + j0, L->down_t.data() + (size_t) i*n_embd + j0, w * d[i], j1 - j0);
+                }
+            }
+        }
     }
 }

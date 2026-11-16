@@ -2,6 +2,7 @@
 
 #include "llama-arch.h"
 #include "llama-batch.h"
+#include "llama-dna.h"
 #include "llama-hparams.h"
 #include "llama-adapter.h"
 
@@ -26,6 +27,7 @@ struct llama_hadamard;
 class llama_moe_cache;
 class llama_dna;
 struct llama_dna_layer;
+struct llama_dna_moe_layer;
 
 struct llama_memory_context_i;
 
