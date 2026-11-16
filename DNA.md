@@ -97,6 +97,81 @@ For each gate neuron i:
 
 Code: `src/llama-dna.{h,cpp}` (state, calibration, kernels), hooks in `llm_graph_context::build_ffn` (`src/llama-graph.cpp`) and `llama_context` (`src/llama-context.cpp`). The CPU backend exports `ggml_get_type_traits_cpu` through `ggml_backend_reg_get_proc_address` so the active rows use the native quantized dot products.
 
+## Predictor selection (`--dnapred`)
+
+The neuron-activity predictor is selectable: `--dnapred xor` (default) keeps the
+binary sign + block-scale XOR estimate (1.5 bpw at `B=32`). `--dnapred <ggml-type>`
+(e.g. `iq4_xs`, `q8_0`, `f16`, `q4_0`) re-quantizes the dequantized gate rows into
+that type (`ggml_get_type_traits(type)->from_float_ref`) and routes with the native
+CPU `vec_dot` kernel (`get_traits(type)->vec_dot` against `vec_dot_type`-quantized
+activations). The dead zone, `med_est`/`band`, `mu`, `c0`, and the delta down
+projection are unchanged.
+
+- `--dnapred` implies `--dna`; `LLAMA_DNA_PRED` is the env override, CLI wins.
+- Any type is accepted, subject to: `from_float_ref != nullptr` (imatrix-gated
+  `iq2_xxs`/`iq2_xs`/`iq1_s`/`iq1_m`/`iq2_s` are rejected), a CPU `vec_dot` exists,
+  `n_embd % blck_size(type) == 0`, and the activation type's `from_float` exists.
+- `LLAMA_DNA_BLOCK` is ignored for quant predictors (granularity is fixed by the type).
+- Cost: predictor memory is `type_sizef(type)` bpw (iq4_xs 4.25, q8_0 8.5) and routing
+  is real MACs, not popcounts — the `route` ms/token in the verbose stats reflects this.
+
+### Hyperparameters (current)
+
+| name | where | default | meaning |
+|---|---|---|---|
+| predictor quant | `--dnapred` / `LLAMA_DNA_PRED` | `xor` | `xor` or any ggml type name (debug vehicle, any quant) |
+| dead zone half-width | `LLAMA_DNA_T` | 0.5 | `band = T * m_est` (zmode 0) or `T * sd_est[i]` (zmode 1) |
+| block size (XOR only) | `LLAMA_DNA_BLOCK` | 32 | estimator block for the XOR predictor |
+| calibration tokens/phase | `LLAMA_DNA_CALIB` | 256 | two phases: gate stats, then silent bias `mu` |
+| min active floor | `LLAMA_DNA_MIN_ACTIVE` | 0.02 | band shrink at end of bias phase if active fraction is lower |
+| batch limit | `LLAMA_DNA_MAX_BATCH` | 32 | larger ubatches use dense FFN |
+| band basis | `LLAMA_DNA_ZMODE` | 0 | 0: per-layer mean, 1: per-neuron std |
+
+Bias handling: `med_est`/`band` are fixed after the stats phase; `mu`/`c0`/`down_t`
+are fixed after the bias phase. There is no re-calibration after PREDICT starts.
+
+### Perplexity results (Qwen3-0.6B-Q6_K, wikitext-2 test, `-c 512 --chunks 4 -t 8 --fit off`,
+`LLAMA_DNA_MAX_BATCH=512`, `LLAMA_GRAPH_REUSE_DISABLE=1`, `n_calib=256`)
+
+Dense baseline: `PPL = 19.1537 ± 2.07814` (chunks [1]12.5071,[2]17.8739,[3]18.2390,[4]19.1537).
+
+Predictor quality (`corr(g, g~)`, per-layer mean over calibration):
+
+| predictor | bpw | corr | mean |g~| |
+|---|---|---|---|---|
+| xor | 1.50 | 0.58 | — |
+| iq4_xs | 4.25 | 0.997 | matches true sd |
+| q8_0 | 8.50 | 0.999 | matches true sd |
+
+End-to-end perplexity (final estimate over 4 chunks; calibration tokens are the first
+512 of chunk 1; layer 27 never leaves calibration in perplexity because its ubatch is
+1 token, so 27/28 layers predict — see constraint note below):
+
+| pred | T | active % (mean) | PPL | Δ vs dense |
+|---|---|---|---|---|
+| xor | 0.5 | ~62 | 31.9262 ± 3.42903 | +67% |
+| xor | 1.0 | ~22 | 100.3747 ± 11.11852 | +424% |
+| xor | 2.0 | ~1 | 2781.5180 ± 333.04977 | +14426% |
+| iq4_xs | 0.5 | ~41 | 44.1554 ± 4.97838 | +131% |
+| iq4_xs | 1.0 | ~14 | 260.4509 ± 31.67293 | +1260% |
+| iq4_xs | 2.0 | ~1 | 1882.5700 ± 249.58446 | +9729% |
+| q8_0 | 0.5 | ~41 | 44.7044 ± 5.04597 | +133% |
+| q8_0 | 1.0 | ~14 | 251.2477 ± 30.41226 | +1212% |
+| q8_0 | 2.0 | ~1 | 1868.0688 ± 249.34419 | +9654% |
+
+Takeaway: the quant predictors are near-exact routers (`corr ≈ 1.0`), so the
+*selection* is no longer the bottleneck — the dead zone itself is. At equal `T`
+the quant predictors silence *more* neurons (because `g~` is accurate, `|g~-med|`
+exceeds the band more often) and lose *more* perplexity: the bias-fill
+approximation is what costs quality, not routing error. In `zmode 0`,
+`band = T * mean|g~|` is scale-sensitive: for the quant predictors `mean|g~| ≈
+mean|g|` (≈ 3× the XOR estimate's 0.2–0.9), so the same `T` gives a wider band in
+absolute terms but a tighter one relative to the gate distribution, silencing
+neurons whose true `h[i]` deviates far from `mu[i]`. `zmode 1` (`T * sd_est[i]`)
+is scale-free and should be compared before drawing conclusions about predictors.
+At `T=2.0` the active fraction collapses to ~1% and perplexity explodes for all
+predictors — the bias floor holds only ~30% of `h` energy at that sparsity.
+
 ## Enable / disable
 
 DNA is controlled by `--dna` (general setting, `common/arg.cpp`, env `LLAMA_ARG_DNA`) and the booleans flow `common_params.dna` → `mparams` (`common_model_params_to_llama`) and `cparams.dna` (`common_context_params_to_llama`). The runtime enablement now checks `cparams.dna` (`src/llama-context.cpp`), not an env var. Per-layer checks remain in `llama_dna::get_layer()` (`src/llama-dna.cpp:525`) and `llama_dna_row_is_readable()` (`src/llama-dna.cpp:278).
@@ -116,10 +191,11 @@ When `--dna` is set, the CLI forces the load defaults DNA needs and will error i
 | `LLAMA_DNA_T` | 0.5 | dead zone half-width T |
 | `LLAMA_DNA_ZMODE` | 0 | 0: band = T * mean(abs(g~)) per layer, 1: band = T * std(g~) per neuron |
 | `LLAMA_DNA_BLOCK` | 32 | estimator block size B (8, 16, 32, 64) |
-| `LLAMA_DNA_CALIB` | 4096 | tokens per calibration phase (two phases: gate statistics, then silent bias mu) |
+| `LLAMA_DNA_CALIB` | 256 | tokens per calibration phase (two phases: gate statistics, then silent bias mu) |
 | `LLAMA_DNA_MIN_ACTIVE` | 0.02 | floor on the active fraction, the band is shrunk at the end of calibration if needed |
 | `LLAMA_DNA_MAX_BATCH` | 32 | ubatches larger than this use the dense FFN after calibration (set to 512 to evaluate perplexity with DNA) |
 | `LLAMA_DNA_VERBOSE` | 0 | print per-layer active fraction and kernel times when the context is freed |
+| `LLAMA_DNA_PRED` | `xor` | predictor override ("xor" or ggml type name, e.g. `iq4_xs`); CLI `--dnapred` wins |
 
 ## Usage / How to run
 
@@ -134,9 +210,12 @@ When `--dna` is set, the CLI forces the load defaults DNA needs and will error i
 ```
 
 The common CLI (`tools/cli/`) sets `params.verbosity = LOG_LEVEL_ERROR` by default
-(`tools/cli/cli.cpp:36`), which suppresses all `LLAMA_LOG_INFO` / `LLAMA_LOG_WARN`
-messages — including the "DNA enabled" startup line and per-turn DNA stats.
-Use `-lv 3` (INFO) or `-lv 2` (WARN) to see them.
+(`tools/cli/cli.cpp:36`). The common log callback maps llama `INFO` to verbosity
+`TRACE` (4), which is above the `ERROR` threshold (1), so `LLAMA_LOG_INFO` lines —
+including the "DNA enabled" startup and calibration messages — are suppressed
+unless `-lv 3` (INFO) is given. To keep DNA visible without `-lv 3`, the startup,
+packed-gate, stats, bias, and per-layer prediction lines are emitted at
+`LLAMA_LOG_ERROR`, following the `print_turn_stats` precedent.
 
 Per-turn stats (server-side, after each completed turn), printed from
 `server_slot::print_timings()` in `tools/server/server-context.cpp`:
@@ -157,7 +236,7 @@ DNA: layer  3: 12345 tokens predicted, active = 12.5%, per token: observe 0.001 
 ```
 
 - `active = 12.5%` is the fraction of FFN neurons actually computed — lower means more compute saved.
-- Calibration messages are logged at info level (`--verbose` in the tools).
+- Calibration messages are logged at error level so they survive the default ERROR verbosity (see above).
 - With `LLAMA_DNA_T=0` every neuron is active and the output equals the dense FFN (checked: identical perplexity on F16 and Q4_0 test models).
 
 DNA only takes effect on layers that pass all of these checks (enforced in `llm_graph_context::build_ffn` and `llama_dna_layer::get_layer`):

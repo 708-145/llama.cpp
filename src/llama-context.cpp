@@ -217,6 +217,7 @@ llama_context::llama_context(
     cparams.yarn_beta_slow          = params.yarn_beta_slow   >= 0.0f ? params.yarn_beta_slow   : hparams.yarn_beta_slow;
     cparams.embeddings              = params.embeddings;
     cparams.dna                     = params.dna;
+    cparams.dna_pred                = params.dna_pred;
     cparams.embeddings_nextn        = false;
     cparams.embeddings_nextn_masked = false;
     cparams.offload_kqv             = params.offload_kqv;
@@ -621,7 +622,11 @@ llama_context::llama_context(
             // no_alloc probe load internally, but the real inference model is loaded with
             // no_alloc=false. Per-layer weight readability is already enforced by
             // llama_dna::get_layer() via llama_dna_row_is_readable().
-            dna = std::make_unique<llama_dna>(model, backend_cpu, llama_dna_params::from_env());
+            llama_dna_params dna_params = llama_dna_params::from_env();
+            if (cparams.dna_pred) {
+                dna_params.set_pred_from_name(cparams.dna_pred); // CLI --dnapred overrides LLAMA_DNA_PRED
+            }
+            dna = std::make_unique<llama_dna>(model, backend_cpu, dna_params);
         }
 
         if (cparams.moe_cache_size > 0) {
@@ -4498,6 +4503,7 @@ llama_context_params llama_context_default_params() {
         /*.swa_full                    =*/ true,
         /*.kv_unified                  =*/ false,
         /*.dna                         =*/ false,
+        /*.dna_pred                    =*/ nullptr,
         /*.sampler                     =*/ nullptr,
         /*.n_sampler                   =*/ 0,
         /*.ctx_other                   =*/ nullptr,

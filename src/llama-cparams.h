@@ -54,6 +54,7 @@ struct llama_cparams {
     bool auto_fkvr;
     bool no_perf;
     bool dna;
+    const char * dna_pred;   // DNA predictor name (nullptr/"xor" = xor, else ggml type name); see llama_context_params::dna_pred
     bool warmup;             // TODO: remove [TAG_LLAMA_GRAPH_NO_WARMUP]
     bool op_offload;
     bool kv_unified;

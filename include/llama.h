@@ -418,6 +418,7 @@ extern "C" {
                           // try to disable when n_seq_max > 1 for improved performance when the sequences do not share a large prefix
                           // ref: https://github.com/ggml-org/llama.cpp/pull/14363
         bool dna;         // enable Dynamic Neuron Activation (DNA) for dense SwiGLU FFNs on CPU
+        const char * dna_pred; // DNA neuron-activity predictor: nullptr/"xor" = XOR sign predictor (default), otherwise a ggml type name (e.g. "iq4_xs") selecting that quant as predictor; implies dna when set via CLI --dnapred
 
         // [EXPERIMENTAL]
         // backend sampler chain configuration (make sure the caller keeps the sampler chains alive)

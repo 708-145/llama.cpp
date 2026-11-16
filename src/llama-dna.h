@@ -3,8 +3,10 @@
 // DNA - Dynamic Neuron Activation
 //
 // Runtime calibrated neuron skipping for dense SwiGLU FFNs on the CPU backend.
-// A binary (sign + block scale) estimate of the gate projection routes each neuron to silent or active.
-// Active neurons get the full precision gate/up/down, silent neurons contribute a calibrated bias.
+// An approximate gate projection (XOR sign predictor by default, or any ggml quant
+// reusing the native CPU vec_dot kernel, selected via --dnapred) routes each neuron
+// to silent or active. Active neurons get the full precision gate/up/down, silent
+// neurons contribute a calibrated bias.
 // Calibration runs on the first tokens of normal inference, no model file or API change is needed.
 //
 // Supported affine terms (Restrictions 3, 4):
@@ -25,6 +27,12 @@
 struct llama_model;
 struct llama_dna_layer;
 
+enum llama_dna_phase {
+    LLAMA_DNA_PHASE_STATS,   // per-neuron gate statistics and estimator bias
+    LLAMA_DNA_PHASE_BIAS,    // silent-neuron bias mu with the final dead zone rule
+    LLAMA_DNA_PHASE_PREDICT,
+};
+
 struct llama_dna_stats {
     bool enabled = false;
     int  n_layers_on  = 0;
@@ -40,17 +48,33 @@ struct llama_dna_stats {
     uint64_t pred_tokens = 0;
 };
 
+// predictor kind: kXor = binary sign + block-scale estimate, kQuant = re-quantized
+// gate weights in any ggml type with a CPU vec_dot kernel (debug vehicle, any quant)
+enum llama_dna_pred_kind {
+    LLAMA_DNA_PRED_XOR = 0,
+    LLAMA_DNA_PRED_QUANT,
+};
+
+// parse a predictor name ("xor" or a ggml type name such as "iq4_xs", case-insensitive)
+// returns false when the name is neither
+bool llama_dna_pred_from_name(const char * name, enum llama_dna_pred_kind & kind, enum ggml_type & type);
+
 struct llama_dna_params {
     float    thresh     = 0.5f;  // dead zone half-width, in units of mean |g~| or per-neuron std (see zmode)
-    int      block      = 32;    // estimator block size, 8, 16, 32 or 64
-    uint32_t n_calib    = 4096;  // calibration tokens per phase
+    int      block      = 32;    // XOR estimator block size, 8, 16, 32 or 64 (unused for quant predictors)
+    uint32_t n_calib    = 256;   // calibration tokens per phase (calibration runs on the first tokens of inference)
     float    min_active = 0.02f; // floor on the active fraction per layer
     int      zmode      = 0;     // 0: band = thresh * mean |g~|, 1: band = thresh * per-neuron std of g~
     int      max_batch  = 32;    // larger batches use the dense FFN, skipping neurons only pays off when memory bound
     int      verbose    = 0;
+    enum llama_dna_pred_kind pred_kind = LLAMA_DNA_PRED_XOR;
+    enum ggml_type           pred_type = GGML_TYPE_F32; // quant predictor type, valid when pred_kind == LLAMA_DNA_PRED_QUANT
 
-    // env: LLAMA_DNA_T, LLAMA_DNA_BLOCK, LLAMA_DNA_CALIB, LLAMA_DNA_MIN_ACTIVE, LLAMA_DNA_ZMODE, LLAMA_DNA_MAX_BATCH, LLAMA_DNA_VERBOSE
+    // env: LLAMA_DNA_T, LLAMA_DNA_BLOCK, LLAMA_DNA_CALIB, LLAMA_DNA_MIN_ACTIVE, LLAMA_DNA_ZMODE, LLAMA_DNA_MAX_BATCH, LLAMA_DNA_VERBOSE, LLAMA_DNA_PRED
     static llama_dna_params from_env();
+
+    // select the predictor by name ("xor" or ggml type name); throws std::runtime_error on unknown names
+    void set_pred_from_name(const char * name);
 };
 
 class llama_dna {

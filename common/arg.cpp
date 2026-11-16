@@ -2432,6 +2432,14 @@ common_params_context common_params_parser_init(common_params & params, llama_ex
         }
     ).set_env("LLAMA_ARG_DNA"));
     add_opt(common_arg(
+        {"--dnapred"}, "PRED",
+        string_format("DNA neuron-activity predictor: \"xor\" (default) or any ggml type name (e.g. iq4_xs, q8_0, f16) whose CPU vec_dot kernel is reused to route neurons; implies --dna; XOR block size via LLAMA_DNA_BLOCK is ignored for quant predictors"),
+        [](common_params & params, const std::string & value) {
+            params.dna_pred = value;
+            params.dna = true; // --dnapred implies --dna
+        }
+    ).set_env("LLAMA_ARG_DNAPRED"));
+    add_opt(common_arg(
         {"--no-host"},
         "bypass host buffer allowing extra buffers to be used",
         [](common_params & params) {
