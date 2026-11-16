@@ -556,6 +556,12 @@ extern "C" {
                      struct llama_model * model,
             struct llama_context_params   params);
 
+    // DNA stats (Dynamic Neuron Activation)
+    // returns an opaque pointer to the context's DNA state, or nullptr if DNA is off.
+    // the underlying llama_dna_stats struct is an internal detail of llama-cpp;
+    // this accessor exists for internal use (server slot timing logs).
+    LLAMA_API const void * llama_get_dna(const struct llama_context * ctx);
+
     DEPRECATED(LLAMA_API struct llama_context * llama_new_context_with_model(
                      struct llama_model * model,
             struct llama_context_params   params),

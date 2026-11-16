@@ -18,6 +18,21 @@
 struct llama_model;
 struct llama_dna_layer;
 
+struct llama_dna_stats {
+    bool enabled = false;
+    int  n_layers_on  = 0;
+    int  n_layers_off = 0;
+    int  n_phase_stats   = 0;
+    int  n_phase_bias    = 0;
+    int  n_phase_predict = 0;
+    uint32_t calib_done = 0;
+    uint32_t calib_total = 0;
+    double act_min = 0.0;
+    double act_max = 0.0;
+    double act_avg = 0.0;
+    uint64_t pred_tokens = 0;
+};
+
 struct llama_dna_params {
     float    thresh     = 0.5f;  // dead zone half-width, in units of mean |g~| or per-neuron std (see zmode)
     int      block      = 32;    // estimator block size, 8, 16, 32 or 64
@@ -50,6 +65,7 @@ public:
     static void op_down   (ggml_tensor * dst, int ith, int nth, void * userdata); // src: delta -> y [n_embd, n_tokens]
 
     void print_stats() const;
+    llama_dna_stats get_stats() const;
 
     const llama_dna_params params;
 

@@ -633,6 +633,78 @@ void llama_dna::print_stats() const {
     }
 }
 
+llama_dna_stats llama_dna::get_stats() const {
+    llama_dna_stats s;
+    s.enabled = true;
+    s.calib_total = 2 * params.n_calib;
+
+    if (layers.empty()) {
+        return s;
+    }
+
+    for (const auto & [gate, L] : layers) {
+        if (!L) {
+            s.n_layers_off++;
+            continue;
+        }
+        s.n_layers_on++;
+        switch (L->phase) {
+            case LLAMA_DNA_PHASE_STATS:
+                s.n_phase_stats++;
+                s.calib_done = std::min(s.calib_done, L->n_tok);
+                break;
+            case LLAMA_DNA_PHASE_BIAS:
+                s.n_phase_bias++;
+                s.calib_done = std::min(s.calib_done, params.n_calib + L->n_tok);
+                break;
+            case LLAMA_DNA_PHASE_PREDICT:
+                s.n_phase_predict++;
+                break;
+        }
+        const uint64_t n_tok = L->pred_tok.load();
+        if (n_tok > 0) {
+            const double act = 100.0 * (double) L->pred_act.load() / ((double) n_tok * L->n_ff);
+            if (s.pred_tokens == 0) {
+                s.act_min = s.act_max = act;
+                s.pred_tokens = n_tok;
+            } else {
+                s.act_min = std::min(s.act_min, act);
+                s.act_max = std::max(s.act_max, act);
+                s.pred_tokens = std::max(s.pred_tokens, n_tok);
+            }
+        }
+    }
+
+    if (s.n_phase_predict > 0) {
+        // calibrate done, even if no layer has predicted yet this turn
+        s.calib_done = s.calib_total;
+    } else {
+        // still calibrating: slowest layer drives the reported progress
+        uint32_t done = s.calib_total;
+        for (const auto & [gate, L] : layers) {
+            if (!L) continue;
+            uint32_t d = L->phase == LLAMA_DNA_PHASE_STATS ? L->n_tok : params.n_calib + L->n_tok;
+            done = std::min(done, d);
+        }
+        s.calib_done = done;
+    }
+
+    {
+        double sum = 0.0;
+        int n = 0;
+        for (const auto & [gate, L] : layers) {
+            if (!L || L->pred_tok.load() == 0) continue;
+            const double act = 100.0 * (double) L->pred_act.load() / ((double) L->pred_tok.load() * L->n_ff);
+            sum += act;
+            n++;
+            s.pred_tokens = std::max(s.pred_tokens, (uint64_t) L->pred_tok.load());
+        }
+        s.act_avg = n > 0 ? sum / n : 0.0;
+    }
+
+    return s;
+}
+
 //
 // custom ops
 //

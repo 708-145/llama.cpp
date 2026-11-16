@@ -5,6 +5,7 @@
 
 #include "llama-chat.h"
 #include "llama-context.h"
+#include "llama-dna.h"
 #include "llama-mmap.h"
 #include "llama-vocab.h"
 #include "llama-model-loader.h"
@@ -93,6 +94,11 @@ size_t llama_max_tensor_buft_overrides() {
 
 bool llama_supports_mmap(void) {
     return llama_mmap::SUPPORTED;
+}
+
+// internal DNA stats accessor (see include/llama.h)
+const void * llama_get_dna(const struct llama_context * ctx) {
+    return ctx ? ctx->get_dna() : nullptr;
 }
 
 bool llama_supports_mlock(void) {

@@ -124,9 +124,9 @@ When `--dna` is set, the CLI forces the load defaults DNA needs and will error i
 ## Usage / How to run
 
 ```bash
-# Enable DNA with verbose stats (stats print when the context is freed, i.e. on exit)
+# Enable DNA; per-turn stats print server-side at the end of each slot completion.
 # NOTE: the common CLI sets log verbosity to ERROR by default, so you must raise it
-# with -lv 3 (INFO) or -lv 2 (WARN) to see DNA startup and per-layer messages.
+# with -lv 3 (INFO) or -lv 2 (WARN) to see DNA startup and per-turn stats.
 ./llama-cli --dna -m model-f32.gguf -p "hello world" -lv 3
 
 # DNA disabled (default)
@@ -135,10 +135,22 @@ When `--dna` is set, the CLI forces the load defaults DNA needs and will error i
 
 The common CLI (`tools/cli/`) sets `params.verbosity = LOG_LEVEL_ERROR` by default
 (`tools/cli/cli.cpp:36`), which suppresses all `LLAMA_LOG_INFO` / `LLAMA_LOG_WARN`
-messages — including the "DNA enabled" startup line and per-layer "DNA disabled"
-warnings. Use `-lv 3` (INFO) or `-lv 2` (WARN) to see them.
+messages — including the "DNA enabled" startup line and per-turn DNA stats.
+Use `-lv 3` (INFO) or `-lv 2` (WARN) to see them.
 
-Stats are printed per layer at context destruction:
+Per-turn stats (server-side, after each completed turn), printed from
+`server_slot::print_timings()` in `tools/server/server-context.cpp`:
+
+```
+DNA on (30/30 layers) — calibration 6/8192 (stats 30, bias 0)
+DNA on (30/30 layers) — prediction: 33 tokens, active min 63.7% avg 68.9% max 72.5%
+```
+
+- calibration shows slowest-layer progress over the two phases (`2 * LLAMA_DNA_CALIB` tokens total),
+  with per-phase layer counts
+- prediction shows cumulative predicted tokens and per-layer active-fraction min/avg/max
+
+Per-layer stats are also printed at context destruction (only when `LLAMA_DNA_VERBOSE=1`):
 
 ```
 DNA: layer  3: 12345 tokens predicted, active = 12.5%, per token: observe 0.001 ms, route 0.004 ms, down 0.003 ms
@@ -255,7 +267,7 @@ The following restrictions are currently enforced. Each has a corresponding TODO
 | 7 | **F32 activations only** — `cur->type == GGML_TYPE_F32` required. | TODO: support quantized activations (all GGUF quant types) in route/down kernels. |
 | 8 | **Batch size limit** — ubatches larger than `LLAMA_DNA_MAX_BATCH` (default 32) fall back to dense FFN. | TODO: implement batched route/down for large batches to avoid the dense fallback. |
 | 9 ✅ | ~~**Not compatible with `no_alloc` mode**~~ — Previously DNA was disabled when `model.no_alloc()` was true, but that flag is misleading: `--fit` (default on) does an internal `no_alloc=true` probe load, and the real inference model always has `no_alloc=false`. The guard has been removed; per-layer weight readability (`llama_dna_row_is_readable`) already rejects genuinely metadata-only loads. | ✅ Fixed: whole-model `no_alloc` gate removed from `llama-context.cpp` (see "The `no_alloc` / `--fit` footgun (root cause)" above). |
-| 10 | **Stats print only at context destruction** — no real-time or per-token stats during inference. | TODO: add periodic / per-turn stats logging (e.g. after each turn in llama-cli). |
+| 10 ✅ | **Stats print only at context destruction** — previous: `LLAMA_DNA_VERBOSE=1` only printed at destruction, no per-turn stats. | ✅ Fixed: server-side per-turn `LLAMA_LOG_INFO` in `server_slot::print_timings()` (`tools/server/server-context.cpp`) via `llama_dna::get_stats()` (`src/llama-dna.cpp`) and `llama_get_dna()` (`include/llama.h`, `src/llama.cpp`, `src/llama-context.cpp`). Shows on/off per layer, calibration `done/total` with phase breakdown, and prediction min/avg/max active fraction. Visible with `-lv 3` (INFO). |
 | 11 ✅ | ~~**`--no-repack` referenced in the env table does not exist**~~ — The flag now exists (`common/arg.cpp:2395` `-nr`/`--no-repack`); it gates the CPU repack extra-buffer (`use_extra_bufts`, default on). DNA forces `--no-repack` on (`common/arg.cpp:917` post-parse: `params.no_extra_bufts = true`, so `use_extra_bufts=false` down to `make_cpu_buft_list`, `src/llama-model.cpp:1262`), and throws if the user supplied an incompatible explicit override. | ✅ Fixed: `--dna` defaults `--load-mode=mmap` and `--no-repack` via parse-time mutation in `common/arg.cpp` (before `common_model_params_to_llama`, which also asserts the invariants). DNA no longer depends on the user remembering `--no-repack`. `--fit` still correctly forces `no_alloc=true` for probe measurement only; the `no_alloc` workaround (`--fit off`) is orthogonal. |
 | 12 ✅ | **mmap mode** | Works today via `CPU_Mapped` buffer (`ggml/src/ggml-backend.cpp:2958`), which DNA whitelists (`src/llama-dna.cpp:284`), so `w->data` reads valid bytes via the mapping. Remaining gap is sparse/lazy I/O: `lazy_mode` (`TENSOR_READ_LAZY`, `common/arg.cpp:2681`, `src/llama-model-loader.cpp:1183`, requires mmap) and per-neuron unmapping (`unmap_weight`, `src/llama-model-loader.cpp:1620`) are not implemented for DNA, so silent rows still cost a page fault per touch and a cold neuron's 4K page is only skipped if never touched. | TODO: per-neuron read path / `madvise(DONTNEED)` for silent rows; today DNA reads `w->data` rows directly and will fault any touched page. |
 

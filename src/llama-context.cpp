@@ -1016,6 +1016,10 @@ const llama_cparams & llama_context::get_cparams() const {
     return cparams;
 }
 
+const llama_dna * llama_context::get_dna() const {
+    return dna.get();
+}
+
 ggml_backend_sched_t llama_context::get_sched() const {
     return sched.get();
 }

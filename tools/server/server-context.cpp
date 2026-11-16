@@ -16,6 +16,7 @@
 #include "common.h"
 #include "fit.h"
 #include "llama.h"
+#include "../../src/llama-dna.h"
 #include "log.h"
 #include "sampling.h"
 #include "speculative.h"
@@ -806,6 +807,20 @@ struct server_slot {
         }
 
         common_speculative_print_stats(spec);
+
+        if (ctx_tgt) {
+            const llama_dna * dna = (const llama_dna *) llama_get_dna(ctx_tgt);
+            if (dna) {
+                llama_dna_stats s = dna->get_stats();
+                if (s.n_phase_predict > 0) {
+                    SLT_INF(*this, "DNA on (%d/%d layers) — prediction: %" PRIu64 " tokens, active min %.1f%% avg %.1f%% max %.1f%%\n",
+                            s.n_layers_on, s.n_layers_on + s.n_layers_off, s.pred_tokens, s.act_min, s.act_avg, s.act_max);
+                } else {
+                    SLT_INF(*this, "DNA on (%d/%d layers) — calibration %u/%u (stats %d, bias %d)\n",
+                            s.n_layers_on, s.n_layers_on + s.n_layers_off, s.calib_done, s.calib_total, s.n_phase_stats, s.n_phase_bias);
+                }
+            }
+        }
     }
 
     json to_json(bool only_metrics = false) const {
