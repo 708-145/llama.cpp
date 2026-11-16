@@ -811,14 +811,7 @@ struct server_slot {
         if (ctx_tgt) {
             const llama_dna * dna = (const llama_dna *) llama_get_dna(ctx_tgt);
             if (dna) {
-                llama_dna_stats s = dna->get_stats();
-                if (s.n_phase_predict > 0) {
-                    SLT_INF(*this, "DNA on (%d/%d layers) — prediction: %" PRIu64 " tokens, active min %.1f%% avg %.1f%% max %.1f%%\n",
-                            s.n_layers_on, s.n_layers_on + s.n_layers_off, s.pred_tokens, s.act_min, s.act_avg, s.act_max);
-                } else {
-                    SLT_INF(*this, "DNA on (%d/%d layers) — calibration %u/%u (stats %d, bias %d)\n",
-                            s.n_layers_on, s.n_layers_on + s.n_layers_off, s.calib_done, s.calib_total, s.n_phase_stats, s.n_phase_bias);
-                }
+                dna->print_turn_stats();
             }
         }
     }
@@ -5245,6 +5238,15 @@ void server_context::start_loop() {
 
 void server_context::terminate() {
     impl->queue_tasks.terminate();
+}
+
+void server_context::print_dna_stats() {
+    if (impl->ctx_tgt) {
+        const llama_dna * dna = (const llama_dna *) llama_get_dna(impl->ctx_tgt);
+        if (dna) {
+            dna->print_turn_stats();
+        }
+    }
 }
 
 llama_context * server_context::get_llama_context() const {

@@ -65,6 +65,7 @@ public:
     static void op_down   (ggml_tensor * dst, int ith, int nth, void * userdata); // src: delta -> y [n_embd, n_tokens]
 
     void print_stats() const;
+    void print_turn_stats() const;
     llama_dna_stats get_stats() const;
 
     const llama_dna_params params;

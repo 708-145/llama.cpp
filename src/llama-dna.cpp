@@ -705,6 +705,20 @@ llama_dna_stats llama_dna::get_stats() const {
     return s;
 }
 
+void llama_dna::print_turn_stats() const {
+    llama_dna_stats s = get_stats();
+    // ALWAYS visible at ERROR level so the CLI (verbosity default ERROR) actually prints it.
+    // Priority: if DNA is enabled, this line must surface, even without -lv 3.
+    // LLAMA_LOG_ERROR is LOG_LEVEL_ERROR (1) <= threshold (1 by default).
+    if (s.n_phase_predict > 0) {
+        LLAMA_LOG_ERROR("DNA on (%d/%d layers) — prediction: %" PRIu64 " tokens, active min %.1f%% avg %.1f%% max %.1f%%\n",
+                s.n_layers_on, s.n_layers_on + s.n_layers_off, s.pred_tokens, s.act_min, s.act_avg, s.act_max);
+    } else {
+        LLAMA_LOG_ERROR("DNA on (%d/%d layers) — calibration %u/%u (stats %d, bias %d)\n",
+                s.n_layers_on, s.n_layers_on + s.n_layers_off, s.calib_done, s.calib_total, s.n_phase_stats, s.n_phase_bias);
+    }
+}
+
 //
 // custom ops
 //
