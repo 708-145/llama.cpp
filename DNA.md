@@ -170,7 +170,7 @@ DNA only takes effect on layers that pass all of these checks (enforced in `llm_
 - Activations: any type via graph-level cast (Restriction 7 lifted) — non-F32 `cur` is `ggml_cast` to F32 before the DNA ops (`dna_x_f32`); the kernels always see F32. 2D tensor required (`cur->ne[2] == 1 && cur->ne[3] == 1`).
 - Batch size ≤ `LLAMA_DNA_MAX_BATCH` (default 32); larger batches fall back to dense FFN
 
-Note: quantized GGUF models (e.g. Q4_0, IQ4_XS) use repacked buffers, so DNA layers are rejected for those models via the host-memory check. Per-tensor scales alone no longer reject a layer. Use an unquantized F32 model to test DNA.
+Note: quantized GGUF models (e.g. Q4_0, IQ4_XS, Q6_K) work with DNA — repack is prevented in DNA mode (`DNA mode: preventing repack for quant weights …` logged at INFO in `common_param` post-parse; explicit `--repack` + `--dna` is a hard error, matching the `--load-mode` override handling). Per-tensor scales alone do not reject a layer. The quant gate/up weights run through the native CPU `vec_dot` kernels (no F32 dequant in the per-token path); `W_down` is dequantized once to a transposed F16 copy during calibration. Repacked extra buffers are still rejected per-layer (`llama_dna_row_is_readable`) as a safety net, but with `--no-repack` forced they never occur in DNA mode.
 
 ### The `no_alloc` / `--fit` footgun (root cause)
 

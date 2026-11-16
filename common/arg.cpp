@@ -905,6 +905,13 @@ static bool common_params_parse_ex(int argc, char ** argv, common_params_context
     }
 
     if (params.dna) {
+        // --repack was given explicitly: hard error (matches the load-mode override handling above).
+        // Detection was done in the --repack / -nr handler (params.repack_explicit); the
+        // default-on case (no explicit flag) falls through to the forced --no-repack below.
+        if (params.repack_explicit && !params.no_extra_bufts) {
+            throw std::invalid_argument(
+                "error: DNA forbids weight repacking, but --repack was given explicitly; use --dna with --no-repack (or omit --repack, DNA forces --no-repack by default)\n");
+        }
         if (params.load_mode != LLAMA_LOAD_MODE_AUTO &&
             params.load_mode != LLAMA_LOAD_MODE_MMAP && params.load_mode != LLAMA_LOAD_MODE_MMAP_MLOCK) {
             throw std::invalid_argument(string_format(
@@ -918,6 +925,7 @@ static bool common_params_parse_ex(int argc, char ** argv, common_params_context
             // explicitly disabled repacking: compatible
         } else {
             params.no_extra_bufts = true; // DNA is forced to no-repack
+            COM_INF("%s\n", "DNA mode: preventing repack for quant weights (weights stay in mmap host buffers for direct row access)");
         }
     }
 
@@ -2410,9 +2418,10 @@ common_params_context common_params_parser_init(common_params & params, llama_ex
     add_opt(common_arg(
         {"--repack"},
         {"-nr", "--no-repack"},
-        string_format("whether to enable weight repacking (default: %s)", params.no_extra_bufts ? "disabled" : "enabled"),
+        string_format("whether to enable weight repacking (default: %s; DNA overrides this and forces --no-repack unless --repack was given explicitly, which throws)", params.no_extra_bufts ? "disabled" : "enabled"),
         [](common_params & params, bool value) {
             params.no_extra_bufts = !value;
+            params.repack_explicit = true; // --repack / -nr was passed explicitly (either direction)
         }
     ).set_env("LLAMA_ARG_REPACK"));
     add_opt(common_arg(
