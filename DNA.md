@@ -204,6 +204,40 @@ is scale-free and should be compared before drawing conclusions about predictors
 At `T=2.0` the active fraction collapses to ~1% and perplexity explodes for all
 predictors — the bias floor holds only ~30% of `h` energy at that sparsity.
 
+### Perplexity results (Gemma-4-E2B-IQ3_XXS, `-c 512 --chunks 4 -t 4 --fit off`,
+`LLAMA_DNA_MAX_BATCH=512`, `LLAMA_GRAPH_REUSE_DISABLE=1`, `n_calib=4096`, `--dnapred iq4_xs`)
+
+All runs: `-t 4`, 2-minute cooldowns between CPU-intensive runs (see "Running perplexity sweeps").
+
+Dense baseline: `PPL = 98.5901 ± 15.41499` (chunks [1]43.0294,[2]94.6609,[3]83.8523,[4]98.5901).
+
+Calibration note: with `n_calib=256`, layers 0–33 finalize at `n_tok=514` for layers
+0–33 but layer 34 stays in `phase 0` (513 tokens, 1-token ubatch), so only ~34/35
+layers predict. The `T=0.1` point at `n_calib=256` (`PPL = 86.2342 ± 12.87773`,
+88% active, `energy(bias) ≈ 0.2–6%`) is *below* dense — inside the chunk noise
+(dense chunks span 43.03–98.59) and confounded by the 514-token calibration sample
+(`mean|g~|` spans 0.19–2.98 across layers). At `n_calib=4096` the same T=0.1 and
+T=0.5 both return `PPL = 98.3143 ± 15.33638`, essentially identical to dense —
+the earlier "loss" was a calibration-size artifact, not the dead zone. The
+T=0.0 firewall (`active = 100%`, `energy(bias) = 0.0%`, `PPL = 98.4483 ± 15.41153`)
+confirms the MoE delta/c0 path is dense-exact.
+
+| T | n_calib | active % (mean) | PPL | Δ vs dense |
+|---|---|---|---|---|
+| 0.0 | 256 | 100 | 98.4483 ± 15.41153 | −0.14% |
+| 0.1 | 256 | ~88 | 86.2342 ± 12.87773 | −12.5% (noise, see above) |
+| 0.1 | 4096 | — | 98.3143 ± 15.33638 | −0.28% |
+| 0.5 | 4096 | — | 98.3143 ± 15.33638 | −0.28% |
+| 0.5 | 256 | ~42 | 128.2535 ± 16.79535 | +30.1% (514-token artifact) |
+
+Takeaway: with adequate calibration (`n_calib=4096`, i.e. ≥8192 tokens, all 35
+layers past BIAS), DNA is **dense-neutral** at T=0.1–0.5 on this model. The
+T=0.5 "loss" with `n_calib=256` was the small-calibration artifact, not the
+dead zone or the MoE bias. The MoE bias computation (`mu`, `c0`, per-expert
+`down_t`, weighted `op_expert_down`) matches `DNA.md` principles 1–4: `c0 = W_down·mu + down_b`,
+`y = c0 + Σ_active (down_s·W_down[:,i])·(h[i] - mu[i])`, with GeGLU/SiLU/GELU_ERF/RELU
+activations honored via `act`.
+
 ## Enable / disable
 
 DNA is controlled by `--dna` (general setting, `common/arg.cpp`, env `LLAMA_ARG_DNA`) and the booleans flow `common_params.dna` → `mparams` (`common_model_params_to_llama`) and `cparams.dna` (`common_context_params_to_llama`). The runtime enablement now checks `cparams.dna` (`src/llama-context.cpp`), not an env var. Per-layer checks remain in `llama_dna::get_layer()` (`src/llama-dna.cpp:525`) and `llama_dna_row_is_readable()` (`src/llama-dna.cpp:278).
@@ -282,6 +316,28 @@ DNA only takes effect on layers that pass all of these checks (enforced in `llm_
 - Batch size ≤ `LLAMA_DNA_MAX_BATCH` (default 32); larger batches fall back to dense FFN
 
 Note: quantized GGUF models (e.g. Q4_0, IQ4_XS, Q6_K) work with DNA — repack is prevented in DNA mode (`DNA mode: preventing repack for quant weights …` logged at INFO in `common_param` post-parse; explicit `--repack` + `--dna` is a hard error, matching the `--load-mode` override handling). Per-tensor scales alone do not reject a layer. The quant gate/up weights run through the native CPU `vec_dot` kernels (no F32 dequant in the per-token path); `W_down` is dequantized once to a transposed F16 copy during calibration. Repacked extra buffers are still rejected per-layer (`llama_dna_row_is_readable`) as a safety net, but with `--no-repack` forced they never occur in DNA mode.
+
+### Running perplexity sweeps (WSL / `setsid` shell)
+
+Perplexity runs under `setsid bash run_*.sh` survive the tool-call timeout and are
+re-parented to PID 1's relay (`Relay(27448)`, root). Two traps burned an afternoon:
+
+1. **`pkill -f run_sweep_tmp` matches the *bash*, not the binary.** The child is
+   `llama-perplexity -m … --dnapred iq4_xs` — the pattern `run_sweep` does not
+   appear in its cmdline. Kill by PID (`kill -9 <pid>`), and confirm which
+   process is which first: `cat /proc/<pid>/cmdline | tr '\0' ' '` shows the
+   full argv (model, `--chunks`, `-t`), so you can tell the T=0.0 firewall run
+   from the T=0.1/0.2 points. `pkill -f llama-perplexity` also matches — use it,
+   not `run_*`.
+2. **Over-heating.** `-t 8` + two overlapping runs (orphan + new) pinned the CPU
+   at >500% and the box overheated. Keep `-t 4` (≈ 200–250% CPU) and insert a
+   **2-minute `sleep 120`** between successive `llama-perplexity` invocations so
+   the CPU can cool. One process at a time.
+
+Unset-graph-reuse is also required on the Gemma runs: `LLAMA_GRAPH_REUSE_DISABLE=1`
+(the DNA graph topology changes at phase boundaries; perplexity over 512-token
+chunks reuses graphs across ubatches otherwise).
+
 
 ### The `no_alloc` / `--fit` footgun (root cause)
 

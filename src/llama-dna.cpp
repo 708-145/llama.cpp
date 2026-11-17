@@ -66,6 +66,8 @@ struct llama_dna_layer {
 
     uint32_t n_tok      = 0; // tokens seen in the current phase, synced by llama_dna::update()
     uint32_t n_tok_next = 0; // running total written by op_observe, applied by llama_dna::update()
+    uint32_t n_slot     = 0; // tokens already consumed by op_* (reservoir indices)
+    uint32_t n_read     = 0; // last synced n_tok (for n_slot)
 
     // packed gate estimator (quant predictor, --dnapred <type>): re-quantized gate rows
     // in pred_type layout, plus the native CPU vec_dot / from_float for pred_type
@@ -716,17 +718,28 @@ uint32_t llama_dna::update() {
         if (!L) {
             continue;
         }
+        const uint32_t n_tok_prev = L->n_tok;
         L->n_tok = L->n_tok_next;
+        L->n_read = L->n_tok_next;
+        L->n_slot = L->n_slot + (L->n_tok > n_tok_prev ? L->n_tok - n_tok_prev : 0);
 
-        if (L->phase == LLAMA_DNA_PHASE_STATS && L->n_tok >= params.n_calib) {
+        // A phase only finalizes when every layer has seen n_calib tokens. With
+        // graph reuse the observed token counts can diverge between layers (e.g.
+        // perplexity's 1-token ubatch for the last layer), so finalizing early
+        // would reset n_tok_next and stall the slowest layer forever.
+        if (L->phase == LLAMA_DNA_PHASE_STATS && L->n_tok >= params.n_calib &&
+            all_layers_at_least(params.n_calib, LLAMA_DNA_PHASE_STATS)) {
             llama_dna_finalize_stats(*L);
             L->phase = LLAMA_DNA_PHASE_BIAS;
             L->n_tok = L->n_tok_next = 0;
+            L->n_slot = 0;
             epoch++;
-        } else if (L->phase == LLAMA_DNA_PHASE_BIAS && L->n_tok >= params.n_calib) {
+        } else if (L->phase == LLAMA_DNA_PHASE_BIAS && L->n_tok >= params.n_calib &&
+                   all_layers_at_least(params.n_calib, LLAMA_DNA_PHASE_BIAS)) {
             llama_dna_finalize_bias(*L);
             L->phase = LLAMA_DNA_PHASE_PREDICT;
             L->n_tok = L->n_tok_next = 0;
+            L->n_slot = 0;
             epoch++;
         }
     }
@@ -735,6 +748,15 @@ uint32_t llama_dna::update() {
 
 bool llama_dna::layer_is_predict(const llama_dna_layer * layer) {
     return layer && layer->phase == LLAMA_DNA_PHASE_PREDICT;
+}
+
+bool llama_dna::all_layers_at_least(uint32_t need, llama_dna_phase phase) const {
+    for (const auto & [gate, L] : layers) {
+        if (!L || L->phase != phase || L->n_tok < need) {
+            return false;
+        }
+    }
+    return true;
 }
 
 // MoE: one dna_layer per expert. gate_up_exps is [n_embd, 2*n_ff, n_expert] PAR
@@ -1007,7 +1029,7 @@ void llama_dna::op_observe(ggml_tensor * dst, int ith, int nth, void * userdata)
 
         L.pred_from_float(xr, xq_pred.data(), L.n_embd);
 
-        const uint32_t k = (uint32_t) t; // reservoir index within this ubatch; n_tok_next accumulates across ubatches
+        const uint32_t k = L.n_slot + (uint32_t) t; // global reservoir index in this phase; n_tok_next accumulates across ubatches
 
         for (int64_t i = i0; i < i1; ++i) {
             const float ge = llama_dna_estimate_quant(L, i, xq_pred.data());
@@ -1173,7 +1195,7 @@ void llama_dna::op_expert_observe(ggml_tensor * dst, int ith, int nth, void * us
             thread_local std::vector<uint8_t> xq_pred;
             xq_pred.assign(ggml_row_size(L->pred_vdt, L->n_embd), 0);
             L->pred_from_float(xr, xq_pred.data(), L->n_embd);
-            const uint32_t k = (uint32_t) t;
+            const uint32_t k = L->n_slot + (uint32_t) t;
             for (int64_t i = 0; i < n_ff; ++i) {
                 const float ge = llama_dna_estimate_quant(*L, i, xq_pred.data());
                 const float g  = gr[i];
