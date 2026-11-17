@@ -718,24 +718,35 @@ uint32_t llama_dna::update() {
         if (!L) {
             continue;
         }
+        // Layers finalize independently (option 1, 2026-11-17): each layer's
+        // n_tok counts its own routed tokens, and the stats/bias phases for
+        // that layer advance as soon as it reaches n_calib. A global barrier
+        // (all layers must reach n_calib in the same phase) stalled perplexity
+        // forever: layer 34's 1-token ubatch never accumulates 4096 tokens,
+        // so no layer left phase STATS/BIAS and DNA never predicted. Per-layer
+        // finalize matches the actual dependency: med_est/band/mu/c0 are
+        // per-layer, and the graph reuse key (epoch) only needs to change when
+        // *that* layer's topology changes.
         const uint32_t n_tok_prev = L->n_tok;
         L->n_tok = L->n_tok_next;
         L->n_read = L->n_tok_next;
         L->n_slot = L->n_slot + (L->n_tok > n_tok_prev ? L->n_tok - n_tok_prev : 0);
 
-        // A phase only finalizes when every layer has seen n_calib tokens. With
-        // graph reuse the observed token counts can diverge between layers (e.g.
-        // perplexity's 1-token ubatch for the last layer), so finalizing early
-        // would reset n_tok_next and stall the slowest layer forever.
-        if (L->phase == LLAMA_DNA_PHASE_STATS && L->n_tok >= params.n_calib &&
-            all_layers_at_least(params.n_calib, LLAMA_DNA_PHASE_STATS)) {
+        // Note: perplexity clears the KV cache per chunk (llama_memory_clear),
+        // but that does NOT touch DNA state. DNA's phase counters live in
+        // llama_dna_layer (n_tok/n_tok_next/n_slot), not in the KV cache, so
+        // they persist across chunks. The layer's graph topology for a chunk
+        // is rebuilt when epoch changes; the previous chunk's graph is invalid
+        // as soon as one layer flips phase. No reset is needed, and no reset
+        // should be added - calibration is a property of the trained weights'
+        // activation distribution, not of the current chunk's KV state.
+        if (L->phase == LLAMA_DNA_PHASE_STATS && L->n_tok >= params.n_calib) {
             llama_dna_finalize_stats(*L);
             L->phase = LLAMA_DNA_PHASE_BIAS;
             L->n_tok = L->n_tok_next = 0;
             L->n_slot = 0;
             epoch++;
-        } else if (L->phase == LLAMA_DNA_PHASE_BIAS && L->n_tok >= params.n_calib &&
-                   all_layers_at_least(params.n_calib, LLAMA_DNA_PHASE_BIAS)) {
+        } else if (L->phase == LLAMA_DNA_PHASE_BIAS && L->n_tok >= params.n_calib) {
             llama_dna_finalize_bias(*L);
             L->phase = LLAMA_DNA_PHASE_PREDICT;
             L->n_tok = L->n_tok_next = 0;
@@ -750,14 +761,7 @@ bool llama_dna::layer_is_predict(const llama_dna_layer * layer) {
     return layer && layer->phase == LLAMA_DNA_PHASE_PREDICT;
 }
 
-bool llama_dna::all_layers_at_least(uint32_t need, llama_dna_phase phase) const {
-    for (const auto & [gate, L] : layers) {
-        if (!L || L->phase != phase || L->n_tok < need) {
-            return false;
-        }
-    }
-    return true;
-}
+
 
 // MoE: one dna_layer per expert. gate_up_exps is [n_embd, 2*n_ff, n_expert] PAR
 // (gate rows 0..n_ff-1, up rows n_ff..2*n_ff-1); when null, gate_exps/up_exps are

@@ -161,8 +161,6 @@ public:
     const llama_dna_params params;
 
 private:
-    bool all_layers_at_least(uint32_t need, llama_dna_phase phase) const;
-
     typedef const ggml_type_traits_cpu * (*get_type_traits_cpu_t)(enum ggml_type);
 
     const llama_model & model;

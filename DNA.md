@@ -211,32 +211,49 @@ All runs: `-t 4`, 2-minute cooldowns between CPU-intensive runs (see "Running pe
 
 Dense baseline: `PPL = 98.5901 ± 15.41499` (chunks [1]43.0294,[2]94.6609,[3]83.8523,[4]98.5901).
 
-Calibration note: with `n_calib=256`, layers 0–33 finalize at `n_tok=514` for layers
-0–33 but layer 34 stays in `phase 0` (513 tokens, 1-token ubatch), so only ~34/35
-layers predict. The `T=0.1` point at `n_calib=256` (`PPL = 86.2342 ± 12.87773`,
-88% active, `energy(bias) ≈ 0.2–6%`) is *below* dense — inside the chunk noise
-(dense chunks span 43.03–98.59) and confounded by the 514-token calibration sample
-(`mean|g~|` spans 0.19–2.98 across layers). At `n_calib=4096` the same T=0.1 and
-T=0.5 both return `PPL = 98.3143 ± 15.33638`, essentially identical to dense —
-the earlier "loss" was a calibration-size artifact, not the dead zone. The
-T=0.0 firewall (`active = 100%`, `energy(bias) = 0.0%`, `PPL = 98.4483 ± 15.41153`)
-confirms the MoE delta/c0 path is dense-exact.
+Calibration note — the table below mixes two different regimes and must be read
+with the per-layer phase counters:
 
-| T | n_calib | active % (mean) | PPL | Δ vs dense |
-|---|---|---|---|---|
-| 0.0 | 256 | 100 | 98.4483 ± 15.41153 | −0.14% |
-| 0.1 | 256 | ~88 | 86.2342 ± 12.87773 | −12.5% (noise, see above) |
-| 0.1 | 4096 | — | 98.3143 ± 15.33638 | −0.28% |
-| 0.5 | 4096 | — | 98.3143 ± 15.33638 | −0.28% |
-| 0.5 | 256 | ~42 | 128.2535 ± 16.79535 | +30.1% (514-token artifact) |
+- `n_calib=256` (4 chunks × 512): layers 0–33 finalize at `n_tok=514`, layer 34
+  stays `phase 0` (513 tokens, 1-token ubatch). 34/35 layers **do predict** on
+  chunks 2–4 (`1024 tokens predicted` per layer at T=0.5). The T=0.5 point
+  (`PPL = 128.2535 ± 16.79535`, ~42% active, `energy(bias) ≈ 1–25%`) is a *real*
+  DNA loss vs dense 98.5901. The `n_calib=256` T=0.1 point (`86.2342 ± 12.87773`,
+  88% active, `energy(bias) ≈ 0.2–6%`) is *below* dense — inside the chunk noise
+  (dense chunks span 43.03–98.59) and confounded by the 514-token calibration sample
+  (`mean|g~|` spans 0.19–2.98 across layers).
+- `n_calib=4096` with 4 chunks: **no layer reaches PREDICT** (`phase 0, 1538
+  calibration tokens` for layers 0–33, `phase 0, 513` for layer 34). The
+  `PPL = 98.3143 ± 15.33638` for T=0.1/T=0.5 (zmode 0 and zmode 1, all
+  four) is just the dense value — DNA was calibrated only, never used.
+  Those rows are **invalid** for any T comparison.
+  The T=0.0 firewall (`active = 100%`, `energy(bias) = 0.0%`, `PPL = 98.4483 ±
+  15.41153`) confirms the MoE delta/c0 path is dense-exact, but it is *not*
+  evidence that DNA at T>0 is dense-neutral.
 
-Takeaway: with adequate calibration (`n_calib=4096`, i.e. ≥8192 tokens, all 35
-layers past BIAS), DNA is **dense-neutral** at T=0.1–0.5 on this model. The
-T=0.5 "loss" with `n_calib=256` was the small-calibration artifact, not the
-dead zone or the MoE bias. The MoE bias computation (`mu`, `c0`, per-expert
-`down_t`, weighted `op_expert_down`) matches `DNA.md` principles 1–4: `c0 = W_down·mu + down_b`,
+| T | n_calib | chunks | active % (mean) | PPL | Δ vs dense |
+|---|---|---|---|---|---|
+| 0.0 | 256 | 4 | 100 | 98.4483 ± 15.41153 | −0.14% |
+| 0.1 | 256 | 4 | ~88 | 86.2342 ± 12.87773 | −12.5% (noise, see above) |
+| 0.5 | 256 | 4 | ~42 | 128.2535 ± 16.79535 | +30.1% (real loss) |
+| 0.1 | 4096 | 4 | 0 (never predicted) | 98.3143 ± 15.33638 | dense-identical (invalid) |
+| 0.5 | 4096 | 4 | 0 (never predicted) | 98.3143 ± 15.33638 | dense-identical (invalid) |
+| 0.5 (zmode 1) | 512 | 4 | 0 (never predicted) | 98.3143 ± 15.33638 | dense-identical (invalid) |
+| 0.5 | 4096 | 16 | 0 (never predicted) | 155.3376 ± 11.74243 | dense-identical (invalid) |
+
+Takeaway: at `n_calib` that fits inside the corpus (256 ⇒ 512 calibration tokens,
+predicting on chunks 2–4), DNA **does lose** perplexity vs dense on Gemma
+(+30% at T=0.5, within noise at T=0.1). The loss is the bias-fill approximation
+(`energy(bias) ≈ 1–25%` of `h` at T=0.5), not DNA activation. The MoE bias
+computation (`mu`, `c0`, per-expert `down_t`, weighted `op_expert_down`) matches
+`DNA.md` principles 1–4: `c0 = W_down·mu + down_b`,
 `y = c0 + Σ_active (down_s·W_down[:,i])·(h[i] - mu[i])`, with GeGLU/SiLU/GELU_ERF/RELU
 activations honored via `act`.
+The bug that was fixed for this is the global phase barrier:
+`llama_dna::update()` previously required *every* layer to reach `n_calib` in
+the same phase; the 1-token-ubatch layer (34) never does, so no layer ever
+left phase STATS/BIAS. Layers now finalize independently (average out in the
+`print_stats` — layers 0–33 can reach phase 1 at their own pace).
 
 ## Enable / disable
 
