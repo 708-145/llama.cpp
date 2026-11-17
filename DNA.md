@@ -238,8 +238,12 @@ with the per-layer phase counters:
   the per-chunk values drift upward over the 8-chunk corpus, and chunks 5–8
   are the DNA-predicted ones).
 
+Remeasured 8-chunk dense baseline: `PPL = 131.3753 ± 14.19330`
+(chunks [1]43.0294,[2]94.6609,[3]83.8523,[4]98.5901,[5]103.6114,
+[6]111.3037,[7]124.4560,[8]131.3753).
+
 For a like-for-like comparison, the cumulative estimates give a PPL over chunks
-4–8 of **172.69** for the dense baseline and **191.27** for DNA (+10.76%).
+4–8 of **171.99** for the dense baseline and **191.27** for DNA (+11.21%).
 For equal-sized chunks, this is recovered in log space as
 `exp((8 ln PPL[8] - 3 ln PPL[3]) / 5)`. These are point estimates; the
 chunk-4–8 uncertainty cannot be recovered from the cumulative estimates alone.
