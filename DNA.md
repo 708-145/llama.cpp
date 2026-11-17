@@ -230,12 +230,20 @@ with the per-layer phase counters:
   The T=0.0 firewall (`active = 100%`, `energy(bias) = 0.0%`, `PPL = 98.4483 ±
   15.41153`) confirms the MoE delta/c0 path is dense-exact, but it is *not*
   evidence that DNA at T>0 is dense-neutral.
+- `n_calib=512, T=0.5, 8 chunks, -t 2` (today, per-layer finalize fix — see
+  below): all 35 layers now **reach PREDICT** — 3072 predicted tokens for
+  layers 0–33 (48% active mean), 1024 for layer 34 (44.4% active). Active
+  mean ≈ **43.3%**, `energy(bias) ≈ 10–25%` of `h`. Full run `Final estimate:
+  PPL = 164.1809 ± 14.80054` (not comparable to the 4-chunk dense `98.5901`;
+  the per-chunk values drift upward over the 8-chunk corpus, and chunks 5–8
+  are the DNA-predicted ones).
 
 | T | n_calib | chunks | active % (mean) | PPL | Δ vs dense |
 |---|---|---|---|---|---|
 | 0.0 | 256 | 4 | 100 | 98.4483 ± 15.41153 | −0.14% |
 | 0.1 | 256 | 4 | ~88 | 86.2342 ± 12.87773 | −12.5% (noise, see above) |
 | 0.5 | 256 | 4 | ~42 | 128.2535 ± 16.79535 | +30.1% (real loss) |
+| 0.5 | 512 | 8 | **~43** | 164.1809 ± 14.80054 | not comparable (8-chunk mean) |
 | 0.1 | 4096 | 4 | 0 (never predicted) | 98.3143 ± 15.33638 | dense-identical (invalid) |
 | 0.5 | 4096 | 4 | 0 (never predicted) | 98.3143 ± 15.33638 | dense-identical (invalid) |
 | 0.5 (zmode 1) | 512 | 4 | 0 (never predicted) | 98.3143 ± 15.33638 | dense-identical (invalid) |
