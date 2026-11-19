@@ -247,17 +247,17 @@ For a like-for-like comparison, the cumulative estimates give a PPL over chunks
 For equal-sized chunks, this is recovered in log space as
 `exp((8 ln PPL[8] - 3 ln PPL[3]) / 5)`. These are point estimates; the
 chunk-4–8 uncertainty cannot be recovered from the cumulative estimates alone.
+As a reference for the prediction-on chunks 5–8, the dense baseline is **175.06**
+(point estimate), recovered as `exp((8 ln PPL[8] - 4 ln PPL[4]) / 4)`.
 
 | T | n_calib | chunks | active % (mean) | PPL | Δ vs dense |
 |---|---|---|---|---|---|
+| dense reference | — | 5–8 | 100 | 175.06 (point estimate) | — |
+| 0.5 | 512 | 1–8 (prediction on for 5–8) | ~43 (chunks 5–8) | 191.27 (point estimate) | +9.26% |
 | 0.0 | 256 | 4 | 100 | 98.4483 ± 15.41153 | −0.14% |
 | 0.1 | 256 | 4 | ~88 | 86.2342 ± 12.87773 | −12.5% (noise, see above) |
 | 0.5 | 256 | 4 | ~42 | 128.2535 ± 16.79535 | +30.1% (real loss) |
-| 0.5 | 512 | 8 | **~43** | 164.1809 ± 14.80054 | not comparable (8-chunk mean) |
-| 0.1 | 4096 | 4 | 0 (never predicted) | 98.3143 ± 15.33638 | dense-identical (invalid) |
-| 0.5 | 4096 | 4 | 0 (never predicted) | 98.3143 ± 15.33638 | dense-identical (invalid) |
-| 0.5 (zmode 1) | 512 | 4 | 0 (never predicted) | 98.3143 ± 15.33638 | dense-identical (invalid) |
-| 0.5 | 4096 | 16 | 0 (never predicted) | 155.3376 ± 11.74243 | dense-identical (invalid) |
+
 
 Takeaway: at `n_calib` that fits inside the corpus (256 ⇒ 512 calibration tokens,
 predicting on chunks 2–4), DNA **does lose** perplexity vs dense on Gemma
