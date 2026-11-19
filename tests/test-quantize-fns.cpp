@@ -426,6 +426,52 @@ static int test_quantize_imatrix_degenerate(bool verbose) {
     return num_failed;
 }
 
+static int test_flat_imatrix_iq_predictors(bool verbose) {
+    constexpr int64_t n = 256;
+    const ggml_type types[] = {
+        GGML_TYPE_IQ3_XXS,
+        GGML_TYPE_IQ2_XS,
+        GGML_TYPE_IQ1_M,
+        GGML_TYPE_IQ1_S,
+    };
+    std::vector<float> x(n);
+    std::vector<float> imatrix(n, 1.0f);
+    std::vector<float> out(n);
+    generate_data(0.0, x.size(), x.data());
+
+    int num_failed = 0;
+    for (ggml_type type : types) {
+        std::vector<uint8_t> q(ggml_row_size(type, n));
+        ggml_quantize_chunk(type, x.data(), q.data(), 0, 1, n, imatrix.data());
+        ggml_get_type_traits(type)->to_float(q.data(), out.data(), n);
+
+        const ggml_type_traits_cpu * traits = ggml_get_type_traits_cpu(type);
+        if (!traits->vec_dot) {
+            ++num_failed;
+            continue;
+        }
+        const ggml_type_traits_cpu * activation_traits = ggml_get_type_traits_cpu(traits->vec_dot_type);
+        if (!activation_traits->from_float) {
+            ++num_failed;
+            continue;
+        }
+        std::vector<uint8_t> qx(ggml_row_size(traits->vec_dot_type, n));
+        activation_traits->from_float(x.data(), qx.data(), n);
+        float dot = 0.0f;
+        traits->vec_dot(n, &dot, 0, q.data(), 0, qx.data(), 0, 1);
+
+        const bool failed = std::none_of(q.begin(), q.end(), [](uint8_t v) { return v != 0; }) ||
+            !std::isfinite(dot) ||
+            !std::all_of(out.begin(), out.end(), [](float v) { return std::isfinite(v); });
+        num_failed += failed;
+        if (failed || verbose) {
+            printf("%5s flat-imatrix predictor quantization: %s\n", ggml_type_name(type), RESULT_STR[failed]);
+        }
+    }
+
+    return num_failed;
+}
+
 int main(int argc, char * argv[]) {
     bool verbose = false;
 
@@ -449,6 +495,7 @@ int main(int argc, char * argv[]) {
     num_failed += test_f8_e4m3(verbose);
     num_failed += test_vec_dot_q(verbose);
     num_failed += test_quantize_imatrix_degenerate(verbose);
+    num_failed += test_flat_imatrix_iq_predictors(verbose);
 
     if (num_failed || verbose) {
         printf("%d tests failed\n", num_failed);

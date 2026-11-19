@@ -208,6 +208,18 @@ static inline float llama_dna_estimate_quant(const llama_dna_layer & L, int64_t 
     return ge;
 }
 
+static bool llama_dna_uses_flat_imatrix(enum ggml_type type) {
+    switch (type) {
+        case GGML_TYPE_IQ3_XXS:
+        case GGML_TYPE_IQ2_XS:
+        case GGML_TYPE_IQ1_M:
+        case GGML_TYPE_IQ1_S:
+            return true;
+        default:
+            return false;
+    }
+}
+
 // reservoir sampling, k is the sample index, all neurons see the same k
 static inline void llama_dna_reservoir_push(float * res, uint32_t salt, uint32_t k, float v) {
     if (k < LLAMA_DNA_RESERVOIR) {
@@ -292,16 +304,24 @@ static bool llama_dna_row_is_readable(const ggml_tensor * w) {
 static void llama_dna_pack_gate(llama_dna_layer & L) {
     std::vector<float> wf(L.n_embd);
 
-    // quant predictor only: any quant with a CPU from_float (e.g. iq4_xs, q4_0, q8_0)
-    // ggml_get_type_traits(pred_type)->from_float_ref quantizes the dequantized gate row.
-    // for predictor types without from_float_ref (iq2_xxs/iq2_xs/iq1_s/iq1_m/iq2_s gated on imatrix)
-    // from_float_ref is null and the layer is rejected earlier in get_layer.
+    // IQ types without a reference row quantizer need an imatrix; use unit
+    // weights so DNA can pack gate rows without model-specific calibration data.
     const ggml_type_traits * tr = ggml_get_type_traits(L.params->pred_type);
-    GGML_ASSERT(tr->from_float_ref);
+    const bool use_flat_imatrix = llama_dna_uses_flat_imatrix(L.params->pred_type);
+    GGML_ASSERT(use_flat_imatrix || tr->from_float_ref);
+    std::vector<float> flat_imatrix;
+    if (use_flat_imatrix) {
+        flat_imatrix.assign((size_t) L.n_embd, 1.0f);
+    }
     L.pred_q.assign((size_t) L.n_ff*L.pred_row_size, 0);
     for (int64_t i = 0; i < L.n_ff; ++i) {
         llama_dna_row_to_float(L.gate, i, wf.data());
-        tr->from_float_ref(wf.data(), L.pred_q.data() + i*L.pred_row_size, L.n_embd);
+        void * dst = L.pred_q.data() + i*L.pred_row_size;
+        if (use_flat_imatrix) {
+            ggml_quantize_chunk(L.params->pred_type, wf.data(), dst, 0, 1, L.n_embd, flat_imatrix.data());
+        } else {
+            tr->from_float_ref(wf.data(), dst, L.n_embd);
+        }
     }
 }
 
@@ -518,9 +538,9 @@ llama_dna_params llama_dna_params::from_env() {
 llama_dna::llama_dna(const llama_model & model, ggml_backend_t backend_cpu, const llama_dna_params & params) : params(params), model(model) {
     {
         const ggml_type_traits * tr = ggml_get_type_traits(params.pred_type);
-        if (!tr || !tr->from_float_ref) {
+        if (!tr || (!tr->from_float_ref && !llama_dna_uses_flat_imatrix(params.pred_type))) {
             throw std::runtime_error(std::string("DNA: predictor type ") + ggml_type_name(params.pred_type) +
-                    " has no CPU from_float_ref (imatrix-gated iq types cannot be packed without an imatrix)");
+                    " has no supported CPU quantization path");
         }
     }
     if (params.n_calib == 0 || params.thresh < 0.0f) {

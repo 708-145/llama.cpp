@@ -107,11 +107,14 @@ activations). The dead zone, `med_est`/`band`, `mu`, `c0`, and the delta down
 projection are unchanged.
 
 - `--dnapred` implies `--dna`; `LLAMA_DNA_PRED` is the env override, CLI wins.
-- Any type is accepted, subject to: `from_float_ref != nullptr` (imatrix-gated
-  `iq2_xxs`/`iq2_xs`/`iq1_s`/`iq1_m`/`iq2_s` are rejected), a CPU `vec_dot` exists,
-  `n_embd % blck_size(type) == 0`, and the activation type's `from_float` exists.
-- Cost: predictor memory is `type_sizef(type)` bpw (iq4_xs 4.25, q8_0 8.5) and routing
-  is real MACs — the `route` ms/token in the verbose stats reflects this.
+- Predictor types need a CPU `vec_dot`, `n_embd % blck_size(type) == 0`, and an
+  activation `from_float`. `iq3_xxs`, `iq2_xs`, `iq1_m`, and `iq1_s` are packed
+  with `ggml_quantize_chunk` and a flat, unit-weight imatrix; other types need
+  `from_float_ref` (so `iq2_xxs` and `iq2_s` remain unsupported).
+- Predictor storage is `type_sizef(type)` bpw: `iq4_xs` 4.25, `iq3_xxs` 3.0625,
+  `iq2_xs` 2.3125, `iq1_m` 1.75, `iq1_s` 1.5625, and `q8_0` 8.5. These are
+  storage rates, not a predictor speed or quality comparison; routing still
+  performs CPU dot products (`route` ms/token is reported in verbose stats).
 - The XOR sign predictor (`--dnapred xor`, `LLAMA_DNA_BLOCK`) was removed: its
   `corr(g,g~) ≈ 0.58` is not competitive with any quant predictor even after the
   `mean|g~|` mis-scaling, and its block-scale code dominated `llama-dna.cpp` for
