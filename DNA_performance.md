@@ -156,7 +156,7 @@ is storage-aligned:
  - example IQ3_CXS2:
 	* 8 per matrix scale factors (E5M3), not per block, not counted here
 	- 16w blocks a 3*16b + 3b scale factor select
-	- 2*5*16w = 160w, 510bit (512bit / 160w = 3.2 bpw)
+	- 2 * 5 * 16w = 160w, 510bit (512bit / 160w = 3.2 bpw)
 - A block may cover 16, 32, or more weights depending on its packed format, but its byte size will remain a multiple of a cache line.
 - The 16-weight granularity provides SIMD-compatible subblocks. Larger blocks may contain multiple 16-weight subblocks and span multiple cache lines.
 - The sparse transformation will use these blocks directly for cache-line and thread-sized work partitioning. The final block layout and metadata format still need to be designed.
