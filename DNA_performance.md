@@ -153,11 +153,10 @@ is storage-aligned:
 
 - Existing IQ4_XS and IQ3_XXS types use 256-value weight blocks, but they are legacy storage formats and do not satisfy the sparse-down cache layout: IQ4_XS stores 256 weights in a 136-byte block and IQ3_XXS in a 98-byte block.
 - The proposed sparse-down block type will instead fit exactly into `n * 64` bytes and contain a multiple of 16 weights.
- - example IQ3_CXS:
+ - example IQ3_CXS2:
 	* 8 per matrix scale factors (E5M3), not per block, not counted here
 	- 16w blocks a 3*16b + 3b scale factor select
-	- 5*16w = 80w, 255bit (256bit / 80w = 3.2 bpw)
-	- use two to fit in 64B cache line -> effective 160w for down projection 
+	- 2*5*16w = 160w, 510bit (512bit / 160w = 3.2 bpw)
 - A block may cover 16, 32, or more weights depending on its packed format, but its byte size will remain a multiple of a cache line.
 - The 16-weight granularity provides SIMD-compatible subblocks. Larger blocks may contain multiple 16-weight subblocks and span multiple cache lines.
 - The sparse transformation will use these blocks directly for cache-line and thread-sized work partitioning. The final block layout and metadata format still need to be designed.
@@ -165,7 +164,7 @@ is storage-aligned:
 
 For the sparse down projection, one useful model is:
 
-- Split the output vector into a set of tiles. Tile width depends on the used quant type, which is cache line aligned. For IQ3_CXS it's 160 wide tiles.
+- Split the output vector into a set of tiles. Tile width depends on the used quant type, which is cache line aligned. For IQ3_CXS2 it's 160 wide tiles.
 - Split each tile into subblocks aligned to the quantized weight block layout and CPU SIMD width.
 - Assign one tile to each thread.
 - For a tile, scan only the active neurons.
