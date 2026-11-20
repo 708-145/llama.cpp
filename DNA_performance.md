@@ -135,3 +135,18 @@ The open items below consolidate the TODOs described throughout this document.
 - [ ] Use sparsity inside matrix-matrix multiplication operations.
 - [ ] Use sparsity inside the predictor so inference does not scan every neuron.
 
+
+## Implementation Plan
+
+### sparse down projection
+
+"Replace sparse down AXPY work with an efficient sparse down transformation or batched sparse kernel."
+
+The idea is to use the same block compression that llama provides, but apply it in the orthogonal direction. The down projection matrix will be statically encoded in this transposed direction and saved in the GGUF. No runtime overhead.  
+That means that instead of vecdot, each value of a block needs to be scaled by the same activation value, and the full result vector needs to be added to a sum vector.
+This addition can be gather style to support multiple threads, aka each thread maintains its own sum vector, which are accumulated at thread completion.
+Each row is in a different memory location aka maintain one pointer per row, the rows itself are consecutive in memory.
+The optimization comes from "packing" several row computations together and sum up partial result vectors that fit into L1. Idea: 16 rows in parallel from 16 memory streams, compute the summary vector per block of 256 weights so that intermediate sums are in L1 or can even be maintained per subblock of 16 weights in vector registers?
+
+
+
