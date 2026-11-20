@@ -14,9 +14,7 @@ the fraction of neurons marked active is not itself a speedup measurement.
 Large batches use the dense FFN by default, and DNA also adds calibration,
 weight-packing, and persistent-memory costs.
 
-The current results in [DNA.md](DNA.md) report perplexity and active fractions,
-not matched dense-versus-DNA throughput or peak-memory measurements. No general
-speedup claim can be made from those results alone.
+The current results in [DNA.md](DNA.md) report perplexity, predictor calibration correlation and active fractions, plus setup and whole-run times for smaller predictor quants. They do not provide matched dense-versus-DNA throughput or peak-memory measurements. No general speedup claim can be made from those results alone.
 
 ## Current costs and limitations
 
@@ -91,6 +89,18 @@ the layer completes both phases; for short prompts or large calibration
 settings, DNA may spend much or all of the workload calibrating. The Gemma
 results in [DNA.md](DNA.md) include a four-chunk, `n_calib=4096` run where no
 layer reached PREDICT.
+
+The current four smaller-predictor DNA runs use 8 chunks and `n_calib=512`.
+The PPL comparison uses the five chunks 4–8 as one equal-sized subset. It is
+recovered from the cumulative estimates as
+`exp((8 ln PPL[8] - 3 ln PPL[3]) / 5)`, not by averaging the cumulative PPL
+values for chunks 4–8 or using the full 8-chunk final PPL. Whole-run times and
+gate-packing costs remain setup-inclusive and must not be quoted as steady-state
+performance or used to rank predictors.
+
+Each run's recovered equal-sized PPL for chunks 1–8 is recorded in
+[DNA.md](DNA.md). Those values are segment estimates derived from cumulative
+PPL, not independent evaluator runs for each chunk.
 
 References: [`llama_dna_pack_gate`](src/llama-dna.cpp),
 [`op_observe`](src/llama-dna.cpp), and the calibration results in [DNA.md](DNA.md).

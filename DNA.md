@@ -261,6 +261,51 @@ As a reference for the prediction-on chunks 5–8, the dense baseline is **175.0
 | 0.1 | 256 | 4 | ~88 | 86.2342 ± 12.87773 | −12.5% (noise, see above) |
 | 0.5 | 256 | 4 | ~42 | 128.2535 ± 16.79535 | +30.1% (real loss) |
 
+#### Smaller predictor quant sweep
+
+Matched 8-chunk runs used `/home/tobiulla/sandbox/gemma-4-E2B-it-UD-IQ3_XXS.gguf`,
+Wikitext-2 test text, `-c 512 --chunks 8 -t 4 -b 512 -ub 512 --fit off`,
+`LLAMA_DNA_MAX_BATCH=512`, `LLAMA_GRAPH_REUSE_DISABLE=1`, `n_calib=512`, and
+`T=0.5`. All predictor types were quantized with the flat, unit-weight imatrix.
+
+The PPL over the five chunks 4–8 is recovered from the cumulative evaluator estimates as `exp((8 ln PPL[8] - 3 ln PPL[3]) / 5)`. This differs
+from the chunks 5–8 reference, which uses PPL[4] and PPL[8]. The 8-chunk dense
+result was PPL[3] = 83.8523 and PPL[8] = 131.3753, giving **171.99** for
+chunks 4–8.
+
+| predictor | storage (bpw) | mean corr(g, g~) | PPL[3] | PPL[8] | chunks 4–8 PPL | Δ vs dense |
+|---|---:|---:|---:|---:|---:|---:|
+| dense reference | — | — | 83.8523 | 131.3753 | 171.99 | — |
+| iq4_xs | 4.25 | — | — | 164.1809 | 191.27 | +11.21% |
+| iq3_xxs | 3.0625 | 1.000 | 101.8287 | 138.5704 | 166.7058 | −3.07% |
+| iq2_xs | 2.3125 | 0.962 | 104.0086 | 134.2468 | 156.4605 | −9.03% |
+| iq1_m | 1.75 | 0.900 | 102.4552 | 135.4858 | 160.2174 | −6.84% |
+| iq1_s | 1.5625 | 0.885 | 97.7063 | 134.2774 | 162.4992 | −5.52% |
+
+Per-chunk equal-sized PPL estimates, recovered from the cumulative estimates
+using `PPL_chunk[k] = exp(k ln PPL_cumulative[k] - (k-1) ln PPL_cumulative[k-1])`
+(for chunk 1, use PPL_cumulative[1]):
+
+| run | chunk 1 | chunk 2 | chunk 3 | chunk 4 | chunk 5 | chunk 6 | chunk 7 | chunk 8 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| dense | 43.0294 | 208.2457 | 65.7966 | 160.2464 | 126.3876 | 159.2282 | 243.2502 | 191.8664 |
+| iq3_xxs | 42.3758 | 204.3987 | 121.9030 | 171.5026 | 153.7897 | 160.1186 | 201.2762 | 151.4681 |
+| iq2_xs | 42.3758 | 204.3987 | 129.9007 | 162.7240 | 132.9175 | 162.1176 | 185.0181 | 144.5258 |
+| iq1_m | 42.3758 | 204.3987 | 124.1669 | 153.1759 | 146.4204 | 175.4369 | 185.5048 | 144.6372 |
+| iq1_s | 42.3758 | 204.3987 | 107.6891 | 153.9899 | 150.7736 | 166.5444 | 203.8299 | 143.7607 |
+
+The geometric mean of chunks 4–8 from this table should be the same as the
+chunks-4–8 point estimates above. These are equal-sized segment estimates
+derived from cumulative PPLs, not independent 512-token evaluator runs.
+
+The four small-predictor IQ3_XXS, IQ2_XS, IQ1_M, and IQ1_S runs are the
+calibrated flat-imatrix comparison. In contrast to the earlier IQ4_XS 8-chunk
+run, they do not show worse PPL than the dense chunks-4–8 baseline. This is
+not a claim of DNA speedup: these are cumulative-PPL point estimates, and the
+chunks-4–8 uncertainty cannot be recovered from the cumulative estimates alone.
+The wall times and gate-packing costs are setup-inclusive and are not
+steady-state throughput measurements.
+
 
 Takeaway: at `n_calib` that fits inside the corpus (256 ⇒ 512 calibration tokens,
 predicting on chunks 2–4), DNA **does lose** perplexity vs dense on Gemma
