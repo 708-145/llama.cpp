@@ -173,4 +173,116 @@ For the sparse down projection, one useful model is:
   neuron over the tile, including the quantization block scale/decode step.
 - Write the completed tile once. No cross-thread full-result-vector reduction is needed. The tile sum vectors are not cache aligned, so when threads finish they may have to synchronize. But this will only happen at most ```numthread-1``` times per matrix.
 
+#### Reference C implementation
+
+The following is format-independent. It assumes:
+
+- one neuron entry contains one BF16 activation and a pointer to the first
+  cache-line-aligned down-projection tile block;
+- neuron blocks are stored neuron-major and tile-major;
+- one tile block contains `tile_weights` weights and occupies
+  `tile_cache_lines * 64` bytes;
+- `tile_weights` is a multiple of 16;
+- the caller passes one tile number and one tile size per thread;
+- the caller passes only active neurons, or entries with zero activation are
+  skipped;
+- packed-weight decoding is supplied by a callback.
+
+The implementation accumulates in F32 and converts only the completed tile
+back to BF16. It does not implement the IQ3_CXS decoder or matrix-scale
+handling; those belong in `decode_subblock`.
+
+```c
+#include <stddef.h>
+#include <stdint.h>
+#include <string.h>
+
+typedef uint16_t dna_bf16_t;
+
+typedef struct dna_down_block {
+    _Alignas(64) uint8_t bytes[64];
+} dna_down_block;
+
+typedef struct dna_active_neuron {
+    dna_bf16_t activation;
+    const dna_down_block *blocks;
+} dna_active_neuron;
+
+typedef void (*dna_decode_subblock_fn)(
+    const dna_down_block *block,
+    size_t                subblock,
+    void                 *format_context,
+    float                 decoded[16]);
+
+static inline float dna_bf16_to_f32(dna_bf16_t value) {
+    uint32_t bits = (uint32_t) value << 16;
+    float result;
+    memcpy(&result, &bits, sizeof(result));
+    return result;
+}
+
+static inline dna_bf16_t dna_f32_to_bf16(float value) {
+    uint32_t bits;
+    memcpy(&bits, &value, sizeof(bits));
+
+    // Round-to-nearest-even at the BF16 boundary.
+    bits += 0x7fffu + ((bits >> 16) & 1u);
+    return (dna_bf16_t) (bits >> 16);
+}
+
+void dna_sparse_down_tile(
+    const dna_active_neuron *active,
+    size_t                   active_count,
+    size_t                   tile_number,
+    size_t                   tile_cache_lines,
+    size_t                   tile_weights,
+    const dna_bf16_t        *c0,
+    dna_decode_subblock_fn   decode_subblock,
+    void                    *format_context,
+    dna_bf16_t              *tile_sum)
+{
+    if (tile_cache_lines == 0 ||
+        tile_weights == 0 ||
+        tile_weights % 16 != 0) {
+        return;
+    }
+
+    const size_t subblocks = tile_weights / 16;
+    const size_t tile_offset = tile_number * tile_weights;
+    float sum[tile_weights];
+
+    for (size_t i = 0; i < tile_weights; ++i) {
+        sum[i] = dna_bf16_to_f32(c0[tile_offset + i]);
+    }
+
+    for (size_t n = 0; n < active_count; ++n) {
+        const dna_bf16_t activation = active[n].activation;
+        if (activation == 0) {
+            continue;
+        }
+
+        const float activation_f32 = dna_bf16_to_f32(activation);
+        const dna_down_block *tile_block =
+            active[n].blocks + tile_number * tile_cache_lines;
+
+        for (size_t subblock = 0; subblock < subblocks; ++subblock) {
+            float weight[16];
+            decode_subblock(
+                tile_block,
+                subblock,
+                format_context,
+                weight);
+
+            const size_t weight_offset = subblock * 16;
+            for (size_t i = 0; i < 16; ++i) {
+                sum[weight_offset + i] += activation_f32 * weight[i];
+            }
+        }
+    }
+
+    for (size_t i = 0; i < tile_weights; ++i) {
+        tile_sum[i] = dna_f32_to_bf16(sum[i]);
+    }
+}
+```
 
