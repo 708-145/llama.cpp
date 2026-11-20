@@ -170,7 +170,10 @@ For the sparse down projection, one useful model is:
 - For a tile, scan only the active neurons.
 - For each active neuron, scale and accumulate the weight subblocks of that
   neuron over the tile, including the quantization block scale/decode step.
-- Write the completed tile once. No cross-thread full-result-vector reduction is needed. The tile sum vectors are not cache aligned, so when threads finish they may have to synchronize. But this will only happen at most ```numthread-1``` times per matrix.
+- Write the completed tile once. Each thread owns disjoint output positions, so
+  no cross-thread sum reduction is needed. If the output base is 64-byte
+  aligned, a 160-element BF16 tile is 320 bytes, or five cache lines, so tile
+  boundaries are cache-line aligned as well.
 
 #### Reference C implementation
 
@@ -560,4 +563,113 @@ Because the destination layout is not the original GGML layout:
 
 No virtual sparse-down interpretation is needed for this section. It describes
 only llama.cpp's existing dense CPU weight repacking mechanism.
+
+## SIMD and repacking for sparse down
+
+### Does the AVX2 sparse-down algorithm need repacking?
+
+No cross-neuron repacking is required for the described SIMD algorithm. Its
+lanes represent output positions from one active neuron's 16-weight block:
+AVX2 expands the packed two-bit indices, selects magnitudes from the four-entry
+LUT, applies the sign bits, and adds the contributions to the corresponding
+F32 output sums. The scalar activation and block scales are reused to prepare
+that block's LUT.
+
+With the proposed per-neuron block pointers and tile-contiguous blocks, a tile
+worker can visit each active neuron's block directly. The block's format must
+provide the packed sign/index fields and scale metadata in a defined layout;
+that is part of storing the new quantized weights, not a separate CPU row
+repack done to make AVX2 possible. Cache-line-aligned block starts can help
+tile traversal, but individual six-byte fields for 16 weights need not be
+aligned: unaligned loads are valid. Loads must still stay within readable
+memory, so a wider load must not overread a block or allocation boundary.
+
+Processing four or eight cache lines together is likewise a scheduling and
+unrolling choice, not a requirement to interleave rows. It means issuing and
+working through several independent packed-weight regions; it does not mean
+one cache line equals one SIMD register.
+
+This differs from llama.cpp's existing dense CPU repacking. Dense repacking
+interleaves sub-blocks from several weight rows so their dot products can reuse
+the same activation block. In sparse down, each active neuron has its own
+scalar activation, while SIMD lanes span that neuron's output positions.
+Interleaving neurons in the dense-GEMM style therefore does not directly
+provide the same activation-reuse benefit.
+
+A separate tile-major layout that places the same output tile for multiple
+neurons near one another could be benchmarked for cache locality when a worker
+scans active neurons. It is optional and changes address calculation and
+storage order; whether it helps depends on active-neuron ordering and cache
+behavior. It should not be conflated with the within-block SIMD decode, and
+should be measured before adding its complexity.
+
+### Blocked dataflow for a 160-weight IQ3_CXS2 cache-line block
+
+For the proposed IQ3_CXS2 layout, one 64-byte weight line represents 160
+weights for one active neuron and one 160-output region. It contains ten
+16-weight subblocks. Each subblock has 48 bits of sign/index data plus a
+3-bit scale selector: ten such records use 510 bits, leaving two bits in the
+64-byte line for format-defined padding or metadata. The final bit placement
+and scale-table semantics must be fixed by the format implementation.
+
+The worker owns one 160-output region. Its dataflow is:
+
+```text
+sum[160] = convert c0 for this output region from BF16 to F32
+
+for each batch of up to 32 active neurons:
+    for each neuron n in the batch:
+        superblock_activation[n] =
+            F32(activation[n]) * applicable_superblock_scale[n]
+        weight_line[n] = pointer to this neuron's 64-byte line
+
+    for subblock s = 0..9:             # 16 output weights at a time
+        acc[16] = sum[16*s : 16*s+16]  # two AVX2 F32 vectors
+
+        for each neuron n in the batch:
+            read the 16-weight record and its 3-bit scale selector
+            block_scale = lookup(selector)
+            factor = superblock_activation[n] * block_scale
+            block_lut = base_lut[4] * factor
+            unpack 16 two-bit indices and 16 signs
+            lookup magnitudes, apply signs, and add to acc[16]
+
+        sum[16*s : 16*s+16] = acc[16]
+
+convert sum[160] from F32 to BF16 and write the output region
+```
+
+`base_lut` is the four-entry F32 magnitude table, loaded once and duplicated
+across the AVX2 lanes. The scale selector and sign/index fields are read from
+the current neuron's line. The scale table and activation factor are reused
+at their defined scope; `block_lut` is specific to the current neuron and
+16-weight subblock. The 16 outputs in `acc` occupy two YMM registers; the
+complete 160-element sum is a 640-byte F32 scratch tile, not a register tile.
+
+For a batch of 32 neurons, the main live data is approximately:
+
+| Data | Size |
+|---|---:|
+| 32 packed weight lines | 2,048 B (32 cache lines) |
+| 32 F32 superblock activations | 128 B |
+| 32 line pointers | 256 B |
+| F32 partial sum for 160 outputs | 640 B (10 cache lines) |
+| BF16 `c0` source during initialization | 320 B |
+| Base LUT and scale metadata | small |
+
+This is about 3.3 KiB before minor temporaries and output storage. The
+640-byte partial sum remains in L1 and is updated 16 values at a time. The
+2-KiB packed-weight batch is also small enough to fit by L1 capacity on common
+CPUs. The subblock loop revisits each neuron's line ten times; after its first
+use, those accesses are expected to hit in L1, provided the lines are not
+evicted by set conflicts or other accesses. Capacity alone does not guarantee
+residency, so the actual line addresses and cache counters should be checked.
+
+The batch loop should enclose the subblock loop so the same 32 weight lines
+are revisited while the batch is still hot. The inner neuron loop exposes
+independent line addresses for load scheduling; it does not imply 32
+simultaneous 48-bit loads or guarantee a particular loads-per-cycle rate.
+For more than 32 active neurons, the next batch continues from the F32 partial
+sum in L1. After all batches, the worker converts and writes its disjoint
+BF16 output region; no cross-thread output reduction is required.
 
