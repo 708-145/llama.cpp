@@ -285,6 +285,83 @@ void dna_sparse_down_tile(
 }
 ```
 
+#### AVX2 lookup sketch for symmetric 3-bit weights
+
+If the eight-entry codebook is sign-symmetric, a group of 16 weights can be
+stored as a 16-bit sign mask and sixteen 2-bit magnitude indices in a 32-bit
+word. This is still 48 bits total, but it exposes the sign and lookup index
+separately. The following AVX2 sketch handles one 16-weight group:
+
+```c
+#include <immintrin.h>
+#include <stdint.h>
+
+static inline __m256i dna_unpack_2bit_indices(uint32_t packed, int first_shift) {
+    const __m256i shifts = _mm256_setr_epi32(
+        first_shift + 0, first_shift + 2, first_shift + 4, first_shift + 6,
+        first_shift + 8, first_shift + 10, first_shift + 12, first_shift + 14);
+    const __m256i bits = _mm256_srlv_epi32(_mm256_set1_epi32((int) packed), shifts);
+    return _mm256_and_si256(bits, _mm256_set1_epi32(3));
+}
+
+static inline __m256i dna_unpack_signs(uint16_t packed, int first_shift) {
+    const __m256i shifts = _mm256_setr_epi32(
+        first_shift + 0, first_shift + 1, first_shift + 2, first_shift + 3,
+        first_shift + 4, first_shift + 5, first_shift + 6, first_shift + 7);
+    const __m256i bits = _mm256_srlv_epi32(_mm256_set1_epi32(packed), shifts);
+    return _mm256_and_si256(bits, _mm256_set1_epi32(1));
+}
+
+static inline __m256 dna_apply_sign(__m256 value, __m256i sign) {
+    const __m256i sign_bit = _mm256_slli_epi32(sign, 31);
+    return _mm256_castsi256_ps(
+        _mm256_xor_si256(_mm256_castps_si256(value), sign_bit));
+}
+
+static inline void dna_accumulate_16(
+    uint32_t packed_indices,
+    uint16_t packed_signs,
+    __m256   base_lut,      // [m0, m1, m2, m3, m0, m1, m2, m3]
+    float    block_activation,
+    __m256  *sum0,          // output positions 0..7
+    __m256  *sum1)          // output positions 8..15
+{
+    const __m256 block_activation_vec =
+        _mm256_set1_ps(block_activation);
+    const __m256 block_lut =
+        _mm256_mul_ps(base_lut, block_activation_vec);
+
+    const __m256i index0 = dna_unpack_2bit_indices(packed_indices, 0);
+    const __m256i index1 = dna_unpack_2bit_indices(packed_indices, 16);
+    const __m256i sign0  = dna_unpack_signs(packed_signs, 0);
+    const __m256i sign1  = dna_unpack_signs(packed_signs, 8);
+
+    __m256 value0 = _mm256_permutevar8x32_ps(block_lut, index0);
+    __m256 value1 = _mm256_permutevar8x32_ps(block_lut, index1);
+
+    value0 = dna_apply_sign(value0, sign0);
+    value1 = dna_apply_sign(value1, sign1);
+
+    *sum0 = _mm256_add_ps(*sum0, value0);
+    *sum1 = _mm256_add_ps(*sum1, value1);
+}
+```
+
+Prepare `superblock_activation = activation * superblock_scale` once for the
+neuron and superblock. Load the four F32 magnitude entries into `base_lut`,
+duplicated across its lanes as shown. For each 16-weight block, read its scalar
+`block_scale`, calculate
+`block_activation = superblock_activation * block_scale`, and multiply
+`base_lut` by that scalar to make `block_lut`. Then unpack the indices, use
+AVX2 `VPERMPS` to select magnitudes, apply the sign bits with XOR, and add the
+contributions to the F32 sums. Convert to BF16 only when the tile is complete.
+
+This assumes the format's eight codebook values are exactly four magnitudes
+and their negatives. The two-bit index plus sign representation cannot encode
+an arbitrary eight-entry codebook. The code handles one 16-weight group;
+the format-specific loop must still locate these fields and account for
+metadata while processing the tile's cache-line groups.
+
 #### Repacking memory layout in llama.cpp
 
 llama.cpp CPU repacking is eager, load-time tensor repacking. It is performed
