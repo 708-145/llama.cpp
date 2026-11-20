@@ -19,6 +19,8 @@
 struct llama_model;
 class llama_batch_allocr;
 class llama_moe_cache;
+class llama_dna;
+struct llama_dna_stats;
 
 class llama_io_read_i;
 class llama_io_write_i;
@@ -62,6 +64,7 @@ struct llama_context {
 
     const llama_model   & get_model()   const;
     const llama_cparams & get_cparams() const;
+    const llama_dna     * get_dna()     const;
 
     ggml_backend_sched_t get_sched() const;
 
@@ -346,6 +349,8 @@ private:
 
     llama_memory_ptr memory;
     llama_moe_cache_ptr moe_cache;
+
+    std::unique_ptr<llama_dna> dna; // cparams.dna
 
     // decode output (2-dimensional array: [n_outputs][n_vocab])
     buffer_view<float> logits = {nullptr, 0};

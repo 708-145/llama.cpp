@@ -1,6 +1,7 @@
 #include "llama-graph.h"
 
 #include "llama-impl.h"
+#include "llama-dna.h"
 #include "llama-model.h"
 #include "llama-moe-cache.h"
 #include "llama-batch.h"
@@ -1583,6 +1584,7 @@ llm_graph_context::llm_graph_context(const llm_graph_params & params) :
     moe_cache        (params.moe_cache),
     prec_policy      (params.prec_policy),
     hdmd             (params.hdmd),
+    dna              (params.dna),
     layer_inp_dev    (params.layer_inp_dev),
     layer_inp_src    (params.layer_inp_src),
     h_nextn_dev      (params.h_nextn_dev),
@@ -2011,6 +2013,60 @@ ggml_tensor * llm_graph_context::build_ffn(
     GGML_ASSERT(!gate_s || !is_scaled_low_precision(gate) || !has_lora(gate));
     GGML_ASSERT(!down_s || !is_scaled_low_precision(down) || !has_lora(down));
 
+    llama_dna_layer * dna_layer = nullptr;
+    if (dna && !cparams.warmup && il >= 0) {
+        const bool lineal = type_op == LLM_FFN_SILU || type_op == LLM_FFN_GELU ||
+                            type_op == LLM_FFN_GELU_ERF || type_op == LLM_FFN_RELU;
+        if (gate && up && down && lineal && type_gate == LLM_FFN_PAR &&
+            !act_scales &&
+            !has_lora(up) && !has_lora(gate) && !has_lora(down) && hparams.swiglu_clamp_shexp[il] <= 1e-6f &&
+            cur->ne[2] == 1 && cur->ne[3] == 1) {
+            enum llama_dna_act act = LLAMA_DNA_ACT_SILU;
+            if (type_op == LLM_FFN_GELU) {
+                act = LLAMA_DNA_ACT_GELU;
+            } else if (type_op == LLM_FFN_GELU_ERF) {
+                act = LLAMA_DNA_ACT_GELU_ERF;
+            } else if (type_op == LLM_FFN_RELU) {
+                act = LLAMA_DNA_ACT_RELU;
+            }
+            dna_layer = dna->get_layer(il, gate, up, down, gate_b, up_b, down_b, gate_s, up_s, down_s, act);
+            // get_layer logs the precise rejection reason when it returns nullptr
+        } else {
+            LLAMA_LOG_ERROR("%s: layer %d: DNA skipped (FFN requirements not met)\n", __func__, il);
+        }
+    }
+
+    if (dna_layer && !llama_dna::layer_is_predict(dna_layer)) {
+        if (cur->type != GGML_TYPE_F32) {
+            cur = ggml_cast(ctx0, cur, GGML_TYPE_F32);
+            cb(cur, "dna_x_f32", il);
+        }
+    }
+
+    if (dna_layer && llama_dna::layer_is_predict(dna_layer)) {
+        if (cur->ne[1] > dna->params.max_batch) {
+            dna_layer = nullptr; // dense FFN, no observer needed after calibration
+        }
+    }
+
+    if (dna_layer && llama_dna::layer_is_predict(dna_layer)) {
+        if (cur->type != GGML_TYPE_F32) {
+            cur = ggml_cast(ctx0, cur, GGML_TYPE_F32);
+            cb(cur, "dna_x_f32", il);
+        }
+        ggml_tensor * args[3] = { cur, gate, up };
+        cur = ggml_custom_4d(ctx0, GGML_TYPE_F32, gate->ne[1], cur->ne[1], 1, 1, args, 3, llama_dna::op_route, GGML_N_TASKS_MAX, dna_layer);
+        cb(cur, "dna_delta", il);
+
+        ggml_tensor * args_down[1] = { cur };
+        cur = ggml_custom_4d(ctx0, GGML_TYPE_F32, down->ne[1], cur->ne[1], 1, 1, args_down, 1, llama_dna::op_down, GGML_N_TASKS_MAX, dna_layer);
+        cb(cur, "dna_down", il);
+
+        return cur;
+    }
+
+    ggml_tensor * inp = cur;
+
     ggml_tensor * tmp = up ? build_lora_mm(up, cur) : cur;
     cb(tmp, "ffn_up", il);
 
@@ -2048,6 +2104,14 @@ ggml_tensor * llm_graph_context::build_ffn(
             cb(cur, "ffn_gate_s", il);
         }
 
+        if (dna_layer) {
+            // calibration: observe the dense gate/up outputs, the FFN result is unchanged
+            // `inp` carries the F32 cast from the DNA gate above, so op_observe can assume F32
+            ggml_tensor * args[3] = { inp, cur, tmp };
+            ggml_tensor * obs = ggml_custom_4d(ctx0, GGML_TYPE_F32, 1, 1, 1, 1, args, 3, llama_dna::op_observe, GGML_N_TASKS_MAX, dna_layer);
+            cb(obs, "dna_observe", il);
+            ggml_build_forward_expand(gf, obs);
+        }
     } else {
         cur = tmp;
     }
@@ -2416,14 +2480,44 @@ ggml_tensor * llm_graph_context::build_moe_ffn(
     // compute the expert input before the slot lookup, so that the scheduler prefetches it for the CPU part (the router can read a different tensor)
     ggml_build_forward_expand(gf, cur);
 
+    // DNA for MoE experts (dense experts only; see DNA.md "MoE"):
+    // gate is PAR (gate_up_exps split or separate gate_exps/up_exps), no biases/scales,
+    // no MoE cache, no weight_before_ffn, no act_scales, CPU-readable weights.
+    const bool dna_lineal = type_op == LLM_FFN_SILU || type_op == LLM_FFN_GELU ||
+                            type_op == LLM_FFN_GELU_ERF || type_op == LLM_FFN_RELU;
+    llama_dna_moe_layer * dna_moe = nullptr;
+    if (dna && !cparams.warmup && il >= 0 && dna_lineal && !weight_before_ffn &&
+        !gate_up_exps_b && !gate_exps_b && !up_exps_b && !down_exps_b &&
+        !up_exps_s && !gate_exps_s && !down_exps_s &&
+        (gate_up_exps || gate_exps) && down_exps && cur->ne[2] == 1 && cur->ne[3] == 1) {
+        enum llama_dna_act act = LLAMA_DNA_ACT_SILU;
+        if (type_op == LLM_FFN_GELU) {
+            act = LLAMA_DNA_ACT_GELU;
+        } else if (type_op == LLM_FFN_GELU_ERF) {
+            act = LLAMA_DNA_ACT_GELU_ERF;
+        } else if (type_op == LLM_FFN_RELU) {
+            act = LLAMA_DNA_ACT_RELU;
+        }
+        dna_moe = dna->get_moe_layer(il, gate_up_exps, gate_exps, up_exps, down_exps, act);
+    }
+
     // the experts of host-resident layers may be read from the MoE cache, and part of the misses computed from the host experts
     // the CPU part does not support weights before the FFN, LoRAs or rotated experts
     const std::array<ggml_tensor *, 4> exps = { up_exps, gate_exps, down_exps, gate_up_exps };
-    const bool can_cpu_share = !weight_before_ffn && loras->empty() &&
+    const bool can_cpu_share = !weight_before_ffn && loras->empty() && dna_moe == nullptr &&
         std::none_of(exps.begin(), exps.end(), [&](ggml_tensor * w) { return w != nullptr && hdmd != nullptr && hdmd->rot.count(w) > 0; });
     const llm_graph_moe_cache_slots cache = build_moe_cache_slots(selected_experts, up_exps, gate_exps, down_exps, gate_up_exps, can_cpu_share, il);
 
     cur = ggml_reshape_3d(ctx0, cur, n_embd, 1, n_tokens);
+
+    // DNA calibration: when the MoE is not yet in PREDICT, the dense MoE path runs
+    // and op_expert_observe records the gate/up for the routed experts.
+    // In PREDICT the dense MoE path is replaced below; the observer is not added.
+    const bool dna_moe_calib = dna_moe && !llama_dna::moe_is_predict(dna_moe);
+    ggml_tensor * dna_moe_x = nullptr;
+    if (dna_moe_calib) {
+        dna_moe_x = ggml_reshape_2d(ctx0, cur, n_embd, n_tokens);
+    }
 
     if (weight_before_ffn) {
         // repeat cur to [n_embd, n_expert_used, n_tokens]
@@ -2456,6 +2550,12 @@ ggml_tensor * llm_graph_context::build_moe_ffn(
             cb(cur, "ffn_moe_gate", il);
             up  = ggml_view_3d(ctx0, gate_up, n_ff, gate_up->ne[1], gate_up->ne[2], gate_up->nb[1], gate_up->nb[2], n_ff * gate_up->nb[0]);
             cb(up, "ffn_moe_up", il);
+            if (dna_moe_calib) {
+                ggml_tensor * obs_args[4] = { dna_moe_x, cur, up, selected_experts };
+                ggml_tensor * obs = ggml_custom_4d(ctx0, GGML_TYPE_F32, 1, 1, 1, 1, obs_args, 4, llama_dna::op_expert_observe, GGML_N_TASKS_MAX, dna_moe);
+                cb(obs, "dna_expert_observe", il);
+                ggml_build_forward_expand(gf, obs);
+            }
         } else {
             // separate gate and up path
             up = build_lora_mm_id(up_exps, cur, ids, up_exps_s, mm_ids, cached); // [n_ff, n_expert_used, n_tokens]
@@ -2484,6 +2584,12 @@ ggml_tensor * llm_graph_context::build_moe_ffn(
             if (gate_exps_b) {
                 cur = ggml_add_id(ctx0, cur, gate_exps_b, ids);
                 cb(cur, "ffn_moe_gate_biased", il);
+            }
+            if (dna_moe_calib) {
+                ggml_tensor * obs_args[4] = { dna_moe_x, cur, up, selected_experts };
+                ggml_tensor * obs = ggml_custom_4d(ctx0, GGML_TYPE_F32, 1, 1, 1, 1, obs_args, 4, llama_dna::op_expert_observe, GGML_N_TASKS_MAX, dna_moe);
+                cb(obs, "dna_expert_observe", il);
+                ggml_build_forward_expand(gf, obs);
             }
         }
 
@@ -2594,13 +2700,38 @@ ggml_tensor * llm_graph_context::build_moe_ffn(
         return experts;
     };
 
-    ggml_tensor * experts = build_experts(cur, selected_experts, cache.slots, true);
-    if (cache.cpu_ids != nullptr) {
-        // the cached experts and the misses computed from the host experts, each reads the others as zero
-        // the cached experts come first in the graph, so that they are computed while the misses are
-        ggml_build_forward_expand(gf, experts);
-        experts = ggml_add(ctx0, experts, build_experts(cur, selected_experts, cache.cpu_ids, false));
-        cb(experts, "ffn_moe_down_merged", il);
+    ggml_tensor * experts = nullptr;
+    if (dna_moe && llama_dna::moe_is_predict(dna_moe)) {
+        // DNA predict path for MoE: per-expert route + weighted down.
+        // experts = weighted sum over slots of D[e] @ delta[:,s] + c0[e]
+        const int64_t n_ff_exp = gate_up_exps ? gate_up_exps->ne[1] / 2 : gate_exps->ne[1];
+        if (cur->type != GGML_TYPE_F32) {
+            cur = ggml_cast(ctx0, cur, GGML_TYPE_F32);
+            cb(cur, "dna_x_f32", il);
+        }
+        ggml_tensor * x2d = ggml_reshape_2d(ctx0, cur, n_embd, n_tokens);
+        ggml_tensor * args_route[3] = { x2d, gate_up_exps ? gate_up_exps : gate_exps, selected_experts };
+        ggml_tensor * delta = ggml_custom_4d(ctx0, GGML_TYPE_F32, n_ff_exp, n_expert_used, n_tokens, 1,
+                args_route, 3,
+                llama_dna::op_expert_route, GGML_N_TASKS_MAX, dna_moe);
+        cb(delta, "dna_expert_delta", il);
+        ggml_tensor * w2d = ggml_reshape_2d(ctx0, weights, n_expert_used, n_tokens);
+        ggml_tensor * args_down[3] = { delta, w2d, selected_experts };
+        experts = ggml_custom_4d(ctx0, GGML_TYPE_F32, n_embd, n_tokens, 1, 1,
+                args_down, 3,
+                llama_dna::op_expert_down, GGML_N_TASKS_MAX, dna_moe);
+        cb(experts, "dna_moe_down", il);
+        // calibration observer is not used in predict path; the DNA delta already
+        // includes the -mu term, and c0 is added in op_expert_down.
+    } else {
+        experts = build_experts(cur, selected_experts, cache.slots, true);
+        if (cache.cpu_ids != nullptr) {
+            // the cached experts and the misses computed from the host experts, each reads the others as zero
+            // the cached experts come first in the graph, so that they are computed while the misses are
+            ggml_build_forward_expand(gf, experts);
+            experts = ggml_add(ctx0, experts, build_experts(cur, selected_experts, cache.cpu_ids, false));
+            cb(experts, "ffn_moe_down_merged", il);
+        }
     }
 
     if (down_exps_s) {
@@ -2619,7 +2750,7 @@ ggml_tensor * llm_graph_context::build_moe_ffn(
         cb(experts, "ffn_moe_post_exp_norm", il);
     }
 
-    if (!weight_before_ffn) {
+    if (!(dna_moe && llama_dna::moe_is_predict(dna_moe)) && !weight_before_ffn) {
         experts = ggml_mul(ctx0, experts, weights);
         cb(experts, "ffn_moe_weighted", il);
     }

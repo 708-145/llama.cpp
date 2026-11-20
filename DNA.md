@@ -92,3 +92,432 @@ For each gate neuron i:
 3. Measure end-to-end perplexity and KL on a text set (wikipedia).  
 
 
+
+## Implementation status (CPU, llama.cpp)
+
+Code: `src/llama-dna.{h,cpp}` (state, calibration, kernels), hooks in `llm_graph_context::build_ffn` (`src/llama-graph.cpp`) and `llama_context` (`src/llama-context.cpp`). The CPU backend exports `ggml_get_type_traits_cpu` through `ggml_backend_reg_get_proc_address` so the active rows use the native quantized dot products.
+
+## Predictor selection (`--dnapred`)
+
+The neuron-activity predictor is a quant type: `--dnapred <ggml-type>` (default
+`iq4_xs`) re-quantizes the dequantized gate rows into that type
+(`ggml_get_type_traits(type)->from_float_ref`) and routes with the native CPU
+`vec_dot` kernel (`get_traits(type)->vec_dot` against `vec_dot_type`-quantized
+activations). The dead zone, `med_est`/`band`, `mu`, `c0`, and the delta down
+projection are unchanged.
+
+- `--dnapred` implies `--dna`; `LLAMA_DNA_PRED` is the env override, CLI wins.
+- Predictor types need a CPU `vec_dot`, `n_embd % blck_size(type) == 0`, and an
+  activation `from_float`. `iq3_xxs`, `iq2_xs`, `iq1_m`, and `iq1_s` are packed
+  with `ggml_quantize_chunk` and a flat, unit-weight imatrix; other types need
+  `from_float_ref` (so `iq2_xxs` and `iq2_s` remain unsupported).
+- Predictor storage is `type_sizef(type)` bpw: `iq4_xs` 4.25, `iq3_xxs` 3.0625,
+  `iq2_xs` 2.3125, `iq1_m` 1.75, `iq1_s` 1.5625, and `q8_0` 8.5. These are
+  storage rates, not a predictor speed or quality comparison; routing still
+  performs CPU dot products (`route` ms/token is reported in verbose stats).
+- The XOR sign predictor (`--dnapred xor`, `LLAMA_DNA_BLOCK`) was removed: its
+  `corr(g,g~) ≈ 0.58` is not competitive with any quant predictor even after the
+  `mean|g~|` mis-scaling, and its block-scale code dominated `llama-dna.cpp` for
+  no quality benefit. Use `--dnapred iq4_xs` (default) instead.
+
+## Non-SwiGLU and MoE (Restriction 2, lifted)
+
+Dense FFNs now accept any *linear* gate activation with a parallel gate:
+`LLM_FFN_SILU` (SiLU), `LLM_FFN_GELU` (GeGLU, tanh approximation, exactly
+`ggml_vec_gelu_f32`), `LLM_FFN_GELU_ERF`, and `LLM_FFN_RELU`. The activation is
+carried in `llama_dna_layer::act` and used identically in `op_observe` (bias
+phase `h = act(g)·u`) and `op_route` (`delta = act(g)·u - mu`).
+
+MoE support covers the standard top-k MoE path in `build_moe_ffn`:
+
+- Shared expert (if present): a normal `build_ffn` with a linear activation, so
+  the dense GELU/SiLU hook above already covers it.
+- Routed experts: one `llama_dna_layer` per expert, created in
+  `llama_dna::get_moe_expert` from the `gate_up_exps` ([n_embd, 2·n_ff, n_expert]
+  PAR split) or separate `gate_exps`/`up_exps` tensors plus `down_exps`.
+  Each expert packs its own gate rows (4.25 bpw @ iq4_xs) and has its own
+  `med_est`/`band`/`mu`/`c0`/`down_t`.
+- Calibration: the dense MoE path runs in STATS/BIAS phases and
+  `op_expert_observe` (x, gate out, up out, selected_experts) records
+  per-expert gate/up for the routed tokens.
+- Prediction: `op_expert_route` computes per-expert deltas
+  `[n_ff, n_expert_used, n_tokens]` for the selected experts, and
+  `op_expert_down` returns `y = sum_s w[s]·(D[e_s] @ delta[:,s] + c0[e_s])`.
+  The router weights `w` are the already-normalized `weights` from `build_moe_ffn`
+  (norm_w / w_scale already applied), so the outer `weights` multiply is skipped
+  on this path.
+- Rejected (still dense): expert biases/scales, `weight_before_ffn` (LLAMA4),
+  MoE-cache paths, `post_exp_norm`, `act_scales`, LoRA, swiglu_clamp, and
+  non-linear activations (SWIGLU_OAI_MOE, SITU, GEGLU, REGLU, RELU_SQR without
+  gate, etc.).
+
+### Hyperparameters (current)
+
+| name | where | default | meaning |
+|---|---|---|---|
+| predictor quant | `--dnapred` / `LLAMA_DNA_PRED` | `iq4_xs` | any ggml type name (any quant) |
+| dead zone half-width | `LLAMA_DNA_T` | 0.5 | `band = T * m_est` (zmode 0) or `T * sd_est[i]` (zmode 1) |
+| calibration tokens/phase | `LLAMA_DNA_CALIB` | 256 | two phases: gate stats, then silent bias `mu` |
+| min active floor | `LLAMA_DNA_MIN_ACTIVE` | 0.02 | band shrink at end of bias phase if active fraction is lower |
+| batch limit | `LLAMA_DNA_MAX_BATCH` | 32 | larger ubatches use dense FFN |
+| band basis | `LLAMA_DNA_ZMODE` | 0 | 0: per-layer mean, 1: per-neuron std |
+
+Bias handling: `med_est`/`band` are fixed after the stats phase; `mu`/`c0`/`down_t`
+are fixed after the bias phase. There is no re-calibration after PREDICT starts.
+
+### Perplexity results (Qwen3-0.6B-Q6_K, wikitext-2 test, `-c 512 --chunks 4 -t 8 --fit off`,
+`LLAMA_DNA_MAX_BATCH=512`, `LLAMA_GRAPH_REUSE_DISABLE=1`, `n_calib=256`)
+
+Dense baseline: `PPL = 19.1537 ± 2.07814` (chunks [1]12.5071,[2]17.8739,[3]18.2390,[4]19.1537).
+
+Predictor quality (`corr(g, g~)`, per-layer mean over calibration):
+
+| predictor | bpw | corr | mean |g~| |
+|---|---|---|---|---|
+| xor | 1.50 | 0.58 | — |
+| iq4_xs | 4.25 | 0.997 | matches true sd |
+| q8_0 | 8.50 | 0.999 | matches true sd |
+
+End-to-end perplexity (final estimate over 4 chunks; calibration tokens are the first
+512 of chunk 1; layer 27 never leaves calibration in perplexity because its ubatch is
+1 token, so 27/28 layers predict — see constraint note below):
+
+| pred | T | active % (mean) | PPL | Δ vs dense |
+|---|---|---|---|---|
+| xor | 0.5 | ~62 | 31.9262 ± 3.42903 | +67% |
+| xor | 1.0 | ~22 | 100.3747 ± 11.11852 | +424% |
+| xor | 2.0 | ~1 | 2781.5180 ± 333.04977 | +14426% |
+| iq4_xs | 0.5 | ~41 | 44.1554 ± 4.97838 | +131% |
+| iq4_xs | 1.0 | ~14 | 260.4509 ± 31.67293 | +1260% |
+| iq4_xs | 2.0 | ~1 | 1882.5700 ± 249.58446 | +9729% |
+| q8_0 | 0.5 | ~41 | 44.7044 ± 5.04597 | +133% |
+| q8_0 | 1.0 | ~14 | 251.2477 ± 30.41226 | +1212% |
+| q8_0 | 2.0 | ~1 | 1868.0688 ± 249.34419 | +9654% |
+
+Takeaway: the quant predictors are near-exact routers (`corr ≈ 1.0`), so the
+*selection* is no longer the bottleneck — the dead zone itself is. At equal `T`
+the quant predictors silence *more* neurons (because `g~` is accurate, `|g~-med|`
+exceeds the band more often) and lose *more* perplexity: the bias-fill
+approximation is what costs quality, not routing error. In `zmode 0`,
+`band = T * mean|g~|` is scale-sensitive: for the quant predictors `mean|g~| ≈
+mean|g|` (≈ 3× the XOR estimate's 0.2–0.9), so the same `T` gives a wider band in
+absolute terms but a tighter one relative to the gate distribution, silencing
+neurons whose true `h[i]` deviates far from `mu[i]`. `zmode 1` (`T * sd_est[i]`)
+is scale-free and should be compared before drawing conclusions about predictors.
+At `T=2.0` the active fraction collapses to ~1% and perplexity explodes for all
+predictors — the bias floor holds only ~30% of `h` energy at that sparsity.
+
+### Perplexity results (Gemma-4-E2B-IQ3_XXS, `-c 512 --chunks 4 -t 4 --fit off`,
+`LLAMA_DNA_MAX_BATCH=512`, `LLAMA_GRAPH_REUSE_DISABLE=1`, `n_calib=4096`, `--dnapred iq4_xs`)
+
+All runs: `-t 4`, 2-minute cooldowns between CPU-intensive runs (see "Running perplexity sweeps").
+
+Dense baseline: `PPL = 98.5901 ± 15.41499` (chunks [1]43.0294,[2]94.6609,[3]83.8523,[4]98.5901).
+
+Calibration note — the table below mixes two different regimes and must be read
+with the per-layer phase counters:
+
+- `n_calib=256` (4 chunks × 512): layers 0–33 finalize at `n_tok=514`, layer 34
+  stays `phase 0` (513 tokens, 1-token ubatch). 34/35 layers **do predict** on
+  chunks 2–4 (`1024 tokens predicted` per layer at T=0.5). The T=0.5 point
+  (`PPL = 128.2535 ± 16.79535`, ~42% active, `energy(bias) ≈ 1–25%`) is a *real*
+  DNA loss vs dense 98.5901. The `n_calib=256` T=0.1 point (`86.2342 ± 12.87773`,
+  88% active, `energy(bias) ≈ 0.2–6%`) is *below* dense — inside the chunk noise
+  (dense chunks span 43.03–98.59) and confounded by the 514-token calibration sample
+  (`mean|g~|` spans 0.19–2.98 across layers).
+- `n_calib=4096` with 4 chunks: **no layer reaches PREDICT** (`phase 0, 1538
+  calibration tokens` for layers 0–33, `phase 0, 513` for layer 34). The
+  `PPL = 98.3143 ± 15.33638` for T=0.1/T=0.5 (zmode 0 and zmode 1, all
+  four) is just the dense value — DNA was calibrated only, never used.
+  Those rows are **invalid** for any T comparison.
+  The T=0.0 firewall (`active = 100%`, `energy(bias) = 0.0%`, `PPL = 98.4483 ±
+  15.41153`) confirms the MoE delta/c0 path is dense-exact, but it is *not*
+  evidence that DNA at T>0 is dense-neutral.
+- `n_calib=512, T=0.5, 8 chunks, -t 2` (today, per-layer finalize fix — see
+  below): all 35 layers now **reach PREDICT** — 3072 predicted tokens for
+  layers 0–33 (48% active mean), 1024 for layer 34 (44.4% active). Active
+  mean ≈ **43.3%**, `energy(bias) ≈ 10–25%` of `h`. Full run `Final estimate:
+  PPL = 164.1809 ± 14.80054` (not comparable to the 4-chunk dense `98.5901`;
+  the per-chunk values drift upward over the 8-chunk corpus, and chunks 5–8
+  are the DNA-predicted ones).
+
+Remeasured 8-chunk dense baseline: `PPL = 131.3753 ± 14.19330`
+(chunks [1]43.0294,[2]94.6609,[3]83.8523,[4]98.5901,[5]103.6114,
+[6]111.3037,[7]124.4560,[8]131.3753).
+
+For a like-for-like comparison, the cumulative estimates give a PPL over chunks
+4–8 of **171.99** for the dense baseline and **191.27** for DNA (+11.21%).
+For equal-sized chunks, this is recovered in log space as
+`exp((8 ln PPL[8] - 3 ln PPL[3]) / 5)`. These are point estimates; the
+chunk-4–8 uncertainty cannot be recovered from the cumulative estimates alone.
+As a reference for the prediction-on chunks 5–8, the dense baseline is **175.06**
+(point estimate), recovered as `exp((8 ln PPL[8] - 4 ln PPL[4]) / 4)`.
+
+| T | n_calib | chunks | active % (mean) | PPL | Δ vs dense |
+|---|---|---|---|---|---|
+| dense reference | — | 5–8 | 100 | 175.06 (point estimate) | — |
+| 0.5 | 512 | 1–8 (prediction on for 5–8) | ~43 (chunks 5–8) | 191.27 (point estimate) | +9.26% |
+| 0.0 | 256 | 4 | 100 | 98.4483 ± 15.41153 | −0.14% |
+| 0.1 | 256 | 4 | ~88 | 86.2342 ± 12.87773 | −12.5% (noise, see above) |
+| 0.5 | 256 | 4 | ~42 | 128.2535 ± 16.79535 | +30.1% (real loss) |
+
+#### Smaller predictor quant sweep
+
+Matched 8-chunk runs used `/home/tobiulla/sandbox/gemma-4-E2B-it-UD-IQ3_XXS.gguf`,
+Wikitext-2 test text, `-c 512 --chunks 8 -t 4 -b 512 -ub 512 --fit off`,
+`LLAMA_DNA_MAX_BATCH=512`, `LLAMA_GRAPH_REUSE_DISABLE=1`, `n_calib=512`, and
+`T=0.5`. All predictor types were quantized with the flat, unit-weight imatrix.
+
+The PPL over the five chunks 4–8 is recovered from the cumulative evaluator estimates as `exp((8 ln PPL[8] - 3 ln PPL[3]) / 5)`. This differs
+from the chunks 5–8 reference, which uses PPL[4] and PPL[8]. The 8-chunk dense
+result was PPL[3] = 83.8523 and PPL[8] = 131.3753, giving **171.99** for
+chunks 4–8.
+
+| predictor | storage (bpw) | mean corr(g, g~) | PPL[3] | PPL[8] | chunks 4–8 PPL | Δ vs dense |
+|---|---:|---:|---:|---:|---:|---:|
+| dense reference | — | — | 83.8523 | 131.3753 | 171.99 | — |
+| iq4_xs | 4.25 | — | — | 164.1809 | 191.27 | +11.21% |
+| iq3_xxs | 3.0625 | 1.000 | 101.8287 | 138.5704 | 166.7058 | −3.07% |
+| iq2_xs | 2.3125 | 0.962 | 104.0086 | 134.2468 | 156.4605 | −9.03% |
+| iq1_m | 1.75 | 0.900 | 102.4552 | 135.4858 | 160.2174 | −6.84% |
+| iq1_s | 1.5625 | 0.885 | 97.7063 | 134.2774 | 162.4992 | −5.52% |
+
+Per-chunk equal-sized PPL estimates, recovered from the cumulative estimates
+using `PPL_chunk[k] = exp(k ln PPL_cumulative[k] - (k-1) ln PPL_cumulative[k-1])`
+(for chunk 1, use PPL_cumulative[1]):
+
+| run | chunk 1 | chunk 2 | chunk 3 | chunk 4 | chunk 5 | chunk 6 | chunk 7 | chunk 8 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| dense | 43.0294 | 208.2457 | 65.7966 | 160.2464 | 126.3876 | 159.2282 | 243.2502 | 191.8664 |
+| iq3_xxs | 42.3758 | 204.3987 | 121.9030 | 171.5026 | 153.7897 | 160.1186 | 201.2762 | 151.4681 |
+| iq2_xs | 42.3758 | 204.3987 | 129.9007 | 162.7240 | 132.9175 | 162.1176 | 185.0181 | 144.5258 |
+| iq1_m | 42.3758 | 204.3987 | 124.1669 | 153.1759 | 146.4204 | 175.4369 | 185.5048 | 144.6372 |
+| iq1_s | 42.3758 | 204.3987 | 107.6891 | 153.9899 | 150.7736 | 166.5444 | 203.8299 | 143.7607 |
+
+The geometric mean of chunks 4–8 from this table should be the same as the
+chunks-4–8 point estimates above. These are equal-sized segment estimates
+derived from cumulative PPLs, not independent 512-token evaluator runs.
+
+The four small-predictor IQ3_XXS, IQ2_XS, IQ1_M, and IQ1_S runs are the
+calibrated flat-imatrix comparison. In contrast to the earlier IQ4_XS 8-chunk
+run, they do not show worse PPL than the dense chunks-4–8 baseline. This is
+not a claim of DNA speedup: these are cumulative-PPL point estimates, and the
+chunks-4–8 uncertainty cannot be recovered from the cumulative estimates alone.
+The wall times and gate-packing costs are setup-inclusive and are not
+steady-state throughput measurements.
+
+
+Takeaway: at `n_calib` that fits inside the corpus (256 ⇒ 512 calibration tokens,
+predicting on chunks 2–4), DNA **does lose** perplexity vs dense on Gemma
+(+30% at T=0.5, within noise at T=0.1). The loss is the bias-fill approximation
+(`energy(bias) ≈ 1–25%` of `h` at T=0.5), not DNA activation. The MoE bias
+computation (`mu`, `c0`, per-expert `down_t`, weighted `op_expert_down`) matches
+`DNA.md` principles 1–4: `c0 = W_down·mu + down_b`,
+`y = c0 + Σ_active (down_s·W_down[:,i])·(h[i] - mu[i])`, with GeGLU/SiLU/GELU_ERF/RELU
+activations honored via `act`.
+The bug that was fixed for this is the global phase barrier:
+`llama_dna::update()` previously required *every* layer to reach `n_calib` in
+the same phase; the 1-token-ubatch layer (34) never does, so no layer ever
+left phase STATS/BIAS. Layers now finalize independently (average out in the
+`print_stats` — layers 0–33 can reach phase 1 at their own pace).
+
+## Enable / disable
+
+DNA is controlled by `--dna` (general setting, `common/arg.cpp`, env `LLAMA_ARG_DNA`) and the booleans flow `common_params.dna` → `mparams` (`common_model_params_to_llama`) and `cparams.dna` (`common_context_params_to_llama`). The runtime enablement now checks `cparams.dna` (`src/llama-context.cpp`), not an env var. Per-layer checks remain in `llama_dna::get_layer()` (`src/llama-dna.cpp:525`) and `llama_dna_row_is_readable()` (`src/llama-dna.cpp:278).
+
+When `--dna` is set, the CLI forces the load defaults DNA needs and will error if they were overridden explicitly:
+
+- `--load-mode=mmap` (or `mmap+mlock`); if a device demotes mmap→none, that's now a hard error (`src/llama-model.cpp:1700`), matching `llama-model-loader.cpp:917` for unsupported platforms
+- `--no-repack` (i.e. `use_extra_bufts=false`)
+
+| switch | default | effect |
+|---|---|---|
+| `--dna` / `LLAMA_ARG_DNA` | off | enable DNA for dense SwiGLU FFNs whose weights are in plain host memory (no biases, no LoRA, no repacked buffers) |
+| `--no-dna` | — | explicitly disable DNA |
+
+| tuning variable | default | meaning |
+|---|---|---|
+| `LLAMA_DNA_T` | 0.5 | dead zone half-width T |
+| `LLAMA_DNA_ZMODE` | 0 | 0: band = T * mean(abs(g~)) per layer, 1: band = T * std(g~) per neuron |
+| `LLAMA_DNA_BLOCK` | 32 | estimator block size B (8, 16, 32, 64) |
+| `LLAMA_DNA_CALIB` | 256 | tokens per calibration phase (two phases: gate statistics, then silent bias mu) |
+| `LLAMA_DNA_MIN_ACTIVE` | 0.02 | floor on the active fraction, the band is shrunk at the end of calibration if needed |
+| `LLAMA_DNA_MAX_BATCH` | 32 | ubatches larger than this use the dense FFN after calibration (set to 512 to evaluate perplexity with DNA) |
+| `LLAMA_DNA_VERBOSE` | 0 | print per-layer active fraction and kernel times when the context is freed |
+| `LLAMA_DNA_PRED` | `xor` | predictor override ("xor" or ggml type name, e.g. `iq4_xs`); CLI `--dnapred` wins |
+
+## Usage / How to run
+
+```bash
+# Enable DNA; per-turn stats print server-side at the end of each slot completion.
+# NOTE: the common CLI sets log verbosity to ERROR by default, so you must raise it
+# with -lv 3 (INFO) or -lv 2 (WARN) to see DNA startup and per-turn stats.
+./llama-cli --dna -m model-f32.gguf -p "hello world" -lv 3
+
+# DNA disabled (default)
+./llama-cli -m model-f32.gguf -p "hello world"
+```
+
+The common CLI (`tools/cli/`) sets `params.verbosity = LOG_LEVEL_ERROR` by default
+(`tools/cli/cli.cpp:36`). The common log callback maps llama `INFO` to verbosity
+`TRACE` (4), which is above the `ERROR` threshold (1), so `LLAMA_LOG_INFO` lines —
+including the "DNA enabled" startup and calibration messages — are suppressed
+unless `-lv 3` (INFO) is given. To keep DNA visible without `-lv 3`, the startup,
+packed-gate, stats, bias, and per-layer prediction lines are emitted at
+`LLAMA_LOG_ERROR`, following the `print_turn_stats` precedent.
+
+Per-turn stats (server-side, after each completed turn), printed from
+`server_slot::print_timings()` in `tools/server/server-context.cpp`:
+
+```
+DNA on (30/30 layers) — calibration 6/8192 (stats 30, bias 0)
+DNA on (30/30 layers) — prediction: 33 tokens, active min 63.7% avg 68.9% max 72.5%
+```
+
+- calibration shows slowest-layer progress over the two phases (`2 * LLAMA_DNA_CALIB` tokens total),
+  with per-phase layer counts
+- prediction shows cumulative predicted tokens and per-layer active-fraction min/avg/max
+
+Per-layer stats are also printed at context destruction (only when `LLAMA_DNA_VERBOSE=1`):
+
+```
+DNA: layer  3: 12345 tokens predicted, active = 12.5%, per token: observe 0.001 ms, route 0.004 ms, down 0.003 ms
+```
+
+- `active = 12.5%` is the fraction of FFN neurons actually computed — lower means more compute saved.
+- Calibration messages are logged at error level so they survive the default ERROR verbosity (see above).
+- With `LLAMA_DNA_T=0` every neuron is active and the output equals the dense FFN (checked: identical perplexity on F16 and Q4_0 test models).
+
+DNA only takes effect on layers that pass all of these checks (enforced in `llm_graph_context::build_ffn` and `llama_dna_layer::get_layer`):
+
+- Dense FFN with a linear gate activation (`type_gate == LLM_FFN_PAR` and `type_op` ∈ {SILU, GELU, GELU_ERF, RELU}) — see "Non-SwiGLU and MoE" above. MoE experts use the same activations via `build_moe_ffn`.
+- Weights in plain host memory (buffer name `"CPU"` or `"CPU_Mapped"`; repacked extra buffers rejected)
+- Weight type F32 or convertible via `ggml_get_type_traits(type)->to_float`
+- Affine terms **supported** (Restrictions 3, 4 lifted): `up_b`/`gate_b`/`down_b` and `up_s`/`gate_s`/`down_s` are copied into the layer at `get_layer` time and reproduced in dense order — `(W·x + b)·s` for gate/up in `op_route`, `(W_down·h + down_b)·down_s` for the down projection (folded into `c0`/`down_t`). Each must be a readable host tensor with the right shape (`gate_b`/`up_b` `{n_ff}`, `down_b` `{n_embd}`, `*_s` `{1}`); otherwise the layer is rejected.
+- No LoRA on gate/up/down
+- Activations: any type via graph-level cast (Restriction 7 lifted) — non-F32 `cur` is `ggml_cast` to F32 before the DNA ops (`dna_x_f32`); the kernels always see F32. 2D tensor required (`cur->ne[2] == 1 && cur->ne[3] == 1`).
+- Batch size ≤ `LLAMA_DNA_MAX_BATCH` (default 32); larger batches fall back to dense FFN
+
+Note: quantized GGUF models (e.g. Q4_0, IQ4_XS, Q6_K) work with DNA — repack is prevented in DNA mode (`DNA mode: preventing repack for quant weights …` logged at INFO in `common_param` post-parse; explicit `--repack` + `--dna` is a hard error, matching the `--load-mode` override handling). Per-tensor scales alone do not reject a layer. The quant gate/up weights run through the native CPU `vec_dot` kernels (no F32 dequant in the per-token path); `W_down` is dequantized once to a transposed F16 copy during calibration. Repacked extra buffers are still rejected per-layer (`llama_dna_row_is_readable`) as a safety net, but with `--no-repack` forced they never occur in DNA mode.
+
+### Running perplexity sweeps (WSL / `setsid` shell)
+
+Perplexity runs under `setsid bash run_*.sh` survive the tool-call timeout and are
+re-parented to PID 1's relay (`Relay(27448)`, root). Two traps burned an afternoon:
+
+1. **`pkill -f run_sweep_tmp` matches the *bash*, not the binary.** The child is
+   `llama-perplexity -m … --dnapred iq4_xs` — the pattern `run_sweep` does not
+   appear in its cmdline. Kill by PID (`kill -9 <pid>`), and confirm which
+   process is which first: `cat /proc/<pid>/cmdline | tr '\0' ' '` shows the
+   full argv (model, `--chunks`, `-t`), so you can tell the T=0.0 firewall run
+   from the T=0.1/0.2 points. `pkill -f llama-perplexity` also matches — use it,
+   not `run_*`.
+2. **Over-heating.** `-t 8` + two overlapping runs (orphan + new) pinned the CPU
+   at >500% and the box overheated. Keep `-t 4` (≈ 200–250% CPU) and insert a
+   **2-minute `sleep 120`** between successive `llama-perplexity` invocations so
+   the CPU can cool. One process at a time.
+
+Unset-graph-reuse is also required on the Gemma runs: `LLAMA_GRAPH_REUSE_DISABLE=1`
+(the DNA graph topology changes at phase boundaries; perplexity over 512-token
+chunks reuses graphs across ubatches otherwise).
+
+
+### The `no_alloc` / `--fit` footgun (root cause)
+
+`llama_model_params.no_alloc` (`common/common.h:784`, default `false`) is **not** set by any
+CLI flag. It flows unchanged through `common_model_params_to_llama()` (`common/common.cpp:1719`)
+→ `common_model_load()` → `llama_model_load_from_file()`.
+
+The trap: **`--fit` is on by default** (`common/common.h:497: bool fit_params = true;`).
+Before the real model is loaded, `common_init_result` calls `common_fit_apply()`
+(`common/common.cpp:1281`), which runs `common_fit_params()` → `common_params_fit_impl()`
+(`common/fit.cpp:980`), which measures memory via
+
+```cpp
+// common/fit.cpp:70-72 (also :178-180 in common_fit_measure)
+llama_model_params mparams_copy = *mparams;
+mparams_copy.no_alloc  = true;
+mparams_copy.load_mode = LLAMA_LOAD_MODE_NONE;
+```
+
+This is a *probe-only metadata pass* to estimate device memory. **But** the real inference
+model is then loaded with the *original* `mparams` — and, crucially, the probe itself creates
+a `llama_context` (`llama_init_from_model`, `fit.cpp:79`) whose constructor
+(`llama_context()`, `src/llama-context.cpp:618-624`) evaluates
+
+```cpp
+if (const char * env = getenv("LLAMA_DNA"); env && atoi(env) != 0) {
+    if (model.no_alloc()) {
+        LLAMA_LOG_ERROR("%s: DNA requested via LLAMA_DNA but model is in no_alloc mode, DNA disabled\n", __func__);
+    } else {
+        dna = std::make_unique<llama_dna>(...);
+    }
+}
+```
+
+For the **probe** model this fires with `no_alloc == true`, so DNA is disabled **for every
+probe context**, and the error is printed — even though the real model (loaded next with
+`no_alloc == false`) would have worked. That is exactly the symptom:
+
+```
+Loading model... |0.00.382.135 E llama_context: DNA requested via LLAMA_DNA but model is in
+no_alloc mode, DNA disabled
+```
+
+**Why `model.no_alloc()` is the wrong gate.** The `no_alloc` flag is a global, coarse
+"metadata-only" marker plumbed through `LlamaFastSearch` — it is not a per-weight property.
+DNA's real requirements are *per-tensor*: plain host memory, exact buffer name `"CPU"` /
+`"CPU_Mapped"`, valid `w->data` pointer. Those are already enforced per layer by
+`llama_dna_row_is_readable()` (`src/llama-dna.cpp:278-288`), which checks
+`w->data`, `w->buffer`, `ggml_backend_buffer_is_host()` and the buffer name.
+
+**Fix.** The whole-model `model.no_alloc()` gate was removed from `src/llama-context.cpp:618-624`:
+DNA is now always created when `LLAMA_DNA != 0`; per-layer readability checks in
+`llama_dna::get_layer()` (`src/llama-dna.cpp:525`) reject genuinely metadata-only loads
+(same `LLAMA_LOG_ERROR` path, per layer). No other code depends on the model-level `no_alloc`
+gate for DNA.
+
+**Workarounds (without the fix):**
+
+```bash
+# 1) Disable the fit probe entirely (cleanest workaround)
+LLAMA_DNA=1 LLAMA_DNA_VERBOSE=1 ./llama-cli -m model-f32.gguf -p "hello" -lv 3 --fit off
+
+# 2) Same, via env (see arg.cpp:2873: -fit/--fit, env LLAMA_ARG_FIT)
+LLAMA_DNA=1 LLAMA_ARG_FIT=0 ./llama-cli -m model-f32.gguf -p "hello"
+```
+
+> **--fit off is orthogonal to DNA enablement.** `--fit` uses `no_alloc=true` for the
+> probe only; DNA's checks no longer gate on it. Use `--dna` (not `LLAMA_DNA=1`) — the
+> env var is removed. DNA keeps tuning knobs via env (`LLAMA_DNA_T`, etc. in
+> `src/llama-dna.cpp:453-463`).
+
+## compile:
+
+```
+# inside /mnt/c/Users/tobia/Desktop/tobifun/sandbox/forks/llama.cpp
+cmake -B build -DBUILD_SHARED_LIBS=OFF -DLLAMA_CURL=OFF
+cmake --build build --config Release -j4 --target llama-cli
+```
+
+## Known restrictions
+
+The following restrictions are currently enforced. Each has a corresponding TODO to lift it.
+
+| # | Restriction | TODO |
+|---|-------------|------|
+| 0 ✅ | **Silent DNA skip** — DNA previously skipped layers without any visible message when requirements weren't met (log level was WARN/INFO, suppressed by the CLI's default ERROR verbosity). | ✅ Fixed: skip reasons now logged at `LLAMA_LOG_ERROR` level in `llama-dna.cpp`, `llama-graph.cpp`, and `llama-context.cpp`, so they appear even at default CLI verbosity. |
+| 1 ✅ | **CPU backend only** — DNA ops (`op_route`, `op_down`) have no GPU/HIP/SYCL backend implementations. | This is fine and accepted |
+| 2 ✅ | ~~**Dense SwiGLU FFNs only** — MoE / shared-expert / other activation variants are skipped~~ | ✅ Fixed: dense FFNs accept SILU/GELU/GELU_ERF/RELU (tanh-approx GELU matches `ggml_vec_gelu_f32`); MoE experts get per-expert dna_layers via `get_moe_expert`/`get_moe_layer` (PAR gate_up split) with `op_expert_route`/`op_expert_down`/`op_expert_observe`. Shared-expert FFNs are covered by the dense hook. Still rejected: expert biases/scales, `weight_before_ffn`, MoE-cache, `post_exp_norm`, non-linear activations (SWIGLU_OAI_MOE/SITU/GEGLU/REGLU). |
+| 3 ✅ | ~~**No biases** — `up_b`, `gate_b`, `down_b` must all be null.~~ | ✅ Fixed: biases are copied at `get_layer` time (`llama_dna_read_dense`, shape-checked `n_ff`/`n_embd`) and applied in dense order in `op_route` (`(W·x + b)·s`) and in `llama_dna_finalize_bias` (`c0 = down_s·(W_down@mu + down_b)`, `down_t` pre-scaled by `down_s`). |
+| 4 ✅ | ~~**No per-tensor scales** — `up_s`, `gate_s`, `down_s` must all be null; scaled low-precision types (NVFP4/F8_E4M3) rejected.~~ | ✅ Fixed: scalar scales `{1}` are read by `llama_dna_read_scale` and applied in the same spots as the biases (see row 3). NVFP4/F8_E4M3 weights already have `to_float` + CPU `vec_dot`, so they pass once the post-matmul multiply is reproduced. |
+| 5 ✅ | **No LoRA** — `has_lora(up/gate/down)` must be false. | This is fine and accepted |
+| 6 ✅ | **Weights in plain host memory only** — default is mmap and no repack | currently also needs --fit off |
+| 7 ✅ | ~~**F32 activations only** — `cur->type == GGML_TYPE_F32` required.~~ | ✅ Fixed: non-F32 inputs are `ggml_cast` to F32 in `build_ffn` before the DNA ops (both calibration-observe and predict paths), reusing ggml's cast kernels for all GGUF quant types; the kernels keep the F32 assumption. |
+| 8 ✅ | **Batch size limit** — ubatches larger than `LLAMA_DNA_MAX_BATCH` (default 32) fall back to dense FFN. | This is fine and accepted. Large prefill should use dense matmul. Short batch validation needs a fast DNA path, though. To be measured and improved in performance test. |
+| 9 ✅ | ~~**Not compatible with `no_alloc` mode**~~ — Previously DNA was disabled when `model.no_alloc()` was true, but that flag is misleading: `--fit` (default on) does an internal `no_alloc=true` probe load, and the real inference model always has `no_alloc=false`. The guard has been removed; per-layer weight readability (`llama_dna_row_is_readable`) already rejects genuinely metadata-only loads. | ✅ Fixed: whole-model `no_alloc` gate removed from `llama-context.cpp` (see "The `no_alloc` / `--fit` footgun (root cause)" above). |
+| 10 ✅ | **Stats print only at context destruction** — previous: `LLAMA_DNA_VERBOSE=1` only printed at destruction, no per-turn stats. | ✅ Fixed: server-side per-turn `LLAMA_LOG_INFO` in `server_slot::print_timings()` (`tools/server/server-context.cpp`) via `llama_dna::get_stats()` (`src/llama-dna.cpp`) and `llama_get_dna()` (`include/llama.h`, `src/llama.cpp`, `src/llama-context.cpp`). Shows on/off per layer, calibration `done/total` with phase breakdown, and prediction min/avg/max active fraction. Visible with `-lv 3` (INFO). |
+| 11 ✅ | ~~**`--no-repack` referenced in the env table does not exist**~~ — The flag now exists (`common/arg.cpp:2395` `-nr`/`--no-repack`); it gates the CPU repack extra-buffer (`use_extra_bufts`, default on). DNA forces `--no-repack` on (`common/arg.cpp:917` post-parse: `params.no_extra_bufts = true`, so `use_extra_bufts=false` down to `make_cpu_buft_list`, `src/llama-model.cpp:1262`), and throws if the user supplied an incompatible explicit override. | ✅ Fixed: `--dna` defaults `--load-mode=mmap` and `--no-repack` via parse-time mutation in `common/arg.cpp` (before `common_model_params_to_llama`, which also asserts the invariants). DNA no longer depends on the user remembering `--no-repack`. `--fit` still correctly forces `no_alloc=true` for probe measurement only; the `no_alloc` workaround (`--fit off`) is orthogonal. |
+| 12 ✅ | **mmap mode** | Works today via `CPU_Mapped` buffer (`ggml/src/ggml-backend.cpp:2958`), which DNA whitelists (`src/llama-dna.cpp:284`), so `w->data` reads valid bytes via the mapping. Remaining gap is sparse/lazy I/O: `lazy_mode` (`TENSOR_READ_LAZY`, `common/arg.cpp:2681`, `src/llama-model-loader.cpp:1183`, requires mmap) and per-neuron unmapping (`unmap_weight`, `src/llama-model-loader.cpp:1620`) are not implemented for DNA, so silent rows still cost a page fault per touch and a cold neuron's 4K page is only skipped if never touched. | TODO: per-neuron read path / `madvise(DONTNEED)` for silent rows; today DNA reads `w->data` rows directly and will fault any touched page. |
+
+Per layer the runtime state holds the packed gate (1 + 16/B bpw), the transposed f16 copy of W_down (2 bpw) and the per-neuron `med`, `band`, `mu` plus `c0`. Calibration messages are logged at info level (`--verbose` in the tools).

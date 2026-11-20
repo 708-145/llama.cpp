@@ -10,6 +10,7 @@
 #include "llama-mmap.h"
 #include "llama-model.h"
 #include "llama-moe-cache.h"
+#include "llama-dna.h"
 #include "llama-ext.h"
 #include "llama-sampler.h"
 #include "llama.h"
@@ -215,6 +216,8 @@ llama_context::llama_context(
     cparams.yarn_beta_fast          = params.yarn_beta_fast   >= 0.0f ? params.yarn_beta_fast   : hparams.yarn_beta_fast;
     cparams.yarn_beta_slow          = params.yarn_beta_slow   >= 0.0f ? params.yarn_beta_slow   : hparams.yarn_beta_slow;
     cparams.embeddings              = params.embeddings;
+    cparams.dna                     = params.dna;
+    cparams.dna_pred                = params.dna_pred;
     cparams.embeddings_nextn        = false;
     cparams.embeddings_nextn_masked = false;
     cparams.offload_kqv             = params.offload_kqv;
@@ -614,6 +617,18 @@ llama_context::llama_context(
             LLAMA_LOG_INFO("%s: pipeline parallelism enabled\n", __func__);
         }
 
+        if (cparams.dna) {
+            // Note: model.no_alloc() is not a valid gate here. --fit (default on) runs a
+            // no_alloc probe load internally, but the real inference model is loaded with
+            // no_alloc=false. Per-layer weight readability is already enforced by
+            // llama_dna::get_layer() via llama_dna_row_is_readable().
+            llama_dna_params dna_params = llama_dna_params::from_env();
+            if (cparams.dna_pred) {
+                dna_params.set_pred_from_name(cparams.dna_pred); // CLI --dnapred overrides LLAMA_DNA_PRED
+            }
+            dna = std::make_unique<llama_dna>(model, backend_cpu, dna_params);
+        }
+
         if (cparams.moe_cache_size > 0) {
             moe_cache = std::make_unique<llama_moe_cache>(model, model.no_alloc(), backend_ptrs, backend_buft, cparams.moe_cache_size, cparams.moe_cache_cpu_share);
         }
@@ -1004,6 +1019,10 @@ const llama_model & llama_context::get_model() const {
 
 const llama_cparams & llama_context::get_cparams() const {
     return cparams;
+}
+
+const llama_dna * llama_context::get_dna() const {
+    return dna.get();
 }
 
 ggml_backend_sched_t llama_context::get_sched() const {
@@ -3121,6 +3140,8 @@ llm_graph_params llama_context::graph_params(
         /*.moe_cache   =*/ moe_cache.get(),
         /*.prec_policy =*/ &model.prec_policy,
         /*.hdmd        =*/ model.hdmd.rot.empty() ? nullptr : &model.hdmd,
+        /*.dna         =*/ dna.get(),
+        /*.dna_epoch   =*/ dna ? dna->update() : 0,
         /*.layer_inp_dev =*/ layer_inp_dev,
         /*.layer_inp_src =*/ supports_embd_row() ? cparams.ctx_other->get_layer_inp_dev() : nullptr,
         /*.h_nextn_dev   =*/ cparams.embeddings_nextn_dev ? h_nextn_dev : nullptr,
@@ -4481,6 +4502,8 @@ llama_context_params llama_context_default_params() {
         /*.op_offload                  =*/ true,
         /*.swa_full                    =*/ true,
         /*.kv_unified                  =*/ false,
+        /*.dna                         =*/ false,
+        /*.dna_pred                    =*/ nullptr,
         /*.sampler                     =*/ nullptr,
         /*.n_sampler                   =*/ 0,
         /*.ctx_other                   =*/ nullptr,

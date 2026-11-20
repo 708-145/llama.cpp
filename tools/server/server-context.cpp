@@ -16,6 +16,7 @@
 #include "common.h"
 #include "fit.h"
 #include "llama.h"
+#include "../../src/llama-dna.h"
 #include "log.h"
 #include "sampling.h"
 #include "speculative.h"
@@ -806,6 +807,13 @@ struct server_slot {
         }
 
         common_speculative_print_stats(spec);
+
+        if (ctx_tgt) {
+            const llama_dna * dna = (const llama_dna *) llama_get_dna(ctx_tgt);
+            if (dna) {
+                dna->print_turn_stats();
+            }
+        }
     }
 
     json to_json(bool only_metrics = false) const {
@@ -5230,6 +5238,15 @@ void server_context::start_loop() {
 
 void server_context::terminate() {
     impl->queue_tasks.terminate();
+}
+
+void server_context::print_dna_stats() {
+    if (impl->ctx_tgt) {
+        const llama_dna * dna = (const llama_dna *) llama_get_dna(impl->ctx_tgt);
+        if (dna) {
+            dna->print_turn_stats();
+        }
+    }
 }
 
 llama_context * server_context::get_llama_context() const {

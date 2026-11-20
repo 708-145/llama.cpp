@@ -9,6 +9,7 @@
 
 #include <array>
 #include <cassert>
+#include <cstring>
 #include <stdexcept>
 #include <cinttypes>
 #include <set>
@@ -35,6 +36,9 @@ struct common_fit_log_scope {
         llama_log_get(&original_logger.callback, &original_logger.user_data);
         llama_log_set([](ggml_log_level level, const char * text, void * user_data) {
             const common_fit_log_scope * self = (const common_fit_log_scope *) user_data;
+            if (strstr(text, "DNA") != nullptr) {
+                return; // DNA is irrelevant for the fit probe
+            }
             const ggml_log_level level_eff = level >= self->min_level ? level : GGML_LOG_LEVEL_DEBUG;
             self->original_logger.callback(level_eff, text, self->original_logger.user_data);
         }, this);

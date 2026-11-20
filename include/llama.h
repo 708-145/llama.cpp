@@ -417,6 +417,8 @@ extern "C" {
         bool kv_unified;  // use a unified buffer across the input sequences when computing the attention
                           // try to disable when n_seq_max > 1 for improved performance when the sequences do not share a large prefix
                           // ref: https://github.com/ggml-org/llama.cpp/pull/14363
+        bool dna;         // enable Dynamic Neuron Activation (DNA) for dense and MoE FFNs on CPU
+        const char * dna_pred; // DNA neuron-activity predictor: nullptr/"" = IQ4_XS (default), otherwise a ggml type name (e.g. "iq4_xs", "q8_0") selecting that quant as predictor; implies dna when set via CLI --dnapred
 
         // [EXPERIMENTAL]
         // backend sampler chain configuration (make sure the caller keeps the sampler chains alive)
@@ -554,6 +556,12 @@ extern "C" {
     LLAMA_API struct llama_context * llama_init_from_model(
                      struct llama_model * model,
             struct llama_context_params   params);
+
+    // DNA stats (Dynamic Neuron Activation)
+    // returns an opaque pointer to the context's DNA state, or nullptr if DNA is off.
+    // the underlying llama_dna_stats struct is an internal detail of llama-cpp;
+    // this accessor exists for internal use (server slot timing logs).
+    LLAMA_API const void * llama_get_dna(const struct llama_context * ctx);
 
     DEPRECATED(LLAMA_API struct llama_context * llama_new_context_with_model(
                      struct llama_model * model,

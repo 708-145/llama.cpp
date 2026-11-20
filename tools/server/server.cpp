@@ -650,6 +650,7 @@ static int server_run_instance(common_params & params, server_role & role, commo
     // setup clean up function, to be called before exit
     auto clean_up = [&ctx_http, &ctx_server, &mcp_mgr]() {
         SRV_INF("%s: cleaning up before exit...\n", __func__);
+        ctx_server.print_dna_stats();
         // stop the session GC first, it finalizes live sessions and wakes pending readers
         server_stream_session_manager_stop();
         ctx_http.stop();
