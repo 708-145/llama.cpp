@@ -142,11 +142,35 @@ The open items below consolidate the TODOs described throughout this document.
 
 "Replace sparse down AXPY work with an efficient sparse down transformation or batched sparse kernel."
 
-The idea is to use the same block compression that llama provides, but apply it in the orthogonal direction. The down projection matrix will be statically encoded in this transposed direction and saved in the GGUF. No runtime overhead.  
-That means that instead of vecdot, each value of a block needs to be scaled by the same activation value, and the full result vector needs to be added to a sum vector.
-This addition can be gather style to support multiple threads, aka each thread maintains its own sum vector, which are accumulated at thread completion.
-Each row is in a different memory location aka maintain one pointer per row, the rows itself are consecutive in memory.
-The optimization comes from "packing" several row computations together and sum up partial result vectors that fit into L1. Idea: 16 rows in parallel from 16 memory streams, compute the summary vector per block of 256 weights so that intermediate sums are in L1 or can even be maintained per subblock of 16 weights in vector registers?
+The current implementation is a sparse sequence of per-neuron AXPY operations:
+for each token, it scans every neuron, and for each active neuron it adds
+`delta[i] * Wdown[:, i]` to the output vector. Each neuron column is stored
+contiguously in `down_t`, so this layout is already suitable for sparse
+column-style updates.
 
+A GGML-style block model is more suitable than assuming every result block
+is storage-aligned:
+
+- Existing IQ4_XS and IQ3_XXS types use 256-value weight blocks, but they are legacy storage formats and do not satisfy the sparse-down cache layout: IQ4_XS stores 256 weights in a 136-byte block and IQ3_XXS in a 98-byte block.
+- The proposed sparse-down block type will instead fit exactly into `n * 64` bytes and contain a multiple of 16 weights.
+ - example IQ3_CXS:
+	* 8 per matrix scale factors (E5M3), not per block, not counted here
+	- 16w blocks a 3*16b + 3b scale factor select
+	- 5*16w = 80w, 255bit (256bit / 80w = 3.2 bpw)
+	- use two to fit in 64B cache line -> effective 160w for down projection 
+- A block may cover 16, 32, or more weights depending on its packed format, but its byte size will remain a multiple of a cache line.
+- The 16-weight granularity provides SIMD-compatible subblocks. Larger blocks may contain multiple 16-weight subblocks and span multiple cache lines.
+- The sparse transformation will use these blocks directly for cache-line and thread-sized work partitioning. The final block layout and metadata format still need to be designed.
+
+
+For the sparse down projection, one useful model is:
+
+- Split the output vector into a set of tiles. Tile width depends on the used quant type, which is cache line aligned. For IQ3_CXS it's 160 wide tiles.
+- Split each tile into subblocks aligned to the quantized weight block layout and CPU SIMD width.
+- Assign one tile to each thread.
+- For a tile, scan only the active neurons.
+- For each active neuron, scale and accumulate the weight subblocks of that
+  neuron over the tile, including the quantization block scale/decode step.
+- Write the completed tile once. No cross-thread full-result-vector reduction is needed. The tile sum vectors are not cache aligned, so when threads finish they may have to synchronize. But this will only happen at most ```numthread-1``` times per matrix.
 
 
