@@ -285,3 +285,202 @@ void dna_sparse_down_tile(
 }
 ```
 
+#### Repacking memory layout in llama.cpp
+
+llama.cpp CPU repacking is eager, load-time tensor repacking. It is performed
+when a model tensor is assigned to a CPU extra buffer type named `CPU_REPACK`;
+it does not happen inside the matrix-multiply loop.
+
+The original GGML matrix layout is row-major in tensor dimensions:
+
+```text
+src[row][block_x] = original quantized weight row
+tensor->ne[0]     = input/output columns
+tensor->ne[1]     = weight rows
+tensor->ne[2/3]   = optional matrix/batch dimensions
+```
+
+The repack entry point is selected by tensor traits in
+`ggml_backend_cpu_repack_buffer_init_tensor()`. The selected implementation
+copies the complete tensor through
+`ggml_backend_cpu_repack_buffer_set_tensor()` and rewrites it into the
+buffer-owning `tensor->data`.
+
+Repacking interleaves a fixed group of weight rows, but the interleave unit is
+usually much finer than a complete quantization block. For example, Q4_0 uses
+32 weights per GGML block: 16 bytes of quantized nibbles plus a 2-byte scale
+(18 bytes total). The 8-row `blck_size_interleave=8` layout does not move the
+whole 32-weight block as one unit. It moves eight-row chunks of 8 bytes of
+quantized nibbles, corresponding to 16 4-bit weights per row:
+
+```text
+original row r / input positions x:
+    32 weights  -> 16 quantized bytes
+    each 8-byte chunk  -> 16 weights
+```
+
+With 8 interleaved rows, the following layout is used:
+
+```text
+for 8-byte chunk c:
+    8 bytes from row0/c
+    8 bytes from row1/c
+    ...
+    8 bytes from row7/c
+```
+
+Those 64 contiguous bytes contain the quantized data for 16 weights from each
+of the eight rows. The matching eight F16 scales (16 bytes total) are stored
+before the quantized data in the repacked structure. Consequently, these
+64-byte groups are not necessarily cache-line aligned: the first group starts
+16 bytes after the structure start. The next 64-byte group advances to the
+next 16-weight chunk for the same eight rows.
+
+Thus, the 8-row interleaved layout for Q4_0 starts by separating all 32-weight
+blocks into fine sub-blocks, and groups the corresponding sub-block of each
+row. It is therefore not a layout of complete 256-weight superblocks.
+
+More generally, the row-group memory layout can be pictured as:
+
+```text
+input sub-block x:
+    metadata/data for row0, x
+    metadata/data for row1, x
+    ...
+    metadata/data for rowN, x
+
+input sub-block x+1:
+    metadata/data for row0, x+1
+    metadata/data for row1, x+1
+    ...
+    metadata/data for rowN, x+1
+```
+
+For Q4_0 `blck_size_interleave=8`, sub-block `x` is 16 weights per row. A
+4-row layout uses the same Q4_0 merge function with either 4-byte or 8-byte
+interleave chunks, depending on `INTER_SIZE`. The 8-byte variants cover 16
+weights per row; a 4-byte variant groups 8 weights per row at finer
+granularity.
+
+Super-block types are structured differently. Q4_K uses 256-value superblocks
+and stores scales/mins plus quantized bytes. Its 8-row repack implementation
+uses `blck_size_interleave=4` or `8` and interleaves those super-block fields
+in format-specific chunks. It does not simply concatenate eight complete
+256-weight superblocks.
+
+The exact scale and quantized-byte layout depends on the quantization type.
+For Q4_0, `block_q4_0x8` stores eight F16 deltas followed by interleaved
+16-byte Q4_0 quantized arrays split into two 8-byte chunks. For Q4_K and
+other super-block types, `block_q4_Kx8`, `block_q4_Kx16`, and the other
+`block_*xN` structures group per-row scales/mins and quantized data for a fixed
+number of weight rows.
+
+The generic Q4_0 loop is:
+
+```text
+for each group of 8 weight rows:
+    for each input block x:
+        dst[x] = merge(
+            src[row_group+0][x],
+            src[row_group+1][x],
+            ...
+            src[row_group+7][x])
+```
+
+The merge does not remain in original row-major order. Instead,
+`make_block_q4_0x8()` separates scale metadata and quantized bytes in the
+interleaved structure, and the quantized nibbles are arranged in the
+`blck_size_interleave` chunks expected by the architecture-specific dot
+product kernel.
+
+The repack source strides are therefore:
+
+```text
+one original row:
+    nblocks = ne0 / QK
+    src[row][block_x] = src[block_x + row * nblocks]
+```
+
+The destination strides are:
+
+```text
+one interleaved group:
+    one merged block for block_x 0
+    one merged block for block_x 1
+    ...
+    one merged block for the complete input dimension
+```
+
+This layout is consumed as follows:
+
+- The activation/input matrix is quantized to the matching parameter type in
+  workspace, such as Q8_0 or Q8_K.
+- GEMM/GEMV threads receive row-aligned chunks of the interleaved weight
+  tensor.
+- `NB_COLS` determines weight-row chunk alignment.
+- `INTER_SIZE` determines how quantized sub-block bytes are interleaved.
+- `NB_COLS` and `INTER_SIZE` are layout and kernel parameters, not a promise
+  that the original tensor can be addressed row by row afterward.
+- A 8-row interleaved tensor is only valid for kernels with a matching
+  `tensor_traits` implementation.
+
+The selected layout is architecture-specific. `ggml_repack_get_optimal_repack_type()`
+chooses Q4_0 4x4, 4x8, or 8x8 layouts, Q4_K 8x4 or 8x8 layouts, and
+corresponding layouts for Q2_K, Q5_K, Q6_K, IQ4_NL, MXFP4, Q8_0, and RISC-V
+variants. The choice depends on available CPU instructions and whether the
+weight-row dimension satisfies the required alignment.
+
+The dense forward kernels pair the interleaved weight blocks with interleaved
+activation blocks. The kernel's dot-product code computes several weight rows
+at once for a GEMM, or one or more row planes for a GEMV, instead of
+dereferencing each original GGML row separately.
+
+Why this layout helps:
+
+- The original row-major matrix stores `row0/blockX`, `row1/blockX`,
+  `row2/blockX`, and so on at different addresses separated by the complete
+  input dimension. An interleaved block stores the metadata and quantized bytes
+  for `row0/blockX` through `rowN/blockX` close together.
+- The kernel processes one activation block and several weight rows for that
+  block at the same time. It can reuse one quantized activation block and one
+  set of loaded scales in SIMD lanes or vector registers.
+- Four or eight weight-row dot products can therefore share inner-loop control,
+  activation loads, scale handling, and output accumulators.
+- This is primarily beneficial for GEMM or batched GEMV, where the same
+  activation plane is reused by several output rows. It is less obviously
+  beneficial for a true single-row GEMV; a scalar or ordinary row-wise GEMV
+  can lose much of the benefit and may be better without interleaving.
+- It improves throughput by reducing indirect addressing, scattered loads,
+  activation quantization repetition, and repeated kernel setup. It does not
+  guarantee that every weight for one complete neuron is nearby in memory.
+
+For a dense matrix product, simply assigning rows to threads in parallel is
+still valid and can work, but it is not equivalent to the interleaved layout:
+
+- Each thread would load the activation block independently unless the
+  activation cache line happens to be shared and already resident.
+- Each thread would follow a different row stride to find the weight block.
+- Each thread would accumulate only for its own output row.
+- The kernel may need more scalar row-offset calculations and less efficient
+  packed dot-product instructions.
+
+The interleaved layout moves the row-grouped weight metadata and quantized
+bytes into a contiguous block before computation. It is a dense
+block-matrix/inner-product layout, not an allocation of one full weight row
+or one cache line to a thread.
+
+Because the destination layout is not the original GGML layout:
+
+- `tensor->extra` holds the selected repack/tensor traits.
+- `tensor->data` must not be interpreted using normal GGML row strides.
+- `tensor->buffer` is `CPU_REPACK`, not ordinary `CPU` or `CPU_Mapped`.
+- The original row-major tensor is no longer directly readable through
+  `tensor->data`.
+- Repacking requires full-tensor replacement: the current CPU repack
+  `set_tensor` implementation asserts that `offset == 0` and
+  `size == ggml_nbytes(tensor)`.
+- The repacked allocation is host memory, but with a backend-specific layout.
+
+No virtual sparse-down interpretation is needed for this section. It describes
+only llama.cpp's existing dense CPU weight repacking mechanism.
+
