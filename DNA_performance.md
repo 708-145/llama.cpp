@@ -107,11 +107,11 @@ The open items below consolidate the TODOs described throughout this document.
 
 ### Operator implementation
 
-- [ ] Implement IQ3_CXS2 quantization
+- [x] Implement IQ3_CXS2 quantization
   - [x] example code in md without blockscale compute
   - [x] clarify how to compute the 8 scales per row (neuron)
-  - [ ] implement the complete quantization code in pure C. If it profits from AVX2 then also add that codepath. No AVX512 path planned for quantization.
-  - [ ] implement and test in C codebase
+  - [x] implement the complete quantization code in pure C. If it profits from AVX2 then also add that codepath. No AVX512 path planned for quantization.
+  - [x] implement and test in C codebase
 - [ ] Replace sparse down AXPY work with an efficient sparse down transformation or batched sparse kernel.
   - [x] Implement reference C kernels for the 16-weight subblock down tile accumulation in md.
   - [ ] Implement reference C kernels for the 16-weight subblock down tile accumulation in C codebase.
@@ -1020,6 +1020,56 @@ void dna_iq3_cxs2_quantize_row(
         // Pack 10 3-bit selectors into bytes 60..63
         dna_store_le32(block->bytes + 60, selectors);
     }
+}
+```
+
+##### 4. Compilation and Usage
+
+The implementation is located in [`src/dna-iq3-cxs2.h`](src/dna-iq3-cxs2.h) and [`src/dna-iq3-cxs2.c`](src/dna-iq3-cxs2.c).
+
+###### Compile and Run Unit Tests
+To compile and run the self-contained round-trip test (verifying E5M3 conversions, SNR, AVX2 bit equivalence, and silence handling):
+```bash
+gcc -O3 -mavx2 -mfma -I. src/dna-iq3-cxs2.c tests/test-dna-iq3.c -o tests/test-dna-iq3 -lm
+./tests/test-dna-iq3
+```
+
+###### Compile and Run Quality Benchmark (vs. IQ3_XXS and IQ4_XS)
+To compare against existing GGML quantization types (`IQ3_XXS` and `IQ4_XS`) on synthetic MLP weight distributions:
+```bash
+g++ -O3 -mavx2 -mfma -I. -Iggml/include -Iggml/src \
+    tests/test-dna-compare-quants.cpp src/dna-iq3-cxs2.c \
+    build/ggml/src/libggml-cpu.a build/ggml/src/libggml-base.a build/ggml/src/libggml.a \
+    -lm -lpthread -fopenmp -o tests/test-dna-compare-quants
+
+./tests/test-dna-compare-quants
+```
+
+###### Usage Example in C
+```c
+#include "src/dna-iq3-cxs2.h"
+
+// Weights array of a neuron (e.g. 11008 weights for LLaMA FFN up/gate row)
+const size_t n_weights = 160 * 68; // must be a multiple of 160
+const float * neuron_weights = ...;
+
+// Output buffers:
+// - blocks: 1 block per 160 weights (64 bytes each, cache-line aligned)
+// - scales: 8 bytes total per neuron (E5M3)
+dna_iq3_cxs2_block blocks[68];
+uint8_t scales_e5m3[8];
+
+// Quantize (uses AVX2 if compiled with -mavx2, or call dna_iq3_cxs2_quantize_row for scalar)
+#if defined(__AVX2__)
+dna_iq3_cxs2_quantize_row_avx2(neuron_weights, n_weights, blocks, scales_e5m3);
+#else
+dna_iq3_cxs2_quantize_row(neuron_weights, n_weights, blocks, scales_e5m3);
+#endif
+
+// Convert the 8 E5M3 scale bytes to float for inference / GEMV:
+float scales_f32[8];
+for (int k = 0; k < 8; ++k) {
+    scales_f32[k] = dna_e5m3_to_f32(scales_e5m3[k]);
 }
 ```
 
