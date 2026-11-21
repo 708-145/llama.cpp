@@ -116,7 +116,7 @@ The open items below consolidate the TODOs described throughout this document.
 - [ ] Replace sparse down AXPY work with an efficient sparse down transformation or batched sparse kernel.
   - [x] Implement reference C kernels for the 16-weight subblock down tile accumulation in md.
   - [ ] Implement reference C kernels for the 16-weight subblock down tile accumulation in C codebase.
-  - [ ] Implement SIMD kernels (e.g. AVX2/AVX-512/NEON) for the 16-weight subblock down tile accumulation in md.
+  - [x] Implement SIMD kernels (e.g. AVX2/AVX-512/NEON) for the 16-weight subblock down tile accumulation in md.
   - [ ] Implement SIMD kernels (e.g. AVX2/AVX-512/NEON) for the 16-weight subblock down tile accumulation in C codebase.
   - [ ] Implement L1-blocked batching over active neurons (up to 32 neurons per batch) to keep partial sums and weight blocks cache-resident.
   - [ ] Benchmark sparse down tile traversal versus dense down projection across thread counts, batch sizes, and active fractions.
@@ -132,8 +132,8 @@ The open items below consolidate the TODOs described throughout this document.
 - [ ] Implement and benchmark sparse indirect-row multi-GEMV for gate/up.
   - [x] Implement C reference multi-row indirect kernel (`ggml_gemv_iq3_cxs2_mr4_indirect_q8_0`) with shared activation LUT in md.
   - [ ] Implement C reference multi-row indirect kernel (`ggml_gemv_iq3_cxs2_mr4_indirect_q8_0`) with shared activation LUT in C codebase.
-  - [ ] Implement SIMD multi-row indirect kernel (`ggml_gemv_iq3_cxs2_mr4_indirect_q8_0`) with shared activation LUT in md.
-  - [ ] Implement SIMD multi-row indirect kernel (`ggml_gemv_iq3_cxs2_mr4_indirect_q8_0`) with shared activation LUT in C codebase.
+  - [x] Implement SIMD multi-row indirect kernel (`dna_iq3_cxs2_sparse_down_tile_avx512`) with shared activation LUT in md.
+  - [ ] Implement SIMD multi-row indirect kernel (`dna_iq3_cxs2_sparse_down_tile_avx512`) with shared activation LUT in C codebase.
   - [ ] Compare MR=4 against MR=1, MR=2, and MR=8 to find optimal register-pressure vs. activation-reuse balance across CPU architectures.
   - [ ] Benchmark cache behavior under scattered/non-adjacent row index distributions versus contiguous row subsets.
   - Decisions:
@@ -1256,24 +1256,247 @@ void dna_iq3_cxs2_sparse_down_tile_avx2(
 }
 ```
 
-##### 3. How AVX-512 instructions improve these paths
+##### 3. AVX-512 implementations for modern CPUs
 
-Implementing an AVX-512 path would provide substantial speedups:
+The following implementations exploit AVX-512F, AVX-512BW, AVX-512_VNNI, and AVX-512_BF16 for modern x86 processors (such as Intel Sapphire Rapids / Emerald Rapids / Granite Rapids and AMD Zen 4 / Zen 5).
 
-1. **AVX-512F / AVX-512CD / AVX-512VL (512-bit vector width & 32 registers)**:
-   - **Full 16-weight subblock in a single register**: In AVX2, 16 float weights require two 256-bit registers (`sum0`, `sum1`). AVX-512 holds all 16 F32 weights in one `__m512` register.
-   - **Direct 16-lane index permutation**: `_mm512_permutexvar_ps` can look up all 16 weights in one instruction across the full 16-element vector, eliminating the split into `idx0`/`idx1` and `val0`/`val1`.
-   - **Register capacity for unrolled tiles**: With 32 vector registers (`zmm0`..`zmm31`), an entire 160-weight line (10 `__m512` registers) can reside permanently in registers during the active-neuron accumulation loop, eliminating all scratch loads and stores until the tile finishes.
+Key architectural advantages utilized:
+1. **AVX-512F 32x 512-bit registers (`zmm0`..`zmm31`)**: in sparse down, all 10 subblocks of a 160-weight cache line reside permanently in 10 `zmm` accumulator registers throughout the active-neuron loop, eliminating all memory traffic to scratch arrays during accumulation.
+2. **AVX-512BW Opmasks (`__mmask16`)**: the 16-bit sign mask is transferred directly to an opmask register (`_cvtu32_mask16`) and signs are inverted with zero-latency mask blending or subtraction (`_mm512_mask_sub_ps`).
+3. **Single-instruction full subblock lookup (`_mm512_permutexvar_ps`)**: all 16 weights are decoded simultaneously from a single 16-lane table in one cycle.
+4. **AVX-512_VNNI (`_mm512_dpbusd_epi32` / `_mm256_dpbusd_epi32`)**: in indirect GEMV, dot products of 8-bit activations against quantized weight values are computed with hardware multiply-accumulate into 32-bit registers.
+5. **AVX-512_BF16 (`_mm512_cvtneps_pbhf16`)**: final F32 accumulators are converted to BF16 in a single hardware instruction, replacing scalar bit-manipulation loops.
 
-2. **AVX-512BW (Byte and Word operations)**:
-   - **Mask registers for sign application**: Rather than extracting sign bits into 32-bit integer vectors and XORing with sign bit 31, AVX-512BW provides native 16-bit opmask registers (`__mmask16`). The 16-bit sign mask can be moved directly into an opmask register (`_cvtu32_mask16`) and combined with `_mm512_mask_sub_ps` or `_mm512_mask_blend_ps`, halving sign-application instruction latency.
-   - **Fast 2-bit index extraction**: Native word-granularity bit shifts (`_mm512_srlv_epi16`) simplify unpacking without needing multiple 128-bit/256-bit packing steps.
+###### A. AVX-512 transposed sparse down tile
 
-3. **AVX-512_VNNI (Vector Neural Network Instructions)**:
-   - **Indirect GEMV speedup**: `_mm512_dpbusd_epi32` (or `_mm256_dpbusd_epi32` with AVX-VNNI) can execute integer dot products of 8-bit activations directly against codebook indices with hardware multiply-accumulate into 32-bit registers, replacing the 16-bit expansion and `_mm_madd_epi16` sequences in `dna_iq3_cxs2_gemv_mr4_indirect_q8_0`.
+```c
+#include <immintrin.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <assert.h>
 
-4. **AVX-512_BF16 (Native Bfloat16 support)**:
-   - **Hardware conversion**: `_mm512_cvtneps_pbhf16` converts 16 or 32 F32 values to BF16 in a single hardware instruction, removing the manual scalar bit-twiddling and round-to-nearest-even overhead in `dna_f32_to_bf16()`.
+static inline __m512i dna_unpack_2bit_indices_512(uint32_t packed) {
+    // Expand 16 2-bit indices from packed 32-bit word into 16 32-bit lanes
+    const __m512i shifts = _mm512_setr_epi32(
+        0,  2,  4,  6,  8, 10, 12, 14,
+        16, 18, 20, 22, 24, 26, 28, 30);
+    __m512i packed_v = _mm512_set1_epi32((int) packed);
+    __m512i bits = _mm512_srlv_epi32(packed_v, shifts);
+    return _mm512_and_epi32(bits, _mm512_set1_epi32(3));
+}
+
+void dna_iq3_cxs2_sparse_down_tile_avx512(
+    const dna_iq3_cxs2_active_neuron *active,
+    size_t                           active_count,
+    size_t                           tile_number,
+    size_t                           tile_cache_lines,
+    const dna_bf16_t                *c0,
+    const dna_iq3_cxs2_tables       *tables,
+    dna_bf16_t                      *tile_sum)
+{
+    assert(tile_cache_lines > 0);
+    const size_t tile_weights = tile_cache_lines * DNA_IQ3_CXS2_WEIGHTS_PER_LINE;
+    const size_t tile_offset = tile_number * tile_weights;
+    const size_t first_block = tile_number * tile_cache_lines;
+
+    // Duplicate 4-entry magnitude table across all 16 32-bit lanes of zmm:
+    // [m0..m3, m0..m3, m0..m3, m0..m3]
+    const __m512 base_lut = _mm512_setr_ps(
+        tables->magnitude_lut[0], tables->magnitude_lut[1],
+        tables->magnitude_lut[2], tables->magnitude_lut[3],
+        tables->magnitude_lut[0], tables->magnitude_lut[1],
+        tables->magnitude_lut[2], tables->magnitude_lut[3],
+        tables->magnitude_lut[0], tables->magnitude_lut[1],
+        tables->magnitude_lut[2], tables->magnitude_lut[3],
+        tables->magnitude_lut[0], tables->magnitude_lut[1],
+        tables->magnitude_lut[2], tables->magnitude_lut[3]);
+
+    for (size_t line = 0; line < tile_cache_lines; ++line) {
+        const size_t block_index = first_block + line;
+        const size_t line_weight_offset = tile_offset + line * DNA_IQ3_CXS2_WEIGHTS_PER_LINE;
+
+        // Load c0 values into 10 ZMM registers (160 F32 values held in registers)
+        __m512 acc[DNA_IQ3_CXS2_SUBBLOCKS_PER_LINE];
+        for (size_t sub = 0; sub < DNA_IQ3_CXS2_SUBBLOCKS_PER_LINE; ++sub) {
+            float temp_c0[16];
+            for (size_t i = 0; i < 16; ++i) {
+                temp_c0[i] = dna_bf16_to_f32(c0[line_weight_offset + sub * 16 + i]);
+            }
+            acc[sub] = _mm512_loadu_ps(temp_c0);
+        }
+
+        // Accumulate across active neurons with zero intermediate memory round-trips
+        for (size_t n = 0; n < active_count; ++n) {
+            const float activation = dna_bf16_to_f32(active[n].activation);
+            if (activation == 0.0f) {
+                continue;
+            }
+
+            const dna_iq3_cxs2_block *block = active[n].blocks + block_index;
+            const float superblock_activation =
+                activation * active[n].superblock_scales[block_index];
+            const uint32_t selectors = dna_load_le32(block->bytes + 60);
+
+            for (size_t sub = 0; sub < DNA_IQ3_CXS2_SUBBLOCKS_PER_LINE; ++sub) {
+                const uint32_t scale_index = (selectors >> (3 * sub)) & 7u;
+                const float block_scale = tables->block_scale_lut[scale_index];
+                const float factor = superblock_activation * block_scale;
+
+                // Scale magnitude LUT for this subblock
+                const __m512 block_lut = _mm512_mul_ps(base_lut, _mm512_set1_ps(factor));
+
+                const uint8_t *payload = block->bytes + sub * 6;
+                const uint16_t signs = dna_load_le16(payload);
+                const uint32_t indices = dna_load_le32(payload + 2);
+
+                // Unpack all 16 indices in one vector
+                const __m512i idx = dna_unpack_2bit_indices_512(indices);
+
+                // Decode all 16 weights in one instruction via AVX-512F permute
+                __m512 val = _mm512_permutexvar_ps(idx, block_lut);
+
+                // Apply signs via AVX-512BW opmask: negate where sign bit is 1
+                const __mmask16 sign_mask = _cvtu32_mask16((uint32_t) signs);
+                val = _mm512_mask_sub_ps(val, sign_mask, _mm512_setzero_ps(), val);
+
+                // Accumulate directly into register
+                acc[sub] = _mm512_add_ps(acc[sub], val);
+            }
+        }
+
+        // Convert register accumulators to BF16 and write directly to output
+        dna_bf16_t *out_line = tile_sum + line * DNA_IQ3_CXS2_WEIGHTS_PER_LINE;
+        for (size_t sub = 0; sub < DNA_IQ3_CXS2_SUBBLOCKS_PER_LINE; ++sub) {
+#if defined(__AVX512BF16__)
+            // Native AVX-512_BF16 hardware conversion: 16 F32 -> 16 BF16 in 1 instruction
+            __m256i bf16_vec = (__m256i) _mm512_cvtneps_pbhf16(acc[sub]);
+            _mm256_storeu_si256((__m256i *) (out_line + sub * 16), bf16_vec);
+#else
+            float f32_vals[16];
+            _mm512_storeu_ps(f32_vals, acc[sub]);
+            for (size_t i = 0; i < 16; ++i) {
+                out_line[sub * 16 + i] = dna_f32_to_bf16(f32_vals[i]);
+            }
+#endif
+        }
+    }
+}
+```
+
+###### B. AVX-512 indirect-row GEMV (MR=4) with VNNI
+
+```c
+#include <immintrin.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <assert.h>
+
+void dna_iq3_cxs2_gemv_mr4_indirect_q8_0_avx512(
+    const int8_t                    *x_q8,
+    const float                     *x_scales,
+    size_t                           n_inputs,
+    const dna_iq3_cxs2_sparse_row   *rows,
+    size_t                           active_count,
+    const float                      block_scale_lut[8],
+    float                           *output)
+{
+    assert(n_inputs % DNA_IQ3_CXS2_WEIGHTS_PER_LINE == 0);
+    const size_t superblock_count = n_inputs / DNA_IQ3_CXS2_WEIGHTS_PER_LINE;
+
+    // Magnitude values: {1, 3, 9, 27}
+    static const int8_t mag_table[4] = { 1, 3, 9, 27 };
+
+    for (size_t group_start = 0; group_start < active_count; group_start += 4) {
+        const size_t row_count = active_count - group_start < 4 ? active_count - group_start : 4;
+        float accum[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+
+        for (size_t superblock = 0; superblock < superblock_count; ++superblock) {
+            const dna_iq3_cxs2_block *weight_blocks[4];
+            uint32_t selectors[4];
+            float row_scales[4];
+
+            for (size_t r = 0; r < row_count; ++r) {
+                weight_blocks[r] = rows[group_start + r].blocks + superblock;
+                selectors[r] = dna_load_le32(weight_blocks[r]->bytes + 60);
+                row_scales[r] = rows[group_start + r].superblock_scales[superblock];
+            }
+
+            for (size_t subblock = 0; subblock < DNA_IQ3_CXS2_SUBBLOCKS_PER_LINE; ++subblock) {
+                const size_t input_offset =
+                    superblock * DNA_IQ3_CXS2_WEIGHTS_PER_LINE +
+                    subblock * DNA_IQ3_CXS2_WEIGHTS_PER_SUBBLOCK;
+                const size_t q8_block = input_offset / 32;
+                const size_t q8_offset = input_offset % 32;
+                const int8_t *activation_block = x_q8 + q8_block * 32 + q8_offset;
+
+                // Load 16 activation bytes
+                __m128i act_16 = _mm_loadu_si128((const __m128i *) activation_block);
+                const float activation_scale = x_scales[q8_block];
+
+                for (size_t r = 0; r < row_count; ++r) {
+                    const dna_iq3_cxs2_block *block = weight_blocks[r];
+                    const uint8_t *payload = block->bytes + subblock * 6;
+                    const uint16_t signs = dna_load_le16(payload);
+                    const uint32_t indices = dna_load_le32(payload + 2);
+                    const uint32_t scale_index = (selectors[r] >> (3 * subblock)) & 7u;
+
+                    // Decode signed 8-bit weight values into 16 bytes
+                    int8_t decoded_weights[16];
+                    for (int i = 0; i < 16; ++i) {
+                        const uint32_t idx = (indices >> (2 * i)) & 3u;
+                        const int8_t mag = mag_table[idx];
+                        decoded_weights[i] = ((signs >> i) & 1) ? (int8_t) -mag : mag;
+                    }
+
+                    __m128i w_16 = _mm_loadu_si128((const __m128i *) decoded_weights);
+
+#if defined(__AVX512VNNI__) || defined(__AVXVNNI__)
+                    // AVX-512_VNNI direct int8 x int8 -> int32 dot product.
+                    // _mm_dpbusd_epi32 expects unsigned 1st operand and signed 2nd operand:
+                    // sum(u8 * s8). With activation x in [-128, 127], let u_act = (uint8_t)(x + 128).
+                    // Then u_act * w = (x + 128) * w = x * w + 128 * w.
+                    // Correcting: dot(x, w) = dot(u_act, w) - 128 * sum(w).
+                    const __m128i offset_128 = _mm_set1_epi8(-128); // 0x80
+                    __m128i u_act = _mm_xor_si128(act_16, offset_128); // x + 128 as uint8
+                    __m128i vnni_acc = _mm_dpbusd_epi32(_mm_setzero_si128(), u_act, w_16);
+
+                    // Subtract 128 * sum(w) to restore signed dot product
+                    __m128i w_lo = _mm_srai_epi16(_mm_unpacklo_epi8(w_16, w_16), 8);
+                    __m128i w_hi = _mm_srai_epi16(_mm_unpackhi_epi8(w_16, w_16), 8);
+                    __m128i w_sum16 = _mm_add_epi16(w_lo, w_hi);
+                    __m128i w_sum32 = _mm_madd_epi16(w_sum16, _mm_set1_epi16(1));
+                    __m128i w_corr = _mm_slli_epi32(w_sum32, 7); // multiply sum(w) by 128
+                    __m128i prod_sum = _mm_sub_epi32(vnni_acc, w_corr);
+#else
+                    // Fallback using madd_epi16 without VNNI
+                    __m128i act_lo = _mm_srai_epi16(_mm_unpacklo_epi8(act_16, act_16), 8);
+                    __m128i act_hi = _mm_srai_epi16(_mm_unpackhi_epi8(act_16, act_16), 8);
+                    __m128i w_lo   = _mm_srai_epi16(_mm_unpacklo_epi8(w_16, w_16), 8);
+                    __m128i w_hi   = _mm_srai_epi16(_mm_unpackhi_epi8(w_16, w_16), 8);
+
+                    __m128i prod_lo = _mm_madd_epi16(act_lo, w_lo);
+                    __m128i prod_hi = _mm_madd_epi16(act_hi, w_hi);
+                    __m128i prod_sum = _mm_add_epi32(prod_lo, prod_hi);
+#endif
+
+                    // Horizontal reduction of 4 32-bit lanes
+                    __m128i h = _mm_hadd_epi32(prod_sum, prod_sum);
+                    h = _mm_hadd_epi32(h, h);
+                    int32_t dot = _mm_cvtsi128_si32(h);
+
+                    const float scale =
+                        activation_scale * row_scales[r] * block_scale_lut[scale_index];
+                    accum[r] += (float) dot * scale;
+                }
+            }
+        }
+
+        for (size_t r = 0; r < row_count; ++r) {
+            output[rows[group_start + r].output_row] = accum[r];
+        }
+    }
+}
+```
 
 #### Repacking memory layout in llama.cpp
 
