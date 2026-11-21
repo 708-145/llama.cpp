@@ -148,13 +148,12 @@ block once and reusing it for all rows in the group. Depending on the weight
 format, it can also share an activation-dependent lookup table. Row-specific
 weight blocks, scales, and metadata still need separate loads and processing.
 
-Suggested name: `ggml_gemv_q4_0_mr8_indirect_q8_0`. `mr8` means up to eight
-rows per call; `indirect` says rows are supplied by pointers or indices and
-need not be adjacent in the original matrix. This is distinct from the
-existing repacked `ggml_gemv_q4_0_8x8_q8_0`, which requires the
-`block_q4_0x8` interleaved layout. The row group size should be ISA-tuned:
-start by comparing MR=4 and MR=8, since keeping more per-row accumulators live
-can increase register pressure.
+For IQ3_CXS2, the suggested name is
+`ggml_gemv_iq3_cxs2_mr4_indirect_q8_0`. `mr4` means up to four rows per call;
+`indirect` says rows are supplied by pointers or indices and need not be
+adjacent in the original matrix. This is distinct from the existing repacked
+`ggml_gemv_q4_0_8x8_q8_0`, which requires the `block_q4_0x8` interleaved
+layout. MR=4 is the initial reference batch size, not a measured optimum.
 
 The kernel needs:
 
@@ -166,9 +165,9 @@ The kernel needs:
   reused for all rows.
 - One accumulator per selected row, with the same accumulation precision and
   scaling semantics as the existing single-row dot path.
-- Format-specific weight block decoding. For Q4_0, each row has its own Q4_0
-  blocks and block scales. For LUT-based formats, only LUT data that depends
-  on the shared activation block can be reused; row-specific scales remain
+- Format-specific weight block decoding. For IQ3_CXS2, each row has its own
+  64-byte blocks and per-subblock scale selectors. For LUT-based formats,
+  activation-dependent LUT data can be shared; row-specific scales remain
   separate.
 
 ```text
@@ -184,7 +183,7 @@ for group_start = 0; group_start < active_count; group_start += MR:
         shared_lut = make_activation_lut(a)   # only for LUT-based formats
 
         for r = 0; r < m; ++r:
-            w = load_q4_block(row_ptr[group_start + r], kblock)
+            w = load_weight_block(row_ptr[group_start + r], kblock)
             row_scale = w.scale
             acc[r] += dot_block(w, a, row_scale, a_scale, shared_lut)
 
@@ -192,22 +191,21 @@ for group_start = 0; group_start < active_count; group_start += MR:
         output[row_index[group_start + r]] = reduce_and_store(acc[r])
 ```
 
-`dot_block` is a format-specific SIMD helper that consumes the already-loaded
-activation block; it must not reload that block for each row. For Q4_0, its
-weights are still read from separate ordinary row addresses. The row loop can
-be unrolled to overlap independent weight loads, while retaining one shared
-activation block and one accumulator per row. This is software-indirect
-multi-row processing, not a hardware gather instruction or a physical weight
-repack.
+`dot_block` is a format-specific helper that consumes the already-loaded
+activation block; it must not reload that block for each row. For IQ3_CXS2,
+the scalar MR=4 example below reads weights from separate ordinary row
+addresses. A SIMD implementation could unroll the row loop to overlap
+independent weight loads while retaining shared activation data. This is
+software-indirect multi-row processing, not a hardware gather instruction or
+a physical weight repack.
 
 This design removes repeated activation-block loads within each row group and
 can amortize activation-dependent LUT setup across the selected rows. It does
 not reduce the number of weight bytes read, and arbitrary row pointers may
 have poor weight locality. The existing x86 Q4_0 row kernel requires
-`nrc == 1`; this would be a new path with a scalar/single-row tail for groups
-smaller than MR.
-Measure MR=4 and MR=8 against the existing row-at-a-time path at matched
-active-row counts and row distributions before choosing a default.
+`nrc == 1`; the IQ3_CXS2 MR=4 path is a new scalar reference with a tail for
+groups smaller than MR. Benchmark it against the row-at-a-time path at matched
+active-row counts and row distributions before choosing a production default.
 
 ### sparse down projection
 
@@ -230,7 +228,7 @@ is storage-aligned:
 	- 2 * 5 * 16w = 160w, 510bit (512bit / 160w = 3.2 bpw)
 - A block may cover 16, 32, or more weights depending on its packed format, but its byte size will remain a multiple of a cache line.
 - The 16-weight granularity provides SIMD-compatible subblocks. Larger blocks may contain multiple 16-weight subblocks and span multiple cache lines.
-- The sparse transformation will use these blocks directly for cache-line and thread-sized work partitioning. The final block layout and metadata format still need to be designed.
+- The sparse transformation will use these blocks directly for cache-line and thread-sized work partitioning. The production bit layout and metadata semantics are not finalized; the scalar reference below states its assumed layout explicitly.
 
 
 For the sparse down projection, one useful model is:
@@ -262,8 +260,8 @@ The following is format-independent. It assumes:
 - packed-weight decoding is supplied by a callback.
 
 The implementation accumulates in F32 and converts only the completed tile
-back to BF16. It does not implement the IQ3_CXS decoder or matrix-scale
-handling; those belong in `decode_subblock`.
+back to BF16. The generic version leaves format decoding to its callback; the
+following scalar IQ3_CXS2 example shows one concrete decoder and tile path.
 
 ```c
 #include <stddef.h>
@@ -358,6 +356,288 @@ void dna_sparse_down_tile(
     }
 }
 ```
+
+#### Scalar IQ3_CXS2 transposed reference CPU path
+
+The bit count defines ten 16-weight groups per 64-byte line, but not the exact
+field order. For this reference implementation, use this byte layout:
+
+```text
+bytes  0..59: ten 6-byte sign/index payloads
+              each payload: 16-bit sign mask, then 32-bit 2-bit indices
+bytes 60..63: ten 3-bit scale selectors in bits 0..29; bits 30..31 reserved
+```
+
+All fields are little-endian. A sign bit of one negates the selected magnitude.
+This stores 10 * (16 + 32 + 3) = 510 bits, leaving two reserved bits in the
+64-byte line. The four-entry magnitude LUT is sign-symmetric. The eight
+selector scales below are passed in as F32 after converting the matrix's E5M3
+scale table; `superblock_scales` supplies the applicable per-neuron,
+per-output-line scale. These inputs follow the scale decomposition described
+above. If the final format chooses another bit order or scale scope, the
+reader/setup changes, while the accumulation loop stays the same.
+
+The code reuses `dna_bf16_to_f32()` and `dna_f32_to_bf16()` from the preceding
+reference implementation. It is scalar C: it decodes one 16-weight subblock,
+scales its four-entry LUT, and accumulates its 16 contributions into F32 sums.
+
+```c
+#include <assert.h>
+#include <stddef.h>
+#include <stdint.h>
+
+enum {
+    DNA_IQ3_CXS2_LINE_BYTES = 64,
+    DNA_IQ3_CXS2_WEIGHTS_PER_LINE = 160,
+    DNA_IQ3_CXS2_WEIGHTS_PER_SUBBLOCK = 16,
+    DNA_IQ3_CXS2_SUBBLOCKS_PER_LINE = 10,
+};
+
+typedef struct dna_iq3_cxs2_block {
+    _Alignas(64) uint8_t bytes[DNA_IQ3_CXS2_LINE_BYTES];
+} dna_iq3_cxs2_block;
+
+_Static_assert(sizeof(dna_iq3_cxs2_block) == DNA_IQ3_CXS2_LINE_BYTES,
+               "IQ3_CXS2 block must be exactly one cache line");
+
+typedef struct dna_iq3_cxs2_active_neuron {
+    dna_bf16_t activation;
+    const dna_iq3_cxs2_block *blocks;
+    const float *superblock_scales;
+} dna_iq3_cxs2_active_neuron;
+
+typedef struct dna_iq3_cxs2_tables {
+    float magnitude_lut[4];
+    float block_scale_lut[8];
+} dna_iq3_cxs2_tables;
+
+static inline uint16_t dna_load_le16(const uint8_t *p) {
+    return (uint16_t) p[0] | ((uint16_t) p[1] << 8);
+}
+
+static inline uint32_t dna_load_le32(const uint8_t *p) {
+    return (uint32_t) p[0] |
+           ((uint32_t) p[1] << 8) |
+           ((uint32_t) p[2] << 16) |
+           ((uint32_t) p[3] << 24);
+}
+
+static void dna_iq3_cxs2_accumulate_subblock(
+    const dna_iq3_cxs2_block *block,
+    size_t                   subblock,
+    float                    superblock_activation,
+    float                    block_scale,
+    const dna_iq3_cxs2_tables *tables,
+    float                    sum[DNA_IQ3_CXS2_WEIGHTS_PER_SUBBLOCK])
+{
+    assert(subblock < DNA_IQ3_CXS2_SUBBLOCKS_PER_LINE);
+
+    const uint8_t *payload = block->bytes + subblock * 6;
+    const uint16_t signs = dna_load_le16(payload);
+    const uint32_t indices = dna_load_le32(payload + 2);
+
+    const float block_activation =
+        superblock_activation * block_scale;
+
+    float scaled_lut[4];
+    for (size_t k = 0; k < 4; ++k) {
+        scaled_lut[k] = block_activation * tables->magnitude_lut[k];
+    }
+
+    for (size_t i = 0; i < DNA_IQ3_CXS2_WEIGHTS_PER_SUBBLOCK; ++i) {
+        const uint32_t index = (indices >> (2 * i)) & 3u;
+        const int negative = (signs >> i) & 1u;
+        const float contribution =
+            negative ? -scaled_lut[index] : scaled_lut[index];
+        sum[i] += contribution;
+    }
+}
+
+void dna_iq3_cxs2_sparse_down_tile(
+    const dna_iq3_cxs2_active_neuron *active,
+    size_t                           active_count,
+    size_t                           tile_number,
+    size_t                           tile_cache_lines,
+    const dna_bf16_t                *c0,
+    const dna_iq3_cxs2_tables       *tables,
+    float                           *sum_scratch,
+    dna_bf16_t                     *tile_sum)
+{
+    assert(tile_cache_lines > 0);
+
+    const size_t tile_weights =
+        tile_cache_lines * DNA_IQ3_CXS2_WEIGHTS_PER_LINE;
+    const size_t tile_offset = tile_number * tile_weights;
+    const size_t first_block = tile_number * tile_cache_lines;
+
+    for (size_t i = 0; i < tile_weights; ++i) {
+        sum_scratch[i] = dna_bf16_to_f32(c0[tile_offset + i]);
+    }
+
+    for (size_t n = 0; n < active_count; ++n) {
+        const float activation = dna_bf16_to_f32(active[n].activation);
+        if (activation == 0.0f) {
+            continue;
+        }
+
+        for (size_t line = 0; line < tile_cache_lines; ++line) {
+            const size_t block_index = first_block + line;
+            const dna_iq3_cxs2_block *block = active[n].blocks + block_index;
+            const float superblock_activation =
+                activation * active[n].superblock_scales[block_index];
+            const uint32_t selectors = dna_load_le32(block->bytes + 60);
+
+            for (size_t subblock = 0;
+                 subblock < DNA_IQ3_CXS2_SUBBLOCKS_PER_LINE;
+                 ++subblock) {
+                const uint32_t scale_index =
+                    (selectors >> (3 * subblock)) & 7u;
+                const size_t output_offset =
+                    line * DNA_IQ3_CXS2_WEIGHTS_PER_LINE +
+                    subblock * DNA_IQ3_CXS2_WEIGHTS_PER_SUBBLOCK;
+                dna_iq3_cxs2_accumulate_subblock(
+                    block,
+                    subblock,
+                    superblock_activation,
+                    tables->block_scale_lut[scale_index],
+                    tables,
+                    sum_scratch + output_offset);
+            }
+        }
+    }
+
+    for (size_t i = 0; i < tile_weights; ++i) {
+        tile_sum[i] = dna_f32_to_bf16(sum_scratch[i]);
+    }
+}
+```
+
+The caller supplies `sum_scratch` with `tile_cache_lines * 160` F32 elements.
+Each active-neuron entry points to its neuron-major sequence of 64-byte
+IQ3_CXS2 lines, and its `superblock_scales` array uses the same block indexing.
+The output is tile-local; `c0` is indexed by the tile's global output offset.
+This reference code assumes valid pointers and dimensions and omits the
+E5M3-to-F32 conversion, which should use the format's chosen E5M3 convention.
+
+#### Scalar IQ3_CXS2 indirect-row GEMV (MR=4)
+
+The same IQ3_CXS2 weight lines can be used for sparse gate/up rows without
+repacking the rows together. This reference takes an activation vector already
+quantized once to Q8_0: `x_q8` holds signed bytes and `x_scales` holds the
+corresponding 32-element block scales converted to F32. `n_inputs` must be a
+multiple of 160; each 64-byte IQ3_CXS2 line then covers 160 input elements,
+which is five Q8_0 blocks.
+
+For each 16-weight subblock, the 16 Q8 values are multiplied by the four
+positive IQ3 magnitudes `{1, 3, 9, 27}` once to form a shared activation LUT.
+Each of the four selected rows uses its own indices, signs, scale selector,
+and superblock scale to consume that LUT. Since each 16-element subblock is
+aligned within one 32-element Q8_0 block, it has one shared Q8 scale.
+
+```c
+typedef struct dna_iq3_cxs2_sparse_row {
+    size_t output_row;
+    const dna_iq3_cxs2_block *blocks;
+    const float *superblock_scales;
+} dna_iq3_cxs2_sparse_row;
+
+void dna_iq3_cxs2_gemv_mr4_indirect_q8_0(
+    const int8_t                    *x_q8,
+    const float                     *x_scales,
+    size_t                           n_inputs,
+    const dna_iq3_cxs2_sparse_row   *rows,
+    size_t                           active_count,
+    const float                      block_scale_lut[8],
+    float                           *output)
+{
+    static const int32_t magnitude_lut[4] = { 1, 3, 9, 27 };
+    assert(n_inputs % DNA_IQ3_CXS2_WEIGHTS_PER_LINE == 0);
+
+    const size_t superblock_count =
+        n_inputs / DNA_IQ3_CXS2_WEIGHTS_PER_LINE;
+
+    for (size_t group_start = 0;
+         group_start < active_count;
+         group_start += 4) {
+        const size_t row_count =
+            active_count - group_start < 4 ? active_count - group_start : 4;
+        float accum[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+
+        for (size_t superblock = 0;
+             superblock < superblock_count;
+             ++superblock) {
+            const dna_iq3_cxs2_block *weight_blocks[4];
+            uint32_t selectors[4];
+            float row_scales[4];
+
+            for (size_t r = 0; r < row_count; ++r) {
+                weight_blocks[r] = rows[group_start + r].blocks + superblock;
+                selectors[r] =
+                    dna_load_le32(weight_blocks[r]->bytes + 60);
+                row_scales[r] =
+                    rows[group_start + r].superblock_scales[superblock];
+            }
+
+            for (size_t subblock = 0;
+                 subblock < DNA_IQ3_CXS2_SUBBLOCKS_PER_LINE;
+                 ++subblock) {
+                const size_t input_offset =
+                    superblock * DNA_IQ3_CXS2_WEIGHTS_PER_LINE +
+                    subblock * DNA_IQ3_CXS2_WEIGHTS_PER_SUBBLOCK;
+                const size_t q8_block = input_offset / 32;
+                const size_t q8_offset = input_offset % 32;
+                assert(q8_offset == 0 || q8_offset == 16);
+                const int8_t *activation_block =
+                    x_q8 + q8_block * 32 + q8_offset;
+
+                int32_t activation_lut[16][4];
+                for (size_t i = 0; i < 16; ++i) {
+                    const int32_t q = activation_block[i];
+                    for (size_t k = 0; k < 4; ++k) {
+                        activation_lut[i][k] = q * magnitude_lut[k];
+                    }
+                }
+
+                const float activation_scale = x_scales[q8_block];
+
+                for (size_t r = 0; r < row_count; ++r) {
+                    const dna_iq3_cxs2_block *block = weight_blocks[r];
+                    const uint8_t *payload = block->bytes + subblock * 6;
+                    const uint16_t signs = dna_load_le16(payload);
+                    const uint32_t indices = dna_load_le32(payload + 2);
+                    const uint32_t scale_index =
+                        (selectors[r] >> (3 * subblock)) & 7u;
+
+                    int32_t dot = 0;
+                    for (size_t i = 0; i < 16; ++i) {
+                        const uint32_t index = (indices >> (2 * i)) & 3u;
+                        const int32_t term = activation_lut[i][index];
+                        dot += ((signs >> i) & 1u) ? -term : term;
+                    }
+
+                    const float scale =
+                        activation_scale *
+                        row_scales[r] *
+                        block_scale_lut[scale_index];
+                    accum[r] += (float) dot * scale;
+                }
+            }
+        }
+
+        for (size_t r = 0; r < row_count; ++r) {
+            output[rows[group_start + r].output_row] = accum[r];
+        }
+    }
+}
+```
+
+`rows[]` is the active-row pointer list; its entries may point to arbitrary
+matrix rows. `x_q8` and `x_scales` are shared across the four rows, as is each
+16-by-4 activation LUT. Weight payloads and selectors remain row-specific.
+The output is scattered by `output_row`; any gate/up bias or activation
+function is applied by the caller. This is scalar reference code only: the
+activation quantization, E5M3 scale conversion, and production dispatch are
+outside the function.
 
 #### AVX2 lookup sketch for symmetric 3-bit weights
 
@@ -689,10 +969,12 @@ should be measured before adding its complexity.
 
 For the proposed IQ3_CXS2 layout, one 64-byte weight line represents 160
 weights for one active neuron and one 160-output region. It contains ten
-16-weight subblocks. Each subblock has 48 bits of sign/index data plus a
-3-bit scale selector: ten such records use 510 bits, leaving two bits in the
-64-byte line for format-defined padding or metadata. The final bit placement
-and scale-table semantics must be fixed by the format implementation.
+16-weight subblocks. Each subblock has 48 bits of sign/index data plus a 3-bit scale selector:
+ten such records use 510 bits. The scalar reference below uses bytes 0..59
+for the ten six-byte sign/index payloads and packs all ten selectors into the
+last four bytes, reserving their top two bits. This is a reference layout;
+the production format must also specify the E5M3 convention and scale-table
+scope.
 
 The worker owns one 160-output region. Its dataflow is:
 
