@@ -108,11 +108,10 @@ The open items below consolidate the TODOs described throughout this document.
 ### Operator implementation
 
 - [ ] Implement IQ3_CXS2 quantization
-  - [x] example code in md
+  - [x] example code in md without blockscale compute
+  - [x] clarify how to compute the 8 scales per row (neuron)
+  - [ ] implement the complete quantization code in pure C. If it profits from AVX2 then also add that codepath. No AVX512 path planned for quantization.
   - [ ] implement and test in C codebase
-  - Open:
-    - clarify how to compute the 8 scales per row (neuron)
-    - 
 - [ ] Replace sparse down AXPY work with an efficient sparse down transformation or batched sparse kernel.
   - [x] Implement reference C kernels for the 16-weight subblock down tile accumulation in md.
   - [ ] Implement reference C kernels for the 16-weight subblock down tile accumulation in C codebase.
@@ -676,55 +675,238 @@ outside the function.
 
 #### Scalar IQ3_CXS2 quantization reference
 
-This function quantizes one row of F32 weights into IQ3_CXS2 blocks. It reuses
-the type definitions, constants, and helpers from the dequantization references
-above. The caller supplies the per-matrix `block_scale_lut[8]` as F32 values;
-how those eight scales are chosen for the matrix is outside this function.
+This section describes the complete quantization pipeline for IQ3_CXS2, including:
+1. Finding the MSE-optimal continuous scale for each 16-weight subblock via coordinate descent.
+2. Clustering subblock scale demands into the 8 per-neuron scales using weighted 1D Lloyd-Max (k-means).
+3. Quantizing the 8 scales to 8-bit unsigned E5M3 (5 exponent bits, 3 mantissa bits, bias 15, no sign).
+4. Direct subblock encoding (selecting the best 3-bit selector, 2-bit magnitude indices, and 1-bit signs).
 
-The scale hierarchy, from coarsest to finest:
-
-1. **Per-matrix**: 8 E5M3 scale factors, pre-converted to F32 as
-   `block_scale_lut[8]`. Shared by every block in the matrix. Determined once
-   during format setup.
-2. **Per-superblock** (per 160-weight line): one F32 `superblock_scale`, stored
-   separately in the row's `superblock_scales` array. Computed here to cover
-   the range of the 160 weights given the available block scales.
-3. **Per-subblock** (per 16 weights): a 3-bit selector choosing one of the 8
-   block scale entries. Picked to minimize subblock quantization error.
-4. **Per-weight**: a 2-bit magnitude index into `{1, 3, 9, 27}` and a 1-bit
-   sign. Nearest-neighbor selection after dividing by the effective scale.
-
-The quantized representation of weight `w[i]` is:
+There is **no separate superblock scale**: each neuron (row) stores exactly 8 E5M3 scale values (8 bytes total), and each 16-weight subblock selects directly from these 8 values via its 3-bit selector.
 
 ```text
-w_hat[i] = superblock_scale * block_scale_lut[selector] * magnitude[index] * sign
+w_hat[i] = block_scale_lut[selector] * magnitude[index[i]] * sign[i]
 ```
+where `magnitude in {1, 3, 9, 27}` and `sign in {+1, -1}`.
 
-where `magnitude = {1, 3, 9, 27}`, `sign = +1 or -1`, and `selector` is the
-3-bit index chosen for this subblock.
+##### E5M3 Floating-point encoding
 
-The quantizer works bottom-up:
-
-1. For each candidate `(superblock_scale, selector)` pair, the per-weight
-   index and sign are determined by nearest-neighbor lookup in the scaled
-   magnitude table. The effective scale for a subblock is
-   `superblock_scale * block_scale_lut[selector]`.
-2. The superblock scale is chosen to minimize total squared error across
-   all 10 subblocks, each with its own best selector.
-3. The initial superblock scale candidate is derived from the row's
-   maximum absolute weight and the median block scale, then refined by
-   testing a few nearby candidates.
+The 8 scales are stored in 8 bytes as unsigned E5M3 (5 exponent bits, 3 mantissa bits, bias = 15).
 
 ```c
-#include <assert.h>
-#include <float.h>
-#include <math.h>
-#include <stddef.h>
 #include <stdint.h>
 #include <string.h>
+#include <math.h>
 
+// Convert float to unsigned E5M3 (bits: eeeeemmm)
+static inline uint8_t dna_f32_to_e5m3(float val) {
+    if (val <= 0.0f) {
+        return 0;
+    }
+    uint32_t bits;
+    memcpy(&bits, &val, sizeof(bits));
+    int32_t exp = ((bits >> 23) & 0xFF) - 127 + 15; // Rebinned to bias 15
+    if (exp <= 0) {
+        // Subnormal or underflow
+        return 0;
+    }
+    if (exp >= 31) {
+        // Clamp to max representable non-infinite value (exp=31, mantissa=7)
+        return 0xFF;
+    }
+    uint32_t mant = (bits >> 20) & 0x7; // Top 3 mantissa bits
+    // Round to nearest: check bit 19
+    if ((bits >> 19) & 1) {
+        mant++;
+        if (mant > 7) {
+            mant = 0;
+            exp++;
+            if (exp >= 31) return 0xFF;
+        }
+    }
+    return (uint8_t) ((exp << 3) | mant);
+}
+
+// Convert unsigned E5M3 to float
+static inline float dna_e5m3_to_f32(uint8_t val) {
+    if (val == 0) {
+        return 0.0f;
+    }
+    uint32_t exp = (val >> 3) & 0x1F;
+    uint32_t mant = val & 0x7;
+    uint32_t f32_exp = exp - 15 + 127;
+    uint32_t f32_mant = mant << 20;
+    uint32_t bits = (f32_exp << 23) | f32_mant;
+    float result;
+    memcpy(&result, &bits, sizeof(result));
+    return result;
+}
+```
+
+##### 1. MSE-Optimal Continuous Scale for a 16-Weight Subblock
+
+For a fixed assignment of weights to magnitude codebook entries $k_i \in \{1, 3, 9, 27\}$, the error $\sum (|w_i| - s \cdot k_i)^2$ is quadratic in $s$. Its exact minimizer is:
+$$s = \frac{\sum |w_i| \cdot k_i}{\sum k_i^2}$$
+Alternating between nearest-neighbor assignment and scale updating converges monotonically in 2–3 iterations.
+
+```c
 static const int32_t dna_iq3_cxs2_magnitudes[4] = { 1, 3, 9, 27 };
 
+static float dna_iq3_cxs2_subblock_mse_scale(const float weights[16]) {
+    float max_abs = 0.0f;
+    for (int i = 0; i < 16; ++i) {
+        float a = fabsf(weights[i]);
+        if (a > max_abs) max_abs = a;
+    }
+    if (max_abs == 0.0f) {
+        return 0.0f;
+    }
+
+    // Initial scale estimate
+    float s = max_abs / 27.0f;
+
+    // 3 iterations of coordinate descent
+    for (int iter = 0; iter < 3; ++iter) {
+        if (s <= 0.0f) break;
+        float inv_s = 1.0f / s;
+        float sum_wk = 0.0f;
+        float sum_k2 = 0.0f;
+
+        for (int i = 0; i < 16; ++i) {
+            float abs_w = fabsf(weights[i]);
+            float target = abs_w * inv_s;
+
+            // Nearest magnitude in {1, 3, 9, 27}
+            int best_k = 1;
+            if (target > 18.0f) {
+                best_k = 27;
+            } else if (target > 6.0f) {
+                best_k = 9;
+            } else if (target > 2.0f) {
+                best_k = 3;
+            }
+
+            sum_wk += abs_w * (float) best_k;
+            sum_k2 += (float) (best_k * best_k);
+        }
+
+        if (sum_k2 > 0.0f) {
+            s = sum_wk / sum_k2;
+        }
+    }
+    return s;
+}
+```
+
+##### 2. 1D Lloyd-Max (k-means) Clustering into 8 Neuron Scales
+
+Given all $M = N/16$ subblock ideal scales, weighted by subblock energy, Lloyd-Max groups them into 8 centroids, which are then quantized to E5M3:
+
+```c
+#include <stdlib.h>
+
+static void dna_iq3_cxs2_compute_neuron_scales(
+    const float *weights,
+    size_t       n_weights,
+    uint8_t      out_scales_e5m3[8],
+    float        out_scales_f32[8])
+{
+    const size_t n_subblocks = n_weights / 16;
+    float *sub_scales = (float *) malloc(n_subblocks * sizeof(float));
+    float *sub_energy = (float *) malloc(n_subblocks * sizeof(float));
+
+    float max_scale = 0.0f;
+    float min_scale = 1e30f;
+    size_t non_zero_count = 0;
+
+    for (size_t b = 0; b < n_subblocks; ++b) {
+        const float *w = weights + b * 16;
+        float energy = 0.0f;
+        for (int i = 0; i < 16; ++i) energy += w[i] * w[i];
+        sub_energy[b] = energy + 1e-8f;
+
+        float s = dna_iq3_cxs2_subblock_mse_scale(w);
+        sub_scales[b] = s;
+        if (s > 0.0f) {
+            if (s > max_scale) max_scale = s;
+            if (s < min_scale) min_scale = s;
+            non_zero_count++;
+        }
+    }
+
+    if (non_zero_count == 0) {
+        // Completely silent neuron
+        for (int k = 0; k < 8; ++k) {
+            out_scales_e5m3[k] = 0;
+            out_scales_f32[k] = 0.0f;
+        }
+        free(sub_scales);
+        free(sub_energy);
+        return;
+    }
+
+    // Initialize 8 centroids geometrically across [min_scale, max_scale]
+    float centroids[8];
+    float ratio = (max_scale > min_scale) ? (max_scale / min_scale) : 1.0f;
+    for (int k = 0; k < 8; ++k) {
+        centroids[k] = min_scale * powf(ratio, (float) k / 7.0f);
+    }
+
+    // 8 Lloyd-Max iterations
+    for (int iter = 0; iter < 8; ++iter) {
+        float cluster_weighted_sum[8] = { 0 };
+        float cluster_weights[8] = { 0 };
+
+        for (size_t b = 0; b < n_subblocks; ++b) {
+            float s = sub_scales[b];
+            if (s <= 0.0f) continue;
+
+            // Find closest centroid
+            int best_c = 0;
+            float best_dist = fabsf(s - centroids[0]);
+            for (int k = 1; k < 8; ++k) {
+                float dist = fabsf(s - centroids[k]);
+                if (dist < best_dist) {
+                    best_dist = dist;
+                    best_c = k;
+                }
+            }
+
+            cluster_weighted_sum[best_c] += s * sub_energy[b];
+            cluster_weights[best_c] += sub_energy[b];
+        }
+
+        // Update centroids
+        for (int k = 0; k < 8; ++k) {
+            if (cluster_weights[k] > 0.0f) {
+                centroids[k] = cluster_weighted_sum[k] / cluster_weights[k];
+            }
+        }
+    }
+
+    // Sort centroids and quantize to E5M3
+    for (int i = 0; i < 7; ++i) {
+        for (int j = i + 1; j < 8; ++j) {
+            if (centroids[j] < centroids[i]) {
+                float t = centroids[i];
+                centroids[i] = centroids[j];
+                centroids[j] = t;
+            }
+        }
+    }
+
+    for (int k = 0; k < 8; ++k) {
+        out_scales_e5m3[k] = dna_f32_to_e5m3(centroids[k]);
+        out_scales_f32[k] = dna_e5m3_to_f32(out_scales_e5m3[k]);
+    }
+
+    free(sub_scales);
+    free(sub_energy);
+}
+```
+
+##### 3. Complete Quantization Function
+
+```c
 static inline void dna_store_le16(uint8_t *p, uint16_t v) {
     p[0] = (uint8_t) (v);
     p[1] = (uint8_t) (v >> 8);
@@ -737,23 +919,21 @@ static inline void dna_store_le32(uint8_t *p, uint32_t v) {
     p[3] = (uint8_t) (v >> 24);
 }
 
-static float dna_iq3_cxs2_quantize_subblock(
-    const float          weights[16],
-    float                effective_scale,
-    uint16_t            *out_signs,
-    uint32_t            *out_indices)
+static float dna_iq3_cxs2_quantize_subblock_exact(
+    const float  weights[16],
+    float        scale,
+    uint16_t    *out_signs,
+    uint32_t    *out_indices)
 {
-    if (effective_scale == 0.0f) {
+    if (scale <= 0.0f) {
         *out_signs = 0;
         *out_indices = 0;
         float err = 0.0f;
-        for (size_t i = 0; i < 16; ++i) {
-            err += weights[i] * weights[i];
-        }
+        for (int i = 0; i < 16; ++i) err += weights[i] * weights[i];
         return err;
     }
 
-    const float inv_scale = 1.0f / effective_scale;
+    const float inv_scale = 1.0f / scale;
     uint16_t signs = 0;
     uint32_t indices = 0;
     float total_err = 0.0f;
@@ -762,24 +942,22 @@ static float dna_iq3_cxs2_quantize_subblock(
         const float w = weights[i];
         const int sign = w < 0.0f ? 1 : 0;
         const float abs_w = sign ? -w : w;
-        const float scaled = abs_w * inv_scale;
+        const float target = abs_w * inv_scale;
 
-        int best_k = 0;
-        float best_err = FLT_MAX;
-        for (int k = 0; k < 4; ++k) {
-            const float diff =
-                scaled - (float) dna_iq3_cxs2_magnitudes[k];
-            const float err = diff * diff;
-            if (err < best_err) {
-                best_err = err;
-                best_k = k;
-            }
+        int best_k_idx = 0;
+        if (target > 18.0f) {
+            best_k_idx = 3; // 27
+        } else if (target > 6.0f) {
+            best_k_idx = 2; // 9
+        } else if (target > 2.0f) {
+            best_k_idx = 1; // 3
+        } else {
+            best_k_idx = 0; // 1
         }
 
         signs |= (uint16_t) sign << i;
-        indices |= (uint32_t) best_k << (2 * i);
-        const float reconstructed =
-            effective_scale * (float) dna_iq3_cxs2_magnitudes[best_k];
+        indices |= (uint32_t) best_k_idx << (2 * i);
+        const float reconstructed = scale * (float) dna_iq3_cxs2_magnitudes[best_k_idx];
         const float diff = abs_w - reconstructed;
         total_err += diff * diff;
     }
@@ -789,183 +967,61 @@ static float dna_iq3_cxs2_quantize_subblock(
     return total_err;
 }
 
-typedef struct dna_iq3_cxs2_subblock_result {
-    uint16_t signs;
-    uint32_t indices;
-    uint32_t scale_selector;
-    float    error;
-} dna_iq3_cxs2_subblock_result;
-
-static dna_iq3_cxs2_subblock_result dna_iq3_cxs2_best_subblock(
-    const float    weights[16],
-    float          superblock_scale,
-    const float    block_scale_lut[8])
-{
-    dna_iq3_cxs2_subblock_result best;
-    best.error = FLT_MAX;
-    best.signs = 0;
-    best.indices = 0;
-    best.scale_selector = 0;
-
-    for (uint32_t s = 0; s < 8; ++s) {
-        const float effective_scale =
-            superblock_scale * block_scale_lut[s];
-
-        uint16_t signs;
-        uint32_t indices;
-        const float err = dna_iq3_cxs2_quantize_subblock(
-            weights, effective_scale, &signs, &indices);
-
-        if (err < best.error) {
-            best.error = err;
-            best.signs = signs;
-            best.indices = indices;
-            best.scale_selector = s;
-        }
-    }
-
-    return best;
-}
-
-static float dna_iq3_cxs2_superblock_error(
-    const float *weights_160,
-    float        superblock_scale,
-    const float  block_scale_lut[8])
-{
-    float total_error = 0.0f;
-    for (size_t sb = 0; sb < DNA_IQ3_CXS2_SUBBLOCKS_PER_LINE; ++sb) {
-        dna_iq3_cxs2_subblock_result r =
-            dna_iq3_cxs2_best_subblock(
-                weights_160 + sb * 16,
-                superblock_scale,
-                block_scale_lut);
-        total_error += r.error;
-    }
-    return total_error;
-}
-
-enum {
-    DNA_IQ3_CXS2_SCALE_CANDIDATES = 9,
-};
-
 void dna_iq3_cxs2_quantize_row(
-    const float                *weights,
-    size_t                      n_weights,
-    const float                 block_scale_lut[8],
-    dna_iq3_cxs2_block         *out_blocks,
-    float                      *out_superblock_scales)
+    const float        *weights,
+    size_t              n_weights,
+    dna_iq3_cxs2_block *out_blocks,
+    uint8_t             out_scales_e5m3[8])
 {
     assert(n_weights % DNA_IQ3_CXS2_WEIGHTS_PER_LINE == 0);
+    const size_t n_lines = n_weights / DNA_IQ3_CXS2_WEIGHTS_PER_LINE;
 
-    const size_t n_superblocks =
-        n_weights / DNA_IQ3_CXS2_WEIGHTS_PER_LINE;
+    // Step 1 & 2: Derive the 8 neuron scales
+    float scales_f32[8];
+    dna_iq3_cxs2_compute_neuron_scales(weights, n_weights, out_scales_e5m3, scales_f32);
 
-    float median_block_scale = 0.0f;
-    {
-        float sorted[8];
-        memcpy(sorted, block_scale_lut, sizeof(sorted));
-        for (int i = 0; i < 7; ++i) {
-            for (int j = i + 1; j < 8; ++j) {
-                if (sorted[j] < sorted[i]) {
-                    float t = sorted[i];
-                    sorted[i] = sorted[j];
-                    sorted[j] = t;
-                }
-            }
-        }
-        median_block_scale = 0.5f * (sorted[3] + sorted[4]);
-    }
-
-    for (size_t sb = 0; sb < n_superblocks; ++sb) {
-        const float *w = weights + sb * DNA_IQ3_CXS2_WEIGHTS_PER_LINE;
-
-        float max_abs = 0.0f;
-        for (size_t i = 0; i < DNA_IQ3_CXS2_WEIGHTS_PER_LINE; ++i) {
-            const float a = fabsf(w[i]);
-            if (a > max_abs) {
-                max_abs = a;
-            }
-        }
-
-        float base_scale = 0.0f;
-        if (max_abs > 0.0f && median_block_scale > 0.0f) {
-            base_scale = max_abs / (27.0f * median_block_scale);
-        }
-
-        float best_scale = base_scale;
-        float best_error = dna_iq3_cxs2_superblock_error(
-            w, base_scale, block_scale_lut);
-
-        for (int trial = -(DNA_IQ3_CXS2_SCALE_CANDIDATES / 2);
-             trial <= (DNA_IQ3_CXS2_SCALE_CANDIDATES / 2);
-             ++trial) {
-            if (trial == 0) {
-                continue;
-            }
-            const float candidate =
-                base_scale * (1.0f + 0.04f * (float) trial);
-            if (candidate <= 0.0f) {
-                continue;
-            }
-            const float err = dna_iq3_cxs2_superblock_error(
-                w, candidate, block_scale_lut);
-            if (err < best_error) {
-                best_error = err;
-                best_scale = candidate;
-            }
-        }
-
-        out_superblock_scales[sb] = best_scale;
-
-        dna_iq3_cxs2_block *block = &out_blocks[sb];
+    // Step 3: Quantize each 160-weight block
+    for (size_t l = 0; l < n_lines; ++l) {
+        const float *w_line = weights + l * DNA_IQ3_CXS2_WEIGHTS_PER_LINE;
+        dna_iq3_cxs2_block *block = &out_blocks[l];
         memset(block->bytes, 0, DNA_IQ3_CXS2_LINE_BYTES);
+
         uint32_t selectors = 0;
 
-        for (size_t sub = 0;
-             sub < DNA_IQ3_CXS2_SUBBLOCKS_PER_LINE;
-             ++sub) {
-            dna_iq3_cxs2_subblock_result r =
-                dna_iq3_cxs2_best_subblock(
-                    w + sub * 16,
-                    best_scale,
-                    block_scale_lut);
+        for (size_t sub = 0; sub < DNA_IQ3_CXS2_SUBBLOCKS_PER_LINE; ++sub) {
+            const float *w_sub = w_line + sub * 16;
 
+            // Find best scale among the 8 neuron scales
+            float best_err = 1e30f;
+            uint32_t best_selector = 0;
+            uint16_t best_signs = 0;
+            uint32_t best_indices = 0;
+
+            for (uint32_t s = 0; s < 8; ++s) {
+                uint16_t signs;
+                uint32_t indices;
+                float err = dna_iq3_cxs2_quantize_subblock_exact(
+                    w_sub, scales_f32[s], &signs, &indices);
+                if (err < best_err) {
+                    best_err = err;
+                    best_selector = s;
+                    best_signs = signs;
+                    best_indices = indices;
+                }
+            }
+
+            // Pack 6-byte payload
             uint8_t *payload = block->bytes + sub * 6;
-            dna_store_le16(payload, r.signs);
-            dna_store_le32(payload + 2, r.indices);
-            selectors |= r.scale_selector << (3 * sub);
+            dna_store_le16(payload, best_signs);
+            dna_store_le32(payload + 2, best_indices);
+            selectors |= (best_selector << (3 * sub));
         }
 
+        // Pack 10 3-bit selectors into bytes 60..63
         dna_store_le32(block->bytes + 60, selectors);
     }
 }
 ```
-
-The function does not determine the per-matrix `block_scale_lut[8]` values.
-Those eight scales must be chosen once for the entire weight matrix, for example
-by collecting per-subblock optimal scales across all rows and clustering or
-selecting representative values. The E5M3 encoding and that matrix-level
-selection are separate concerns.
-
-The superblock scale search tests `DNA_IQ3_CXS2_SCALE_CANDIDATES` candidates
-around the initial estimate, which is derived from the superblock's peak
-absolute weight and the median of the eight block scales. The initial estimate
-uses `max_abs / (27 * median_block_scale)`: at this scale, the largest
-magnitude codebook entry (27) times the median block scale reproduces the
-peak weight. The search steps are +/-4% increments, covering roughly +/-16%
-around the initial estimate.
-
-The per-subblock selector search is exhaustive over 8 candidates. For each
-selector, the per-weight index selection is a nearest-neighbor search over the
-4-entry magnitude codebook in the scaled domain. The combined work per
-superblock is `9 * 10 * 8 * 16 * 4 = 46,080` comparisons, which is acceptable
-for an offline quantizer.
-
-**Round-trip correctness**: the signs, indices, and selectors written into the
-block use the same byte layout as the dequantization references above. A
-round-trip test should verify that quantizing a weight vector and then
-dequantizing it with `dna_iq3_cxs2_accumulate_subblock` produces the
-nearest-codebook-entry reconstruction for the chosen scales.
 
 #### AVX2 implementations for IQ3_CXS2
 
