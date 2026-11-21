@@ -36,7 +36,7 @@ The loops are token-major and call row-vector kernels; they do not turn a token 
 
 Thus, increasing sparsity avoids some gate/up reads and dot products, but does not remove the all-neuron predictor scan. At high active fractions, the remaining gate/up work may also leave little room to offset predictor overhead.
 
-- [ ] Future: use sparse packing GEMV optimization
+- [x] Specify an indirect-row multi-GEMV design for sparse active rows (see the Implementation Plan); kernel implementation remains a TODO.
 - [ ] Future: use sparsity inside the predictor as well.
 
 Reference: [`op_route`](src/llama-dna.cpp).
@@ -108,7 +108,7 @@ The open items below consolidate the TODOs described throughout this document.
 ### Operator implementation
 
 - [ ] Replace sparse down AXPY work with an efficient sparse down transformation or batched sparse kernel.
-- [ ] Use sparsity for gate/up GEMV optimization. Virtual packing.
+- [ ] Implement and benchmark sparse indirect-row multi-GEMV for gate/up.
 
 ### Memory and scheduling
 
@@ -137,6 +137,77 @@ The open items below consolidate the TODOs described throughout this document.
 
 
 ## Implementation Plan
+
+### Sparse indirect-row multi-GEMV for gate/up
+
+The route operator identifies a sparse subset of gate/up output rows to
+evaluate. Today, the x86 Q4_0 dot kernel handles one row per call, so each row
+independently loads the same quantized activation blocks. A multi-row kernel
+can process a small group of selected rows together, loading each activation
+block once and reusing it for all rows in the group. Depending on the weight
+format, it can also share an activation-dependent lookup table. Row-specific
+weight blocks, scales, and metadata still need separate loads and processing.
+
+Suggested name: `ggml_gemv_q4_0_mr8_indirect_q8_0`. `mr8` means up to eight
+rows per call; `indirect` says rows are supplied by pointers or indices and
+need not be adjacent in the original matrix. This is distinct from the
+existing repacked `ggml_gemv_q4_0_8x8_q8_0`, which requires the
+`block_q4_0x8` interleaved layout. The row group size should be ISA-tuned:
+start by comparing MR=4 and MR=8, since keeping more per-row accumulators live
+can increase register pressure.
+
+The kernel needs:
+
+- A list of active row pointers (or row indices plus the original row stride),
+  and destination row indices if results are scattered back into the dense
+  output.
+- The activation vector quantized once into the dot-product format, such as
+  Q8_0 blocks. Within each row group, each activation block is loaded once and
+  reused for all rows.
+- One accumulator per selected row, with the same accumulation precision and
+  scaling semantics as the existing single-row dot path.
+- Format-specific weight block decoding. For Q4_0, each row has its own Q4_0
+  blocks and block scales. For LUT-based formats, only LUT data that depends
+  on the shared activation block can be reused; row-specific scales remain
+  separate.
+
+```text
+quantize activation x once: x_q8[0 .. K/32)
+
+for group_start = 0; group_start < active_count; group_start += MR:
+    m = min(MR, active_count - group_start)
+    acc[0 .. m) = 0
+
+    for kblock = 0; kblock < K/32; ++kblock:
+        a = load_q8_block_once(x_q8[kblock])
+        a_scale = x_q8[kblock].scale
+        shared_lut = make_activation_lut(a)   # only for LUT-based formats
+
+        for r = 0; r < m; ++r:
+            w = load_q4_block(row_ptr[group_start + r], kblock)
+            row_scale = w.scale
+            acc[r] += dot_block(w, a, row_scale, a_scale, shared_lut)
+
+    for r = 0; r < m; ++r:
+        output[row_index[group_start + r]] = reduce_and_store(acc[r])
+```
+
+`dot_block` is a format-specific SIMD helper that consumes the already-loaded
+activation block; it must not reload that block for each row. For Q4_0, its
+weights are still read from separate ordinary row addresses. The row loop can
+be unrolled to overlap independent weight loads, while retaining one shared
+activation block and one accumulator per row. This is software-indirect
+multi-row processing, not a hardware gather instruction or a physical weight
+repack.
+
+This design removes repeated activation-block loads within each row group and
+can amortize activation-dependent LUT setup across the selected rows. It does
+not reduce the number of weight bytes read, and arbitrary row pointers may
+have poor weight locality. The existing x86 Q4_0 row kernel requires
+`nrc == 1`; this would be a new path with a scalar/single-row tail for groups
+smaller than MR.
+Measure MR=4 and MR=8 against the existing row-at-a-time path at matched
+active-row counts and row distributions before choosing a default.
 
 ### sparse down projection
 
