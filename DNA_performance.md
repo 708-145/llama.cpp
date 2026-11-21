@@ -604,6 +604,17 @@ Why this layout helps:
 - It improves throughput by reducing indirect addressing, scattered loads,
   activation quantization repetition, and repeated kernel setup. It does not
   guarantee that every weight for one complete neuron is nearby in memory.
+  - Sustained read throughput on CPU does not read a full 512b (64-byte) vector
+    every cycle. Because x86 lacks native 4-bit dot products, 4-bit nibbles
+    must be extracted (`vpand`, `vpsrlw`), sign-extended via shuffle tables
+    (`vpshufb`), and accumulated (`vpdpbusd` or `vpmaddubsw`/`vpmaddwd`). In
+    cached GEMV (`gemv_q4_b32_8x8_q8_0_lut_avx`), 144 bytes of weights and
+    scales require ~60-70 instructions (~15-20 cycles), reading a 512b vector
+    equivalent every ~7-10 cycles (~7-10 B/cycle). In batched GEMM, reusing
+    288 bytes over multiple activation rows requires ~250-350 cycles (one 512b
+    vector every ~60-70 cycles, or ~1 B/cycle). When streaming weights from
+    DRAM during token generation, memory bus limits cap throughput further to
+    ~1.5-3 B/cycle per core (one 512b vector every ~20-40 cycles).
 
 For a dense matrix product, simply assigning rows to threads in parallel is
 still valid and can work, but it is not equivalent to the interleaved layout:
