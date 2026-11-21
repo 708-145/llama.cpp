@@ -107,8 +107,43 @@ The open items below consolidate the TODOs described throughout this document.
 
 ### Operator implementation
 
+- [ ] Implement IQ3_CXS2 quantization
+  - [x] example code in md
+  - [ ] implement and test in C codebase
+  - Open:
+    - clarify how to compute the 8 scales per row (neuron)
+    - 
 - [ ] Replace sparse down AXPY work with an efficient sparse down transformation or batched sparse kernel.
+  - [x] Implement reference C kernels for the 16-weight subblock down tile accumulation in md.
+  - [ ] Implement reference C kernels for the 16-weight subblock down tile accumulation in C codebase.
+  - [ ] Implement SIMD kernels (e.g. AVX2/AVX-512/NEON) for the 16-weight subblock down tile accumulation in md.
+  - [ ] Implement SIMD kernels (e.g. AVX2/AVX-512/NEON) for the 16-weight subblock down tile accumulation in C codebase.
+  - [ ] Implement L1-blocked batching over active neurons (up to 32 neurons per batch) to keep partial sums and weight blocks cache-resident.
+  - [ ] Benchmark sparse down tile traversal versus dense down projection across thread counts, batch sizes, and active fractions.
+  - Decisions:
+    - Block granularity: 64 bytes covering 160 weights (ten 16-weight subblocks), ensuring cache-line alignment.
+    - Thread partitioning: by output tiles (each thread owns a disjoint set of output positions, eliminating cross-thread sum reductions).
+    - Accumulation precision: internal accumulation in F32, converting to BF16 once per completed tile.
+  - Open Questions:
+    - Tail dimension handling: standard hidden sizes ($d_{\text{model}} = 4096$, etc.) are not multiples of 160 ($4096 / 160 = 25.6$). Should tensors be padded to multiples of 160 or should a dedicated tail-block layout be specified? <-- parameter how many subblocks are to be computed, defaults to all. The last block saves no storage, still a full cache line, but is faster to compute.
+    - Superblock scale representation: are `superblock_scales` stored as FP32, FP16, or E5M3, and how are they laid out alongside the 64-byte block payloads? <-- store as FP32 to simplify compute on CPU and SIMD. BF16 or FP16 have enough precision, though.
+    - Optimal tile size per thread: is 1 cache line (160 BF16 values = 320 bytes) the optimal tile size, or does a multi-line tile (e.g. 2-4 lines) reduce thread scheduling overhead on wide-core CPUs? <-- to be measured once all is implemented. Use 1 line tiles as default.
+
 - [ ] Implement and benchmark sparse indirect-row multi-GEMV for gate/up.
+  - [x] Implement C reference multi-row indirect kernel (`ggml_gemv_iq3_cxs2_mr4_indirect_q8_0`) with shared activation LUT in md.
+  - [ ] Implement C reference multi-row indirect kernel (`ggml_gemv_iq3_cxs2_mr4_indirect_q8_0`) with shared activation LUT in C codebase.
+  - [ ] Implement SIMD multi-row indirect kernel (`ggml_gemv_iq3_cxs2_mr4_indirect_q8_0`) with shared activation LUT in md.
+  - [ ] Implement SIMD multi-row indirect kernel (`ggml_gemv_iq3_cxs2_mr4_indirect_q8_0`) with shared activation LUT in C codebase.
+  - [ ] Compare MR=4 against MR=1, MR=2, and MR=8 to find optimal register-pressure vs. activation-reuse balance across CPU architectures.
+  - [ ] Benchmark cache behavior under scattered/non-adjacent row index distributions versus contiguous row subsets.
+  - Decisions:
+    - Multi-row indirect batching: MR=4 as the initial design point, sharing a 16-by-4 activation lookup table across 4 rows.
+    - Computation domain: integer-domain dot accumulation (`int8` activation x `magnitude_lut` -> `int32` accumulator) with deferred FP scaling per subblock per row.
+    - Output handling: scattered write-back directly into the dense output buffer via row indices.
+  - Open Questions:
+    - Weight locality penalty: arbitrary sparse neuron indices lack spatial locality in weight memory. At what active fraction does memory scatter negate the activation LUT reuse savings compared to dense GEMV/GEMM? <-- Operation is on full cache lines. Memory scatter will not occur, but cache line eviction due to n-way caches may be an issue.
+    - Codebook zero representation: the codebook $\{-27, -9, -3, -1, 1, 3, 9, 27\}$ lacks an exact zero. Does quantization noise on silent/near-zero weights affect gating accuracy without an explicit zero-point or dead-zone threshold? <-- +-1 as zero replacement averages out if the sign is chosen randomly.
+    - Per-matrix table selection: how should the 8 matrix-wide `block_scale_lut` values be derived across all rows during model quantization (e.g. k-means/Lloyd-Max clustering vs. fixed geometric intervals)? <-- it's only neuron wide. Each neuron / row gets a set of 8 possible block scales. Encoded as E5M3 to save space. Needs 8B storage per neuron. The 8 bits are cut from the FP16 representation by taking the 5 exponent bits and the first 3 mantissa bits. The scales need no sign. 
 
 ### Memory and scheduling
 
