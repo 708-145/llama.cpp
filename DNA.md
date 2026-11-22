@@ -262,50 +262,51 @@ As a reference for the prediction-on chunks 5–8, the dense baseline is **175.0
 | 0.1 | 256 | 4 | ~88 | 86.2342 ± 12.87773 | −12.5% (noise, see above) |
 | 0.5 | 256 | 4 | ~42 | 128.2535 ± 16.79535 | +30.1% (real loss) |
 
-#### Smaller predictor quant sweep
+#### Matched predictor sweep
 
-Matched 8-chunk runs used `/home/tobiulla/sandbox/gemma-4-E2B-it-UD-IQ3_XXS.gguf`,
-Wikitext-2 test text, `-c 512 --chunks 8 -t 4 -b 512 -ub 512 --fit off`,
-`LLAMA_DNA_MAX_BATCH=512`, `LLAMA_GRAPH_REUSE_DISABLE=1`, `n_calib=512`, and
-`T=0.5`. All predictor types were quantized with the flat, unit-weight imatrix.
+Fresh matched runs used `/home/tobiulla/sandbox/gemma-4-E2B-it-UD-IQ3_XXS.gguf`,
+the Wikitext-2 test text, and `-c 512 --chunks 8 -t 4 -b 512 -ub 512
+--fit off`. DNA runs used `LLAMA_DNA_MAX_BATCH=512`,
+`LLAMA_DNA_T=0.5`, `LLAMA_DNA_CALIB=512`, `LLAMA_DNA_MIN_ACTIVE=0.02`,
+`LLAMA_DNA_ZMODE=0`, and `LLAMA_GRAPH_REUSE_DISABLE=1`. All predictors used
+the flat, unit-weight imatrix. Each run used `llama-perplexity`; dense and
+DNA were run sequentially with two-minute cooldowns.
 
-The PPL over the five chunks 4–8 is recovered from the cumulative evaluator estimates as `exp((8 ln PPL[8] - 3 ln PPL[3]) / 5)`. This differs
-from the chunks 5–8 reference, which uses PPL[4] and PPL[8]. The 8-chunk dense
-result was PPL[3] = 83.8523 and PPL[8] = 131.3753, giving **171.99** for
-chunks 4–8.
+Prediction is enabled for the comparison subset, chunks 5–8. Its PPL is
+recovered from the cumulative estimates as
+`exp((8 ln PPL[8] - 4 ln PPL[4]) / 4)`. The fresh dense run gives
+**147.80** for chunks 5–8. All predictor runs use this same dense reference:
 
-| predictor | storage (bpw) | mean corr(g, g~) | PPL[3] | PPL[8] | chunks 4–8 PPL | Δ vs dense |
-|---|---:|---:|---:|---:|---:|---:|
-| dense reference | — | — | 83.8523 | 131.3753 | 171.99 | — |
-| iq4_xs | 4.25 | — | — | 164.1809 | 191.27 | +11.21% |
-| iq3_xxs | 3.0625 | 1.000 | 101.8287 | 138.5704 | 166.7058 | −3.07% |
-| iq2_xs | 2.3125 | 0.962 | 104.0086 | 134.2468 | 156.4605 | −9.03% |
-| iq1_m | 1.75 | 0.900 | 102.4552 | 135.4858 | 160.2174 | −6.84% |
-| iq1_s | 1.5625 | 0.885 | 97.7063 | 134.2774 | 162.4992 | −5.52% |
+| predictor | storage (bpw) | mean corr(g, g~) | mean active | PPL[4] | PPL[8] ± evaluator | chunks 5–8 PPL | Δ vs dense |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| dense reference | — | — | — | 141.2573 | 144.4914 ± 15.21532 | 147.80 | — |
+| iq4_xs | 4.25 | 0.997 | 44.15% | 163.1431 | 176.1648 ± 16.49874 | 190.23 | +28.71% |
+| iq3_xxs | 3.0625 | 1.000 | 44.13% | 161.8566 | 177.5620 ± 16.67840 | 194.79 | +31.79% |
+| iq2_xs | 2.3125 | 0.963 | 44.61% | 168.4904 | 176.4118 ± 16.68311 | 184.71 | +24.97% |
+| iq1_m | 1.75 | 0.901 | 45.43% | 160.6955 | 173.0204 ± 16.16980 | 186.29 | +26.04% |
+| iq1_s | 1.5625 | 0.887 | 45.19% | 157.7721 | 171.4597 ± 16.02865 | 186.33 | +26.07% |
 
-Per-chunk equal-sized PPL estimates, recovered from the cumulative estimates
-using `PPL_chunk[k] = exp(k ln PPL_cumulative[k] - (k-1) ln PPL_cumulative[k-1])`
-(for chunk 1, use PPL_cumulative[1]):
+Per-chunk equal-sized PPL estimates, recovered from cumulative estimates with
+`PPL_chunk[k] = exp(k ln PPL_cumulative[k] - (k-1) ln PPL_cumulative[k-1])`
+(for chunk 1, use `PPL_cumulative[1]`):
 
 | run | chunk 1 | chunk 2 | chunk 3 | chunk 4 | chunk 5 | chunk 6 | chunk 7 | chunk 8 |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| dense | 43.0294 | 208.2457 | 65.7966 | 160.2464 | 126.3876 | 159.2282 | 243.2502 | 191.8664 |
-| iq3_xxs | 42.3758 | 204.3987 | 121.9030 | 171.5026 | 153.7897 | 160.1186 | 201.2762 | 151.4681 |
-| iq2_xs | 42.3758 | 204.3987 | 129.9007 | 162.7240 | 132.9175 | 162.1176 | 185.0181 | 144.5258 |
-| iq1_m | 42.3758 | 204.3987 | 124.1669 | 153.1759 | 146.4204 | 175.4369 | 185.5048 | 144.6372 |
-| iq1_s | 42.3758 | 204.3987 | 107.6891 | 153.9899 | 150.7736 | 166.5444 | 203.8299 | 143.7607 |
+| dense | 52.3260 | 235.5361 | 126.5751 | 255.2232 | 92.3954 | 205.4824 | 172.8485 | 145.4124 |
+| iq4_xs | 52.7934 | 237.0250 | 200.1676 | 282.8182 | 109.9648 | 252.3768 | 243.7602 | 193.5585 |
+| iq3_xxs | 52.7934 | 237.0250 | 202.5666 | 270.7573 | 114.4603 | 268.8418 | 233.2078 | 200.6244 |
+| iq2_xs | 52.7934 | 237.0250 | 183.8847 | 350.2527 | 107.5262 | 272.4346 | 211.3944 | 187.9534 |
+| iq1_m | 52.7934 | 237.0250 | 192.9471 | 276.1869 | 103.8168 | 253.5732 | 213.2806 | 214.5069 |
+| iq1_s | 52.7934 | 237.0250 | 199.5823 | 248.0991 | 102.5334 | 261.1640 | 234.2049 | 192.2210 |
 
-The geometric mean of chunks 4–8 from this table should be the same as the
-chunks-4–8 point estimates above. These are equal-sized segment estimates
-derived from cumulative PPLs, not independent 512-token evaluator runs.
-
-The four small-predictor IQ3_XXS, IQ2_XS, IQ1_M, and IQ1_S runs are the
-calibrated flat-imatrix comparison. In contrast to the earlier IQ4_XS 8-chunk
-run, they do not show worse PPL than the dense chunks-4–8 baseline. This is
-not a claim of DNA speedup: these are cumulative-PPL point estimates, and the
-chunks-4–8 uncertainty cannot be recovered from the cumulative estimates alone.
-The wall times and gate-packing costs are setup-inclusive and are not
-steady-state throughput measurements.
+These are point estimates derived from cumulative PPL, not independent
+per-chunk evaluations. The chunks 5–8 uncertainty cannot be recovered from
+the cumulative estimates alone. In this fresh matched sweep, all five
+predictors have higher chunks 5–8 PPL than dense (+24.97% to +31.79%).
+This is a quality comparison, not a speedup measurement; setup-inclusive
+wall times are not steady-state throughput measurements. The fresh dense
+PPL[8] (144.4914) differs from the earlier 8-chunk dense result above
+(131.3753), so results from those runs should not be combined.
 
 
 Takeaway: at `n_calib` that fits inside the corpus (256 ⇒ 512 calibration tokens,

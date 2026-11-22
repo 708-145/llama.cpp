@@ -91,6 +91,7 @@ static void test_down_tile_accum(void) {
             dna_iq3_cxs2_down_tile_accum_avx2(
                 actual_avx2, active, sizeof(active) / sizeof(active[0]), tile,
                 N_BLOCKS, blocks, scales_e5m3, n_subblocks);
+            assert(memcmp(actual, actual_avx2, sizeof(actual)) == 0);
             for (size_t i = 0; i < DNA_IQ3_CXS2_WEIGHTS_PER_LINE; ++i) {
                 assert(fabsf(actual_avx2[i] - expected[i]) < 1e-6f);
             }

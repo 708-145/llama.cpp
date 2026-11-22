@@ -153,9 +153,8 @@ Before changing the default guard or claiming a speedup, compare dense and DNA u
 
 - [ ] Separate load/setup time and calibration time from steady-state prediction.
 - [ ] Measure prompt throughput and decode throughput/latency.
-- [ ] Measure peak memory, including graph workspace.
 - [ ] Record per-layer active fraction and route/down timings.
-- [ ] Validate output quality/perplexity under identical calibration and prediction coverage.
+- [x] Validate output quality/perplexity under identical calibration and prediction coverage.
 
 ## TODO
 
@@ -163,10 +162,25 @@ The open items below consolidate the TODOs described throughout this document.
 
 ### Quality and comparison
 
-- [ ] Run matched dense-versus-DNA measurements for every predictor using the same model, corpus, chunking, calibration, threads, context, and batch settings.
-- [ ] Report PPL over an isolated prediction-on subset using the same equal-sized chunk formula for every run.
+- [x] Run matched dense-versus-DNA measurements for every predictor using the same model, corpus, chunking, calibration, threads, context, and batch settings.
+- [x] Report PPL over an isolated prediction-on subset using the same equal-sized chunk formula for every run.
+- [ ] investigate quality regression vs revious runs with AXPY
 - [ ] Add uncertainty intervals for recovered subset PPLs if the evaluator exposes enough per-chunk data.
 - [ ] Establish a measured sparse/dense crossover for active fraction, batch size, and model dimensions.
+
+The matched quality sweep can be rerun from WSL with
+[`scripts/dna-ppl-sweep.sh`](scripts/dna-ppl-sweep.sh):
+
+```bash
+bash scripts/dna-ppl-sweep.sh MODEL.gguf WIKITEXT.txt [OUTPUT_DIR]
+```
+
+It runs dense and all five quantized predictors sequentially with the settings
+recorded in [DNA.md](DNA.md), waits two minutes between runs by default, and
+saves a separate full log for each run. `LLAMA_PERPLEXITY` can point to a
+non-default binary; `DNA_PPL_COOLDOWN_SECONDS` can adjust the pause. The output
+directory must not already exist. The script stops on a failed run or a missing
+final PPL estimate.
 
 ### Operator implementation
 
@@ -210,13 +224,10 @@ The open items below consolidate the TODOs described throughout this document.
 ### Memory and scheduling
 
 - [ ] Remove per-layer calibration state immediately after prediction starts.
-- [ ] Parallelize calibration layer scheduling according to available RAM.
-- [ ] Measure peak RSS and graph workspace with the batch guard raised.
-- [ ] Bound or tile the per-layer `delta` workspace for large batches.
 
 ### Storage and persistence
 
-- [ ] Precompute DNA predictors and store them in GGUF.
+- [ ] Precompute DNA predictors and store them in GGUF. See `Setup and calibration delay the point at which skipping begins`
 - [ ] Save calibration results in a sidecar file.
 - [ ] Reserve GGUF metadata fields and store calibration results directly in GGUF.
 
@@ -231,6 +242,7 @@ The open items below consolidate the TODOs described throughout this document.
 
 - [ ] Use sparsity inside matrix-matrix multiplication operations.
 - [ ] Use sparsity inside the predictor so inference does not scan every neuron.
+- [ ] Parallelize calibration layer scheduling according to available RAM.
 
 
 ## Implementation Plan
