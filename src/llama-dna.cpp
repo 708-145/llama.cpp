@@ -471,6 +471,13 @@ static void llama_dna_finalize_bias(llama_dna_layer & L) {
     std::vector<uint32_t>().swap(L.n_act);
 }
 
+static void llama_dna_release_calibration_state(llama_dna_layer & L) {
+    // The source down tensor and bias are only needed while building c0 and
+    // the sparse down weights. Prediction keeps the derived values instead.
+    L.down = nullptr;
+    std::vector<float>().swap(L.down_b);
+}
+
 //
 // llama_dna_params
 //
@@ -778,6 +785,7 @@ uint32_t llama_dna::update() {
         } else if (L->phase == LLAMA_DNA_PHASE_BIAS && L->n_tok >= params.n_calib) {
             llama_dna_finalize_bias(*L);
             L->phase = LLAMA_DNA_PHASE_PREDICT;
+            llama_dna_release_calibration_state(*L);
             L->n_tok = L->n_tok_next = 0;
             L->n_slot = 0;
             epoch++;

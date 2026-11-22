@@ -138,6 +138,7 @@ The open items below consolidate the TODOs described throughout this document.
 
 - [x] Run matched dense-versus-DNA measurements for every predictor using the same model, corpus, chunking, calibration, threads, context, and batch settings.
 - [x] Report PPL over an isolated prediction-on subset using the same equal-sized chunk formula for every run.
+- [ ] Add a DNA lifecycle test as regression test for all end2end code updates.
 - [ ] Add regression tests for the operator variants: IQ3_CXS2 in gate/up vs down mode. Scalar code vs all SIMD variants.
 
 The matched quality sweep can be rerun from WSL with
@@ -195,12 +196,12 @@ final PPL estimate.
 
 ### Memory and scheduling
 
-- [ ] Remove per-layer calibration state immediately after prediction starts, per layer. Keep predictors!
+- [x] Release calibration-only state when each layer enters prediction. The statistics buffers are released during finalization, and the source down tensor and copied down bias are released at the transition. Keep predictor weights and derived prediction inputs (`med_est`, `band`, `mu`, `c0`, and sparse down weights).
 
 ### Benchmarking
 
 - [ ] Measure load/setup and calibration time separately from steady-state prediction.
-- [ ] Measure prompt throughput and decode throughput/latency.
+- [ ] Measure prompt throughput and decode throughput/latency. Make it into a performance regression test.
 - [ ] Measure per-layer active fraction and route/down timings.
 - [ ] Change the default batch guard only after sparse/dense crossover evidence supports it.
 
