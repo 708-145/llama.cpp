@@ -70,7 +70,7 @@ References: [`op_down`](src/llama-dna.cpp), and the scalar/AVX2 tile kernels in
 
 The delta tensor is batch-dependent; the transposed weights and predictor are model/layer-dependent. Batching or removing the batch guard should therefore be measured for peak memory as well as speed.
 
-- [ ] Remove calibration data after prediction starts, decided per layer.
+- [ ] Remove temporary calibration data after prediction starts, decided per layer.
 - [ ] Schedule low-RAM calibration according to available memory: run as many layers in parallel as free RAM allows and start new layers when calibration ends.
 
 References: the `delta` allocation in [`build_ffn`](src/llama-graph.cpp), and `down_blocks`/`down_scales`/`pred_q` storage in [`llama-dna.cpp`](src/llama-dna.cpp).
@@ -83,8 +83,61 @@ When a layer is enabled, `llama_dna_pack_gate` reads/dequantizes its gate rows a
 
 Calibration runs the ordinary dense FFN and adds observers for two phases, configured by `LLAMA_DNA_CALIB`. Prediction savings begin only after a layer completes both phases. For short prompts or large calibration settings, DNA may spend much or all of the workload calibrating. The Gemma results in [DNA.md](DNA.md) include a four-chunk, `n_calib=4096` run where no layer reached PREDICT.
 
-- [ ] Save calibration results to a sidecar file.
-- [ ] Reserve GGUF metadata fields and store calibration results in the GGUF.
+- [ ] Save completed calibration state to a sidecar GGUF file, then optionally merge it into the model GGUF.
+
+The reusable per-layer state is:
+
+- `med_est[n_ff]`, the predictor-output center for each neuron's dead zone;
+- `band[n_ff]`, its dead-zone half-width;
+- `mu[n_ff]`, the mean silent-neuron FFN contribution;
+- `c0[n_embd]`, the corresponding down-projection bias;
+- `down_blocks[n_ff][ceil(n_embd / 160)]` and `down_scales[n_ff][8]`, the
+  quantized down weights and E5M3 scale tables.
+
+Store these arrays as F32 except for the packed down data and byte scales. Let
+`B = ceil(n_embd / 160)`. The calibration state takes
+`64 * n_ff * B + 8 * n_ff + 4 * (3 * n_ff + n_embd)` bytes, excluding small
+metadata and tensor alignment. Save only after the layer reaches PREDICT;
+in-progress calibration would also require its phase counters, accumulators,
+and sampling reservoirs.
+
+For example, `n_ff=14336`, `n_embd=4096` gives `B=26`: packed down state is
+23,969,792 bytes (22.86 MiB), and `med_est`/`band`/`mu`/`c0` add 188,416 bytes
+(184 KiB), for about **23.04 MiB per layer**. This is the reusable calibration
+state; it does not include the source model weights.
+
+For a cache that also skips predictor setup, include `pred_q`, which is
+regenerated from the gate weights today. Its size is
+`n_ff * ggml_row_size(pred_type, n_embd)`. At IQ4_XS and the example dimensions
+that is 31,195,136 bytes (29.75 MiB), bringing the total to about **52.79 MiB
+per layer**. It is optional if startup is allowed to rebuild the predictor.
+
+Use names under a reserved prefix, for example
+`llama.dna.v1.layer.<layer>.med_est`, `.band`, `.mu`, `.c0`, `.down_blocks`,
+`.down_scales`, and optionally `.pred_q`. For routed experts, add an
+`.expert.<id>` component; use `.shared` for a shared expert. Keep tensors
+typed/shaped for direct validation on load: F32 vectors for the four float
+arrays, I8 byte tensors for the packed blocks/scales, and the predictor's GGML
+quant type for `pred_q`. The byte tensors can have shapes
+`[64, B, n_ff]` and `[8, n_ff]`, respectively.
+
+Sidecar metadata should include a format/version identifier, base-model
+identity, layer/expert identity and dimensions, predictor type, and the
+calibration settings that affect routing (`thresh`, `zmode`, `min_active`).
+Record `n_calib` as provenance. On load, reject mismatched versions, model
+identity, shapes, or relevant settings; a missing/invalid layer can fall back
+to normal calibration. Check every prefixed name for collisions before writing
+or merging. Write a complete sidecar to a temporary file and atomically
+replace the prior one so interruption cannot leave a partial cache.
+
+GGUF is indexed rather than append-only: merging means rewriting the GGUF
+metadata/tensor directory and copying both the original and DNA tensor data,
+not concatenating the sidecar bytes. Keep the sidecar as the safe initial
+format; a merged model also requires confirming the model loader ignores the
+extra reserved-prefix tensors and preserves the base-model identity used to
+validate the cache.
+
+- [ ] Reserve GGUF metadata fields and support loading merged calibration tensors from the model GGUF. For the merged format, the gate/up/down tensors will also be in an appropriate format.
 
 Each run's recovered PPL for chunks 1–8 is recorded in [DNA.md](DNA.md). Those values are segment estimates derived from cumulative PPL, not independent evaluator runs for each chunk.
 
