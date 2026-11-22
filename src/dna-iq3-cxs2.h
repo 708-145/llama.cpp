@@ -23,6 +23,12 @@ typedef struct dna_iq3_cxs2_active_neuron {
     float   activation;
 } dna_iq3_cxs2_active_neuron;
 
+typedef struct dna_iq3_cxs2_sparse_row {
+    size_t                         output_row;
+    const dna_iq3_cxs2_block     * blocks;
+    const uint8_t                * scales_e5m3;
+} dna_iq3_cxs2_sparse_row;
+
 // Convert 32-bit float to unsigned 8-bit E5M3 (5 exponent bits, 3 mantissa bits, bias 15)
 uint8_t dna_f32_to_e5m3(float val);
 
@@ -47,7 +53,8 @@ void dna_iq3_cxs2_quantize_row(
     dna_iq3_cxs2_block * out_blocks,
     uint8_t              out_scales_e5m3[8]);
 
-#if defined(__AVX2__)
+#if defined(__AVX2__) || \
+    (defined(__GNUC__) && (defined(__x86_64__) || defined(__i386__)))
 // AVX2 accelerated quantization of a row
 void dna_iq3_cxs2_quantize_row_avx2(
     const float        * weights,
@@ -61,6 +68,26 @@ void dna_iq3_cxs2_dequantize_block(
     const dna_iq3_cxs2_block * block,
     const float                scales_f32[8],
     float                      out_weights[160]);
+
+// Sparse indirect gate/up GEMV. x_q8 contains signed Q8 values with one scale
+// per 32 inputs; rows may reference arbitrary non-adjacent IQ3_CXS2 rows.
+// n_inputs must be a multiple of 160. Only output_row entries are written.
+void dna_iq3_cxs2_gemv_mr4_indirect_q8_0(
+    const int8_t                    * x_q8,
+    const float                     * x_scales,
+    size_t                            n_inputs,
+    const dna_iq3_cxs2_sparse_row   * rows,
+    size_t                            active_count,
+    float                           * output);
+
+// AVX2 implementation where supported; otherwise uses the scalar reference.
+void dna_iq3_cxs2_gemv_mr4_indirect_q8_0_avx2(
+    const int8_t                    * x_q8,
+    const float                     * x_scales,
+    size_t                            n_inputs,
+    const dna_iq3_cxs2_sparse_row   * rows,
+    size_t                            active_count,
+    float                           * output);
 
 // Add active-neuron contributions to one 160-weight output tile.
 // The AVX2 variant requires runtime CPU-feature dispatch by the caller.

@@ -138,8 +138,9 @@ The open items below consolidate the TODOs described throughout this document.
 
 - [x] Run matched dense-versus-DNA measurements for every predictor using the same model, corpus, chunking, calibration, threads, context, and batch settings.
 - [x] Report PPL over an isolated prediction-on subset using the same equal-sized chunk formula for every run.
-- [ ] Add a DNA lifecycle test as regression test for all end2end code updates.
-- [ ] Add regression tests for the operator variants: IQ3_CXS2 in gate/up vs down mode. Scalar code vs all SIMD variants.
+- [x] Add a DNA lifecycle regression test covering independent per-layer calibration transitions, epoch changes, and prediction through gate/up and sparse down operators. See [tests/test-dna-lifecycle.cpp](tests/test-dna-lifecycle.cpp).
+- [x] Compare scalar and AVX2 IQ3_CXS2 row quantization, sparse down accumulation, and MR=4 indirect gate/up GEMV against the single-row F32 `vec_dot` reference. See [tests/test-dna-iq3.c](tests/test-dna-iq3.c).
+- [x] Add a scalar and AVX2 IQ3_CXS2 MR=4 indirect gate/up kernel. It remains a standalone operator; `op_route` still uses the selected GGML predictor type and its CPU `vec_dot`.
 
 The matched quality sweep can be rerun from WSL with
 [`scripts/dna-ppl-sweep.sh`](scripts/dna-ppl-sweep.sh):
@@ -178,11 +179,11 @@ final PPL estimate.
     - Default tile size: one 64-byte block, covering 160 output weights; multi-line tiles remain unmeasured.
   - Open Questions:
 
-- [ ] Implement and benchmark sparse indirect-row multi-GEMV for gate/up.
-  - [x] Implement C reference multi-row indirect kernel (`ggml_gemv_iq3_cxs2_mr4_indirect_q8_0`) with shared activation LUT in md.
-  - [ ] Implement C reference multi-row indirect kernel (`ggml_gemv_iq3_cxs2_mr4_indirect_q8_0`) with shared activation LUT in C codebase.
-  - [x] Implement SIMD multi-row indirect kernel (`dna_iq3_cxs2_sparse_down_tile_avx512`) with shared activation LUT in md.
-  - [ ] Implement SIMD multi-row indirect kernel (`dna_iq3_cxs2_sparse_down_tile_avx512`) with shared activation LUT in C codebase.
+- [ ] Integrate and benchmark sparse indirect-row multi-GEMV for gate/up.
+  - [x] Implement scalar MR=4 indirect-row gate/up GEMV in C (`dna_iq3_cxs2_gemv_mr4_indirect_q8_0`).
+  - [x] Implement AVX2 MR=4 indirect-row gate/up GEMV in C (`dna_iq3_cxs2_gemv_mr4_indirect_q8_0_avx2`).
+  - [x] Add regression coverage against single-row F32 `vec_dot`, including non-adjacent rows and a short tail.
+  - [ ] Integrate the multi-row operator into `op_route` and benchmark it against the existing single-row path.
   - [ ] Compare MR=4 against MR=1, MR=2, and MR=8 to find optimal register-pressure vs. activation-reuse balance across CPU architectures.
   - [ ] Benchmark cache behavior under scattered/non-adjacent row index distributions versus contiguous row subsets.
   - Decisions:
@@ -192,7 +193,7 @@ final PPL estimate.
   - Open Questions:
     - Weight locality penalty: arbitrary sparse neuron indices lack spatial locality in weight memory. At what active fraction does memory scatter negate the activation LUT reuse savings compared to dense GEMV/GEMM? <-- Operation is on full cache lines. Memory scatter will not occur, but cache line eviction due to n-way caches may be an issue.
     - Codebook zero representation: the codebook $\{-27, -9, -3, -1, 1, 3, 9, 27\}$ lacks an exact zero. Does quantization noise on silent/near-zero weights affect gating accuracy without an explicit zero-point or dead-zone threshold? <-- +-1 as zero replacement averages out if the sign is chosen randomly.
-    - Per-matrix table selection: how should the 8 matrix-wide `block_scale_lut` values be derived across all rows during model quantization (e.g. k-means/Lloyd-Max clustering vs. fixed geometric intervals)? <-- it's only neuron wide. Each neuron / row gets a set of 8 possible block scales. Encoded as E5M3 to save space. Needs 8B storage per neuron. The 8 bits are cut from the FP16 representation by taking the 5 exponent bits and the first 3 mantissa bits. The scales need no sign. 
+    - [x] Scale-table scope: each neuron/row has eight E5M3 scale values (8 bytes), and each subblock stores a 3-bit selector into that row's table.
 
 ### Memory and scheduling
 
@@ -434,6 +435,13 @@ void dna_sparse_down_tile(
 
 #### Scalar IQ3_CXS2 transposed reference CPU path
 
+The listing below is an earlier design sketch and uses a superseded scale
+decomposition. The implemented format stores eight E5M3 scales per neuron/row;
+each subblock selector directly indexes that row's scale table. The current
+scalar and AVX2 down-tile APIs are declared in
+[`src/dna-iq3-cxs2.h`](src/dna-iq3-cxs2.h), and their implementation in
+[`src/dna-iq3-cxs2.c`](src/dna-iq3-cxs2.c) is authoritative.
+
 The bit count defines ten 16-weight groups per 64-byte line, but not the exact
 field order. For this reference implementation, use this byte layout:
 
@@ -605,15 +613,15 @@ which is five Q8_0 blocks.
 
 For each 16-weight subblock, the 16 Q8 values are multiplied by the four
 positive IQ3 magnitudes `{1, 3, 9, 27}` once to form a shared activation LUT.
-Each of the four selected rows uses its own indices, signs, scale selector,
-and superblock scale to consume that LUT. Since each 16-element subblock is
-aligned within one 32-element Q8_0 block, it has one shared Q8 scale.
+Each selected row uses its own indices, signs, selector, and eight-entry E5M3
+scale table. Since each 16-element subblock is aligned within one 32-element
+Q8_0 block, it has one shared Q8 scale.
 
 ```c
 typedef struct dna_iq3_cxs2_sparse_row {
     size_t output_row;
     const dna_iq3_cxs2_block *blocks;
-    const float *superblock_scales;
+    const uint8_t *scales_e5m3;
 } dna_iq3_cxs2_sparse_row;
 
 void dna_iq3_cxs2_gemv_mr4_indirect_q8_0(
@@ -622,7 +630,6 @@ void dna_iq3_cxs2_gemv_mr4_indirect_q8_0(
     size_t                           n_inputs,
     const dna_iq3_cxs2_sparse_row   *rows,
     size_t                           active_count,
-    const float                      block_scale_lut[8],
     float                           *output)
 {
     static const int32_t magnitude_lut[4] = { 1, 3, 9, 27 };
@@ -643,14 +650,11 @@ void dna_iq3_cxs2_gemv_mr4_indirect_q8_0(
              ++superblock) {
             const dna_iq3_cxs2_block *weight_blocks[4];
             uint32_t selectors[4];
-            float row_scales[4];
 
             for (size_t r = 0; r < row_count; ++r) {
                 weight_blocks[r] = rows[group_start + r].blocks + superblock;
                 selectors[r] =
                     dna_load_le32(weight_blocks[r]->bytes + 60);
-                row_scales[r] =
-                    rows[group_start + r].superblock_scales[superblock];
             }
 
             for (size_t subblock = 0;
@@ -690,10 +694,9 @@ void dna_iq3_cxs2_gemv_mr4_indirect_q8_0(
                         dot += ((signs >> i) & 1u) ? -term : term;
                     }
 
-                    const float scale =
-                        activation_scale *
-                        row_scales[r] *
-                        block_scale_lut[scale_index];
+                    const float row_scale = dna_e5m3_to_f32(
+                        rows[group_start + r].scales_e5m3[scale_index]);
+                    const float scale = activation_scale * row_scale;
                     accum[r] += (float) dot * scale;
                 }
             }
@@ -708,11 +711,13 @@ void dna_iq3_cxs2_gemv_mr4_indirect_q8_0(
 
 `rows[]` is the active-row pointer list; its entries may point to arbitrary
 matrix rows. `x_q8` and `x_scales` are shared across the four rows, as is each
-16-by-4 activation LUT. Weight payloads and selectors remain row-specific.
+16-by-4 activation LUT. Weight payloads and selectors remain row-specific;
+the selector indexes that row's eight E5M3 scales.
 The output is scattered by `output_row`; any gate/up bias or activation
-function is applied by the caller. This is scalar reference code only: the
-activation quantization, E5M3 scale conversion, and production dispatch are
-outside the function.
+function is applied by the caller. The compiled scalar and AVX2 implementations
+are in [`src/dna-iq3-cxs2.c`](src/dna-iq3-cxs2.c), with declarations in
+[`src/dna-iq3-cxs2.h`](src/dna-iq3-cxs2.h); they accept pre-quantized Q8_0
+activations and convert each selected E5M3 scale during accumulation.
 
 #### Scalar IQ3_CXS2 quantization reference
 
@@ -1069,7 +1074,13 @@ void dna_iq3_cxs2_quantize_row(
 The implementation is located in [`src/dna-iq3-cxs2.h`](src/dna-iq3-cxs2.h) and [`src/dna-iq3-cxs2.c`](src/dna-iq3-cxs2.c).
 
 ###### Compile and Run Unit Tests
-To compile and run the self-contained round-trip test (verifying E5M3 conversions, SNR, AVX2 bit equivalence, and silence handling):
+From a configured build, run the lifecycle regression and the IQ3_CXS2 scalar/SIMD comparisons with:
+```bash
+cmake --build build --target test-dna-lifecycle test-dna-iq3
+ctest --test-dir build -R '^(test-dna-lifecycle|test-dna-iq3)$' --output-on-failure
+```
+
+The standalone round-trip test checks E5M3 conversions, SNR, AVX2 bit equivalence, sparse down accumulation, and silence handling:
 ```bash
 gcc -O3 -mavx2 -mfma -I. src/dna-iq3-cxs2.c tests/test-dna-iq3.c -o tests/test-dna-iq3 -lm
 ./tests/test-dna-iq3
@@ -1116,14 +1127,19 @@ for (int k = 0; k < 8; ++k) {
 
 #### AVX2 implementations for IQ3_CXS2
 
-Below are AVX2 SIMD implementations for both the indirect-row GEMV (MR=4) and the transposed sparse down-tile path. Where AVX-512 features (specifically AVX-512F, AVX-512BW, and AVX-512_VNNI) provide significant performance benefits, those are detailed in the notes.
+The compiled MR=4 indirect-row AVX2 kernel is
+`dna_iq3_cxs2_gemv_mr4_indirect_q8_0_avx2` in
+[`src/dna-iq3-cxs2.c`](src/dna-iq3-cxs2.c). The following indirect-row listing
+is a design sketch, not the compiled implementation. The transposed sparse
+down-tile listing below also uses the superseded scale decomposition; use the
+current down-tile implementation in the source file as authoritative.
 
 ##### 1. AVX2 indirect-row GEMV (MR=4)
 
 In this kernel, 4 selected rows share the same activation vector quantized into Q8_0 blocks. For each 16-weight subblock:
 - The 16 Q8 values are multiplied by `{1, 3, 9, 27}` in 16-bit integer SIMD to form an activation table in vector registers.
 - For each row, the 16 indices are unpacked, used to gather or permute terms, signs are applied, and terms are accumulated into `int32` vector accumulators.
-- Deferred FP scaling (`accum * activation_scale * row_scale * block_scale`) is performed once per subblock per row.
+- Deferred FP scaling (`accum * activation_scale * row_scale`) is performed once per subblock per row.
 
 ```c
 #include <immintrin.h>
@@ -1157,7 +1173,6 @@ void dna_iq3_cxs2_gemv_mr4_indirect_q8_0_avx2(
     size_t                           n_inputs,
     const dna_iq3_cxs2_sparse_row   *rows,
     size_t                           active_count,
-    const float                      block_scale_lut[8],
     float                           *output)
 {
     assert(n_inputs % DNA_IQ3_CXS2_WEIGHTS_PER_LINE == 0);
@@ -1170,12 +1185,10 @@ void dna_iq3_cxs2_gemv_mr4_indirect_q8_0_avx2(
         for (size_t superblock = 0; superblock < superblock_count; ++superblock) {
             const dna_iq3_cxs2_block *weight_blocks[4];
             uint32_t selectors[4];
-            float row_scales[4];
 
             for (size_t r = 0; r < row_count; ++r) {
                 weight_blocks[r] = rows[group_start + r].blocks + superblock;
                 selectors[r] = dna_load_le32(weight_blocks[r]->bytes + 60);
-                row_scales[r] = rows[group_start + r].superblock_scales[superblock];
             }
 
             for (size_t subblock = 0; subblock < DNA_IQ3_CXS2_SUBBLOCKS_PER_LINE; ++subblock) {
@@ -1269,8 +1282,9 @@ void dna_iq3_cxs2_gemv_mr4_indirect_q8_0_avx2(
                     __m128i dot_sum = _mm_add_epi32(dot_lo, dot_hi);
                     int32_t dot = dna_hsum_epi32_avx(dot_sum);
 
-                    const float scale =
-                        activation_scale * row_scales[r] * block_scale_lut[scale_index];
+                    const float row_scale = dna_e5m3_to_f32(
+                        rows[group_start + r].scales_e5m3[scale_index]);
+                    const float scale = activation_scale * row_scale;
                     accum[r] += (float) dot * scale;
                 }
             }
@@ -1405,7 +1419,12 @@ void dna_iq3_cxs2_sparse_down_tile_avx2(
 
 ##### 3. AVX-512 implementations for modern CPUs
 
-The following implementations exploit AVX-512F, AVX-512BW, AVX-512_VNNI, and AVX-512_BF16 for modern x86 processors (such as Intel Sapphire Rapids / Emerald Rapids / Granite Rapids and AMD Zen 4 / Zen 5).
+The following AVX-512 code is a design sketch, not an implemented operator.
+Its sparse-down example uses the superseded scale decomposition; the current
+format and compiled scalar/AVX2 implementation are described above.
+
+The proposed designs below describe ways to exploit AVX-512F, AVX-512BW,
+AVX-512_VNNI, and AVX-512_BF16 on modern x86 processors.
 
 Key architectural advantages utilized:
 1. **AVX-512F 32x 512-bit registers (`zmm0`..`zmm31`)**: in sparse down, all 10 subblocks of a 160-weight cache line reside permanently in 10 `zmm` accumulator registers throughout the active-neuron loop, eliminating all memory traffic to scratch arrays during accumulation.
@@ -1544,7 +1563,6 @@ void dna_iq3_cxs2_gemv_mr4_indirect_q8_0_avx512(
     size_t                           n_inputs,
     const dna_iq3_cxs2_sparse_row   *rows,
     size_t                           active_count,
-    const float                      block_scale_lut[8],
     float                           *output)
 {
     assert(n_inputs % DNA_IQ3_CXS2_WEIGHTS_PER_LINE == 0);
@@ -1560,12 +1578,10 @@ void dna_iq3_cxs2_gemv_mr4_indirect_q8_0_avx512(
         for (size_t superblock = 0; superblock < superblock_count; ++superblock) {
             const dna_iq3_cxs2_block *weight_blocks[4];
             uint32_t selectors[4];
-            float row_scales[4];
 
             for (size_t r = 0; r < row_count; ++r) {
                 weight_blocks[r] = rows[group_start + r].blocks + superblock;
                 selectors[r] = dna_load_le32(weight_blocks[r]->bytes + 60);
-                row_scales[r] = rows[group_start + r].superblock_scales[superblock];
             }
 
             for (size_t subblock = 0; subblock < DNA_IQ3_CXS2_SUBBLOCKS_PER_LINE; ++subblock) {
@@ -1631,8 +1647,9 @@ void dna_iq3_cxs2_gemv_mr4_indirect_q8_0_avx512(
                     h = _mm_hadd_epi32(h, h);
                     int32_t dot = _mm_cvtsi128_si32(h);
 
-                    const float scale =
-                        activation_scale * row_scales[r] * block_scale_lut[scale_index];
+                    const float row_scale = dna_e5m3_to_f32(
+                        rows[group_start + r].scales_e5m3[scale_index]);
+                    const float scale = activation_scale * row_scale;
                     accum[r] += (float) dot * scale;
                 }
             }

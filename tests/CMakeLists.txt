@@ -426,8 +426,9 @@ get_filename_component(TEST_TARGET test-c.c NAME_WE)
 add_executable(${TEST_TARGET} test-c.c)
 target_link_libraries(${TEST_TARGET} PRIVATE llama)
 
-llama_build_and_test(test-dna-iq3.c ../src/dna-iq3-cxs2.c LABEL "behavior" LINK llama-common)
+llama_build_and_test(test-dna-iq3.c ../src/dna-iq3-cxs2.c LABEL "behavior" LINK llama-common ggml-cpu)
 llama_build_and_test(test-dna-compare-quants.cpp ../src/dna-iq3-cxs2.c LABEL "behavior" LINK ggml-cpu ggml-base ggml)
+llama_build_and_test(test-dna-lifecycle.cpp LABEL "behavior" LINK llama)
 
 if (NOT LLAMA_USE_SYSTEM_GGML)
     # Needs non-public ggml-impl.h

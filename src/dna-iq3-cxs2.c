@@ -308,7 +308,11 @@ void dna_iq3_cxs2_quantize_row(
     }
 }
 
-#if defined(__AVX2__)
+#if defined(__AVX2__) || \
+    (defined(__GNUC__) && (defined(__x86_64__) || defined(__i386__)))
+#if defined(__GNUC__) && (defined(__x86_64__) || defined(__i386__))
+__attribute__((target("avx2")))
+#endif
 void dna_iq3_cxs2_quantize_row_avx2(
     const float        * weights,
     size_t               n_weights,
@@ -471,6 +475,192 @@ void dna_iq3_cxs2_dequantize_block(
             out_weights[sub * 16 + i] = sign ? -val : val;
         }
     }
+}
+
+void dna_iq3_cxs2_gemv_mr4_indirect_q8_0(
+    const int8_t                    * x_q8,
+    const float                     * x_scales,
+    size_t                            n_inputs,
+    const dna_iq3_cxs2_sparse_row   * rows,
+    size_t                            active_count,
+    float                           * output)
+{
+    assert(n_inputs % DNA_IQ3_CXS2_WEIGHTS_PER_LINE == 0);
+
+    const size_t n_lines = n_inputs / DNA_IQ3_CXS2_WEIGHTS_PER_LINE;
+    for (size_t group_start = 0; group_start < active_count; group_start += 4) {
+        const size_t row_count =
+            active_count - group_start < 4 ? active_count - group_start : 4;
+        float accum[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+
+        for (size_t line = 0; line < n_lines; ++line) {
+            const dna_iq3_cxs2_block * blocks[4];
+            uint32_t selectors[4];
+            for (size_t r = 0; r < row_count; ++r) {
+                blocks[r] = rows[group_start + r].blocks + line;
+                selectors[r] = dna_load_le32(blocks[r]->bytes + 60);
+            }
+
+            for (size_t sub = 0; sub < DNA_IQ3_CXS2_SUBBLOCKS_PER_LINE; ++sub) {
+                const size_t input_offset =
+                    line * DNA_IQ3_CXS2_WEIGHTS_PER_LINE +
+                    sub * DNA_IQ3_CXS2_WEIGHTS_PER_SUBBLOCK;
+                const size_t q8_block = input_offset / 32;
+                const size_t q8_offset = input_offset % 32;
+                assert(q8_offset == 0 || q8_offset == 16);
+                const int8_t * activation = x_q8 + q8_block * 32 + q8_offset;
+
+                int32_t activation_lut[DNA_IQ3_CXS2_WEIGHTS_PER_SUBBLOCK][4];
+                for (size_t i = 0; i < DNA_IQ3_CXS2_WEIGHTS_PER_SUBBLOCK; ++i) {
+                    const int32_t q = activation[i];
+                    for (size_t k = 0; k < 4; ++k) {
+                        activation_lut[i][k] = q * dna_iq3_cxs2_magnitudes[k];
+                    }
+                }
+
+                const float activation_scale = x_scales[q8_block];
+                for (size_t r = 0; r < row_count; ++r) {
+                    const uint8_t * payload = blocks[r]->bytes + sub * 6;
+                    const uint16_t signs = dna_load_le16(payload);
+                    const uint32_t indices = dna_load_le32(payload + 2);
+                    const uint32_t scale_idx =
+                        (selectors[r] >> (3 * sub)) & 7u;
+
+                    int32_t dot = 0;
+                    for (size_t i = 0; i < DNA_IQ3_CXS2_WEIGHTS_PER_SUBBLOCK; ++i) {
+                        const uint32_t index = (indices >> (2 * i)) & 3u;
+                        const int32_t term = activation_lut[i][index];
+                        dot += ((signs >> i) & 1u) ? -term : term;
+                    }
+
+                    const float row_scale = dna_e5m3_to_f32(
+                        rows[group_start + r].scales_e5m3[scale_idx]);
+                    accum[r] += (float) dot * (activation_scale * row_scale);
+                }
+            }
+        }
+
+        for (size_t r = 0; r < row_count; ++r) {
+            output[rows[group_start + r].output_row] = accum[r];
+        }
+    }
+}
+
+#if defined(__GNUC__) && (defined(__x86_64__) || defined(__i386__))
+__attribute__((target("avx2")))
+#endif
+void dna_iq3_cxs2_gemv_mr4_indirect_q8_0_avx2(
+    const int8_t                    * x_q8,
+    const float                     * x_scales,
+    size_t                            n_inputs,
+    const dna_iq3_cxs2_sparse_row   * rows,
+    size_t                            active_count,
+    float                           * output)
+{
+#if defined(__GNUC__) && (defined(__x86_64__) || defined(__i386__))
+    assert(n_inputs % DNA_IQ3_CXS2_WEIGHTS_PER_LINE == 0);
+
+    const __m256i shifts_lo =
+        _mm256_setr_epi32(0, 2, 4, 6, 8, 10, 12, 14);
+    const __m256i shifts_hi =
+        _mm256_setr_epi32(16, 18, 20, 22, 24, 26, 28, 30);
+    const __m256i sign_shifts_lo =
+        _mm256_setr_epi32(0, 1, 2, 3, 4, 5, 6, 7);
+    const __m256i sign_shifts_hi =
+        _mm256_setr_epi32(8, 9, 10, 11, 12, 13, 14, 15);
+    const __m256i offsets_lo =
+        _mm256_setr_epi32(0, 4, 8, 12, 16, 20, 24, 28);
+    const __m256i offsets_hi =
+        _mm256_setr_epi32(32, 36, 40, 44, 48, 52, 56, 60);
+    const __m256i mask3 = _mm256_set1_epi32(3);
+    const __m256i mask1 = _mm256_set1_epi32(1);
+    const __m256i one = _mm256_set1_epi32(1);
+    const size_t n_lines = n_inputs / DNA_IQ3_CXS2_WEIGHTS_PER_LINE;
+
+    for (size_t group_start = 0; group_start < active_count; group_start += 4) {
+        const size_t row_count =
+            active_count - group_start < 4 ? active_count - group_start : 4;
+        float accum[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+
+        for (size_t line = 0; line < n_lines; ++line) {
+            const dna_iq3_cxs2_block * blocks[4];
+            uint32_t selectors[4];
+            for (size_t r = 0; r < row_count; ++r) {
+                blocks[r] = rows[group_start + r].blocks + line;
+                selectors[r] = dna_load_le32(blocks[r]->bytes + 60);
+            }
+
+            for (size_t sub = 0; sub < DNA_IQ3_CXS2_SUBBLOCKS_PER_LINE; ++sub) {
+                const size_t input_offset =
+                    line * DNA_IQ3_CXS2_WEIGHTS_PER_LINE +
+                    sub * DNA_IQ3_CXS2_WEIGHTS_PER_SUBBLOCK;
+                const size_t q8_block = input_offset / 32;
+                const size_t q8_offset = input_offset % 32;
+                assert(q8_offset == 0 || q8_offset == 16);
+                const int8_t * activation = x_q8 + q8_block * 32 + q8_offset;
+
+                int32_t activation_lut[DNA_IQ3_CXS2_WEIGHTS_PER_SUBBLOCK][4];
+                for (size_t i = 0; i < DNA_IQ3_CXS2_WEIGHTS_PER_SUBBLOCK; ++i) {
+                    const int32_t q = activation[i];
+                    for (size_t k = 0; k < 4; ++k) {
+                        activation_lut[i][k] = q * dna_iq3_cxs2_magnitudes[k];
+                    }
+                }
+
+                const float activation_scale = x_scales[q8_block];
+                for (size_t r = 0; r < row_count; ++r) {
+                    const uint8_t * payload = blocks[r]->bytes + sub * 6;
+                    const uint16_t signs = dna_load_le16(payload);
+                    const uint32_t indices = dna_load_le32(payload + 2);
+                    const uint32_t scale_idx =
+                        (selectors[r] >> (3 * sub)) & 7u;
+
+                    const __m256i packed_indices =
+                        _mm256_set1_epi32((int32_t) indices);
+                    const __m256i index_lo = _mm256_and_si256(
+                        _mm256_srlv_epi32(packed_indices, shifts_lo), mask3);
+                    const __m256i index_hi = _mm256_and_si256(
+                        _mm256_srlv_epi32(packed_indices, shifts_hi), mask3);
+                    const __m256i gather_lo = _mm256_add_epi32(offsets_lo, index_lo);
+                    const __m256i gather_hi = _mm256_add_epi32(offsets_hi, index_hi);
+                    __m256i value_lo = _mm256_i32gather_epi32(
+                        &activation_lut[0][0], gather_lo, sizeof(int32_t));
+                    __m256i value_hi = _mm256_i32gather_epi32(
+                        &activation_lut[0][0], gather_hi, sizeof(int32_t));
+
+                    const __m256i packed_signs =
+                        _mm256_set1_epi32((int32_t) signs);
+                    const __m256i sign_lo = _mm256_and_si256(
+                        _mm256_srlv_epi32(packed_signs, sign_shifts_lo), mask1);
+                    const __m256i sign_hi = _mm256_and_si256(
+                        _mm256_srlv_epi32(packed_signs, sign_shifts_hi), mask1);
+                    value_lo = _mm256_mullo_epi32(
+                        value_lo, _mm256_sub_epi32(one, _mm256_slli_epi32(sign_lo, 1)));
+                    value_hi = _mm256_mullo_epi32(
+                        value_hi, _mm256_sub_epi32(one, _mm256_slli_epi32(sign_hi, 1)));
+
+                    const __m256i sum = _mm256_add_epi32(value_lo, value_hi);
+                    const __m128i sum128 = _mm_add_epi32(
+                        _mm256_castsi256_si128(sum), _mm256_extracti128_si256(sum, 1));
+                    __m128i reduced = _mm_hadd_epi32(sum128, sum128);
+                    reduced = _mm_hadd_epi32(reduced, reduced);
+                    const int32_t dot = _mm_cvtsi128_si32(reduced);
+
+                    const float row_scale = dna_e5m3_to_f32(
+                        rows[group_start + r].scales_e5m3[scale_idx]);
+                    accum[r] += (float) dot * (activation_scale * row_scale);
+                }
+            }
+        }
+
+        for (size_t r = 0; r < row_count; ++r) {
+            output[rows[group_start + r].output_row] = accum[r];
+        }
+    }
+#else
+    dna_iq3_cxs2_gemv_mr4_indirect_q8_0(
+        x_q8, x_scales, n_inputs, rows, active_count, output);
+#endif
 }
 
 void dna_iq3_cxs2_down_tile_accum(
