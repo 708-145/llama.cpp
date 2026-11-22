@@ -1,5 +1,6 @@
 #include "llama-dna.h"
 
+#include "dna-iq3-cxs2.h"
 #include "llama-impl.h"
 #include "llama-model.h"
 
@@ -89,7 +90,9 @@ struct llama_dna_layer {
     std::vector<float>       band;    // [n_ff] dead zone half-width
     std::vector<float>       mu;      // [n_ff] mean h when silent
     std::vector<float>       c0;      // [n_embd] down projection of mu
-    std::vector<ggml_fp16_t> down_t;  // [n_ff][n_embd] transposed down projection
+    std::vector<dna_iq3_cxs2_block> down_blocks; // [n_ff][down_blocks_per_neuron]
+    std::vector<uint8_t> down_scales;            // [n_ff][8] E5M3 scale table
+    size_t down_blocks_per_neuron = 0;
 
     float m_est = 0.0f; // mean |g~|
 
@@ -163,41 +166,6 @@ static inline void llama_dna_f16_to_f32(const ggml_fp16_t * x, float * y, int n)
     llama_dna_f16_to_f32_generic(x, y, n);
 }
 
-// y += d * w
-static void llama_dna_axpy_f16_generic(float * y, const ggml_fp16_t * w, float d, int64_t n) {
-    float tmp[64];
-    for (int64_t j = 0; j < n; j += 64) {
-        const int m = (int) std::min<int64_t>(64, n - j);
-        llama_dna_f16_to_f32_generic(w + j, tmp, m);
-        for (int k = 0; k < m; ++k) {
-            y[j + k] += d * tmp[k];
-        }
-    }
-}
-
-#if defined(LLAMA_DNA_X86)
-__attribute__((target("avx2,fma,f16c")))
-static void llama_dna_axpy_f16_x86(float * y, const ggml_fp16_t * w, float d, int64_t n) {
-    const __m256 vd = _mm256_set1_ps(d);
-    int64_t j = 0;
-    for (; j + 8 <= n; j += 8) {
-        const __m256 vw = _mm256_cvtph_ps(_mm_loadu_si128((const __m128i *)(w + j)));
-        _mm256_storeu_ps(y + j, _mm256_fmadd_ps(vd, vw, _mm256_loadu_ps(y + j)));
-    }
-    llama_dna_axpy_f16_generic(y + j, w + j, d, n - j);
-}
-#endif
-
-static inline void llama_dna_axpy_f16(float * y, const ggml_fp16_t * w, float d, int64_t n) {
-#if defined(LLAMA_DNA_X86)
-    if (g_x86_fast) {
-        llama_dna_axpy_f16_x86(y, w, d, n);
-        return;
-    }
-#endif
-    llama_dna_axpy_f16_generic(y, w, d, n);
-}
-
 // quant predictor: native CPU vec_dot of the re-quantized gate row against the
 // already quantized input row xq (pred_vdt layout); mirrors llama_dna_estimate
 static inline float llama_dna_estimate_quant(const llama_dna_layer & L, int64_t i, const void * xq) {
@@ -253,6 +221,23 @@ static void llama_dna_row_to_float(const ggml_tensor * w, int64_t row, float * d
     const ggml_type_traits * tr = ggml_get_type_traits(w->type);
     GGML_ASSERT(tr->to_float);
     tr->to_float(src, dst, w->ne[0]);
+}
+
+static void llama_dna_down_row_to_float(
+    const llama_dna_layer & L,
+    int64_t                 row,
+    float                 * dst)
+{
+    const size_t expert_offset = L.is_moe ? (size_t) L.expert * L.down->nb[2] : 0;
+    const char * src =
+        (const char *) L.down->data + expert_offset + (size_t) row * L.down->nb[1];
+    if (L.down->type == GGML_TYPE_F32) {
+        memcpy(dst, src, (size_t) L.down->ne[0] * sizeof(float));
+        return;
+    }
+    const ggml_type_traits * tr = ggml_get_type_traits(L.down->type);
+    GGML_ASSERT(tr->to_float);
+    tr->to_float(src, dst, L.down->ne[0]);
 }
 
 // read a 1-D dense tensor (bias {n} or scale {1}) into an f32 vector; rejects non-host / unreadable tensors
@@ -425,18 +410,23 @@ static void llama_dna_finalize_bias(llama_dna_layer & L) {
         }
     }
 
-    // c0 = down_s * (Wdown @ mu + down_b), and the transposed f16 copy of Wdown
-    // scaled by down_s for the sparse delta projection, so op_down needs no extra multiply.
-    // Dense order is (Wdown @ h + down_b) * down_s; the delta form becomes
-    // y = c0 + sum_active (down_s * Wdown[:, i]) * (h[i] - mu[i]).
+    // c0 = down_s * (Wdown @ mu + down_b). The sparse delta projection stores
+    // down_s * Wdown in IQ3_CXS2 blocks, so op_down needs no extra multiply.
     L.c0.assign(L.n_embd, 0.0f);
-    L.down_t.resize((size_t) L.n_ff * L.n_embd);
+    L.down_blocks_per_neuron =
+        ((size_t) L.n_embd + DNA_IQ3_CXS2_WEIGHTS_PER_LINE - 1) /
+        DNA_IQ3_CXS2_WEIGHTS_PER_LINE;
+    const size_t padded_n_weights =
+        L.down_blocks_per_neuron * DNA_IQ3_CXS2_WEIGHTS_PER_LINE;
+    L.down_blocks.resize((size_t) L.n_ff * L.down_blocks_per_neuron);
+    L.down_scales.resize((size_t) L.n_ff * 8);
 
     std::vector<float> rowf(L.n_ff);
     std::vector<float> rowscaled(L.n_ff);
     std::vector<ggml_fp16_t> rowh(L.n_ff);
+    std::vector<ggml_fp16_t> down_scaled_t((size_t) L.n_ff * L.n_embd);
     for (int64_t j = 0; j < L.n_embd; ++j) {
-        llama_dna_row_to_float(L.down, j, rowf.data());
+        llama_dna_down_row_to_float(L, j, rowf.data());
         for (int64_t i = 0; i < L.n_ff; ++i) {
             rowscaled[i] = rowf[i] * L.down_s;
         }
@@ -444,15 +434,34 @@ static void llama_dna_finalize_bias(llama_dna_layer & L) {
         double c = 0.0;
         const double bj = L.down_b.empty() ? 0.0 : (double) L.down_b[(size_t) j];
         for (int64_t i = 0; i < L.n_ff; ++i) {
-            L.down_t[(size_t) i*L.n_embd + j] = rowh[i];
+            down_scaled_t[(size_t) i * L.n_embd + j] = rowh[i];
             c += (double) rowf[i] * L.mu[i];
         }
         L.c0[j] = (float) ((c + bj) * (double) L.down_s);
     }
 
-    LLAMA_LOG_ERROR("%s: layer %3d: bias over %u tokens: active = %.1f%%, energy(active) = %.1f%%, energy(bias) = %.1f%%, band scale = %.3f, down_t = %.1f MiB\n",
+    GGML_ASSERT(L.n_embd <= 0x7fffffff);
+    std::vector<float> quant_row(padded_n_weights, 0.0f);
+    for (int64_t i = 0; i < L.n_ff; ++i) {
+        float * row = quant_row.data();
+        llama_dna_f16_to_f32(
+            down_scaled_t.data() + (size_t) i * L.n_embd,
+            row,
+            (int) L.n_embd);
+        std::fill(row + L.n_embd, row + padded_n_weights, 0.0f);
+        dna_iq3_cxs2_quantize_row(
+            row,
+            padded_n_weights,
+            L.down_blocks.data() + (size_t) i * L.down_blocks_per_neuron,
+            L.down_scales.data() + (size_t) i * 8);
+    }
+
+    const size_t down_bytes =
+        L.down_blocks.size() * sizeof(dna_iq3_cxs2_block) + L.down_scales.size();
+    LLAMA_LOG_ERROR("%s: layer %3d: bias over %u tokens: active = %.1f%%, energy(active) = %.1f%%, energy(bias) = %.1f%%, band scale = %.3f, down IQ3_CXS2 = %.1f MiB (%.3f bpw)\n",
             __func__, L.il, L.n_tok, 100.0*act_frac, 100.0*sum_h2_act / std::max(sum_h2, 1e-30), 100.0*sum_h2_mu / std::max(sum_h2, 1e-30),
-            band_scale, L.down_t.size()*sizeof(ggml_fp16_t) / (1024.0*1024.0));
+            band_scale, down_bytes / (1024.0*1024.0),
+            8.0 * down_bytes / ((double) L.n_ff * L.n_embd));
 
     std::vector<float>().swap(L.res);
     std::vector<double>().swap(L.mu_sum);
@@ -1163,24 +1172,74 @@ void llama_dna::op_down(ggml_tensor * dst, int ith, int nth, void * userdata) {
 
     const int64_t t_start = ggml_time_us();
 
-    // each thread owns a stripe of the output, no reduction is needed
-    const int64_t per = ((L.n_embd + nth - 1)/nth + 7) & ~(int64_t) 7;
-    const int64_t j0  = std::min<int64_t>(per*ith, L.n_embd);
-    const int64_t j1  = std::min<int64_t>(j0 + per, L.n_embd);
-    if (j0 >= j1) {
+    const size_t n_tiles =
+        ((size_t) L.n_embd + DNA_IQ3_CXS2_WEIGHTS_PER_LINE - 1) /
+        DNA_IQ3_CXS2_WEIGHTS_PER_LINE;
+    const size_t tiles_per_thread = (n_tiles + nth - 1) / nth;
+    const size_t tile_0 = std::min((size_t) ith * tiles_per_thread, n_tiles);
+    const size_t tile_1 = std::min(tile_0 + tiles_per_thread, n_tiles);
+    if (tile_0 >= tile_1) {
         return;
     }
+
+    thread_local std::vector<dna_iq3_cxs2_active_neuron> active_neurons;
+    alignas(64) float tile_accum[DNA_IQ3_CXS2_WEIGHTS_PER_LINE];
 
     for (int64_t t = 0; t < n_tokens; ++t) {
         const float * d = (const float *) ((const char *) delta->data + t*delta->nb[1]);
         float       * y = (float *) ((char *) dst->data + t*dst->nb[1]);
 
-        memcpy(y + j0, L.c0.data() + j0, (j1 - j0)*sizeof(float));
-
+        active_neurons.clear();
         for (int64_t i = 0; i < L.n_ff; ++i) {
             if (d[i] != 0.0f) {
-                llama_dna_axpy_f16(y + j0, L.down_t.data() + (size_t) i*L.n_embd + j0, d[i], j1 - j0);
+                active_neurons.push_back({
+                    (int32_t) i,
+                    d[i],
+                });
             }
+        }
+
+        for (size_t tile = tile_0; tile < tile_1; ++tile) {
+            const size_t j_offset =
+                tile * DNA_IQ3_CXS2_WEIGHTS_PER_LINE;
+            const size_t j_count = std::min(
+                (size_t) DNA_IQ3_CXS2_WEIGHTS_PER_LINE,
+                (size_t) L.n_embd - j_offset);
+            const size_t n_subblocks =
+                (j_count + DNA_IQ3_CXS2_WEIGHTS_PER_SUBBLOCK - 1) /
+                DNA_IQ3_CXS2_WEIGHTS_PER_SUBBLOCK;
+
+            memcpy(tile_accum, L.c0.data() + j_offset, j_count * sizeof(float));
+            std::fill(tile_accum + j_count,
+                      tile_accum + DNA_IQ3_CXS2_WEIGHTS_PER_LINE,
+                      0.0f);
+
+#if defined(LLAMA_DNA_X86)
+            if (g_x86_fast) {
+                dna_iq3_cxs2_down_tile_accum_avx2(
+                    tile_accum,
+                    active_neurons.data(),
+                    active_neurons.size(),
+                    tile,
+                    L.down_blocks_per_neuron,
+                    L.down_blocks.data(),
+                    L.down_scales.data(),
+                    n_subblocks);
+            } else
+#endif
+            {
+                dna_iq3_cxs2_down_tile_accum(
+                    tile_accum,
+                    active_neurons.data(),
+                    active_neurons.size(),
+                    tile,
+                    L.down_blocks_per_neuron,
+                    L.down_blocks.data(),
+                    L.down_scales.data(),
+                    n_subblocks);
+            }
+
+            memcpy(y + j_offset, tile_accum, j_count * sizeof(float));
         }
     }
 
@@ -1324,32 +1383,102 @@ void llama_dna::op_expert_down(ggml_tensor * dst, int ith, int nth, void * userd
     const int64_t n_slots = delta->ne[1];
     const int64_t n_ff = delta->ne[0];
 
-    const int64_t per = ((n_embd + nth - 1)/nth + 7) & ~(int64_t) 7;
-    const int64_t j0 = std::min<int64_t>(per*ith, n_embd);
-    const int64_t j1 = std::min<int64_t>(j0 + per, n_embd);
-    if (j0 >= j1) {
+    const size_t n_tiles =
+        ((size_t) n_embd + DNA_IQ3_CXS2_WEIGHTS_PER_LINE - 1) /
+        DNA_IQ3_CXS2_WEIGHTS_PER_LINE;
+    const size_t tiles_per_thread = (n_tiles + nth - 1) / nth;
+    const size_t tile_0 = std::min((size_t) ith * tiles_per_thread, n_tiles);
+    const size_t tile_1 = std::min(tile_0 + tiles_per_thread, n_tiles);
+    if (tile_0 >= tile_1) {
         return;
     }
 
+    thread_local std::vector<std::vector<dna_iq3_cxs2_active_neuron>> active_by_slot;
+    active_by_slot.resize((size_t) n_slots);
+    alignas(64) float tile_accum[DNA_IQ3_CXS2_WEIGHTS_PER_LINE];
+
     for (int64_t t = 0; t < n_tokens; ++t) {
         float * y = (float *) ((char *) dst->data + t*dst->nb[1]);
-        memset(y + j0, 0, (j1 - j0)*sizeof(float));
+
         for (int64_t s = 0; s < n_slots; ++s) {
-            const int32_t e = ((const int32_t *) sel->data)[t*sel->nb[1]/sizeof(int32_t) + s];
+            std::vector<dna_iq3_cxs2_active_neuron> & active = active_by_slot[s];
+            active.clear();
+
+            const int32_t e =
+                ((const int32_t *) sel->data)[t*sel->nb[1]/sizeof(int32_t) + s];
             llama_dna_layer * L = M.experts[e];
             if (!L) {
                 continue;
             }
-            const float w = ((const float *) weights->data)[t*weights->nb[1]/sizeof(float) + s*weights->nb[0]/sizeof(float)];
-            for (int64_t j = j0; j < j1; ++j) {
-                y[j] += w * L->c0[j];
-            }
-            const float * d = (const float *) ((const char *) delta->data + s*delta->nb[1] + t*delta->nb[2]);
+
+            const float weight = ((const float *) weights->data)[
+                t*weights->nb[1]/sizeof(float) + s*weights->nb[0]/sizeof(float)];
+            const float * d = (const float *) (
+                (const char *) delta->data + s*delta->nb[1] + t*delta->nb[2]);
             for (int64_t i = 0; i < n_ff; ++i) {
                 if (d[i] != 0.0f) {
-                    llama_dna_axpy_f16(y + j0, L->down_t.data() + (size_t) i*n_embd + j0, w * d[i], j1 - j0);
+                    active.push_back({
+                        (int32_t) i,
+                        weight * d[i],
+                    });
                 }
             }
+        }
+
+        for (size_t tile = tile_0; tile < tile_1; ++tile) {
+            const size_t j_offset =
+                tile * DNA_IQ3_CXS2_WEIGHTS_PER_LINE;
+            const size_t j_count = std::min(
+                (size_t) DNA_IQ3_CXS2_WEIGHTS_PER_LINE,
+                (size_t) n_embd - j_offset);
+            const size_t n_subblocks =
+                (j_count + DNA_IQ3_CXS2_WEIGHTS_PER_SUBBLOCK - 1) /
+                DNA_IQ3_CXS2_WEIGHTS_PER_SUBBLOCK;
+            std::fill(tile_accum,
+                      tile_accum + DNA_IQ3_CXS2_WEIGHTS_PER_LINE,
+                      0.0f);
+
+            for (int64_t s = 0; s < n_slots; ++s) {
+                const int32_t e =
+                    ((const int32_t *) sel->data)[t*sel->nb[1]/sizeof(int32_t) + s];
+                llama_dna_layer * L = M.experts[e];
+                if (!L) {
+                    continue;
+                }
+
+                const float weight = ((const float *) weights->data)[
+                    t*weights->nb[1]/sizeof(float) + s*weights->nb[0]/sizeof(float)];
+                for (size_t j = 0; j < j_count; ++j) {
+                    tile_accum[j] += weight * L->c0[j_offset + j];
+                }
+
+#if defined(LLAMA_DNA_X86)
+                if (g_x86_fast) {
+                    dna_iq3_cxs2_down_tile_accum_avx2(
+                        tile_accum,
+                        active_by_slot[s].data(),
+                        active_by_slot[s].size(),
+                        tile,
+                        L->down_blocks_per_neuron,
+                        L->down_blocks.data(),
+                        L->down_scales.data(),
+                        n_subblocks);
+                } else
+#endif
+                {
+                    dna_iq3_cxs2_down_tile_accum(
+                        tile_accum,
+                        active_by_slot[s].data(),
+                        active_by_slot[s].size(),
+                        tile,
+                        L->down_blocks_per_neuron,
+                        L->down_blocks.data(),
+                        L->down_scales.data(),
+                        n_subblocks);
+                }
+            }
+
+            memcpy(y + j_offset, tile_accum, j_count * sizeof(float));
         }
     }
 }

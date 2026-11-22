@@ -1,4 +1,4 @@
-#include "src/dna-iq3-cxs2.h"
+#include "../src/dna-iq3-cxs2.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
@@ -11,6 +11,92 @@ static float rand_normal(float mean, float std) {
     float v = (float) rand() / (float) RAND_MAX;
     if (u <= 1e-7f) u = 1e-7f;
     return mean + std * sqrtf(-2.0f * logf(u)) * cosf(2.0f * 3.1415926535f * v);
+}
+
+static void test_down_tile_accum(void) {
+    enum {
+        N_NEURONS = 3,
+        N_WEIGHTS = 176,
+        N_BLOCKS = 2,
+        PADDED_WEIGHTS = N_BLOCKS * DNA_IQ3_CXS2_WEIGHTS_PER_LINE,
+    };
+
+    dna_iq3_cxs2_block blocks[N_NEURONS * N_BLOCKS];
+    uint8_t scales_e5m3[N_NEURONS * 8];
+    float row[PADDED_WEIGHTS];
+
+    for (size_t n = 0; n < N_NEURONS; ++n) {
+        for (size_t i = 0; i < PADDED_WEIGHTS; ++i) {
+            row[i] = i < N_WEIGHTS
+                ? 0.3f * sinf((float) (i * 13 + n * 17) * 0.071f)
+                : 0.0f;
+        }
+        dna_iq3_cxs2_quantize_row(
+            row,
+            PADDED_WEIGHTS,
+            blocks + n * N_BLOCKS,
+            scales_e5m3 + n * 8);
+    }
+
+    const dna_iq3_cxs2_active_neuron active[] = {
+        { 2, 0.75f },
+        { 0, -0.5f },
+    };
+    const size_t test_tiles[] = { 0, 1 };
+    const size_t test_subblocks[] = { 10, 1 };
+
+    for (size_t test = 0; test < 2; ++test) {
+        const size_t tile = test_tiles[test];
+        const size_t n_subblocks = test_subblocks[test];
+        float actual[DNA_IQ3_CXS2_WEIGHTS_PER_LINE];
+        float expected[DNA_IQ3_CXS2_WEIGHTS_PER_LINE];
+
+        for (size_t i = 0; i < DNA_IQ3_CXS2_WEIGHTS_PER_LINE; ++i) {
+            actual[i] = (float) ((int) i - 80) * 0.002f;
+            expected[i] = actual[i];
+        }
+
+        for (size_t a = 0; a < sizeof(active) / sizeof(active[0]); ++a) {
+            const size_t neuron = (size_t) active[a].index;
+            float scales_f32[8];
+            float decoded[DNA_IQ3_CXS2_WEIGHTS_PER_LINE];
+            for (size_t k = 0; k < 8; ++k) {
+                scales_f32[k] = dna_e5m3_to_f32(scales_e5m3[neuron * 8 + k]);
+            }
+            dna_iq3_cxs2_dequantize_block(
+                blocks + neuron * N_BLOCKS + tile, scales_f32, decoded);
+            for (size_t sub = 0; sub < n_subblocks; ++sub) {
+                for (size_t i = 0; i < DNA_IQ3_CXS2_WEIGHTS_PER_SUBBLOCK; ++i) {
+                    const size_t offset =
+                        sub * DNA_IQ3_CXS2_WEIGHTS_PER_SUBBLOCK + i;
+                    expected[offset] += active[a].activation * decoded[offset];
+                }
+            }
+        }
+
+        dna_iq3_cxs2_down_tile_accum(
+            actual, active, sizeof(active) / sizeof(active[0]), tile, N_BLOCKS,
+            blocks, scales_e5m3, n_subblocks);
+        for (size_t i = 0; i < DNA_IQ3_CXS2_WEIGHTS_PER_LINE; ++i) {
+            assert(fabsf(actual[i] - expected[i]) < 1e-6f);
+        }
+
+#if defined(__GNUC__) && (defined(__x86_64__) || defined(__i386__))
+        __builtin_cpu_init();
+        if (__builtin_cpu_supports("avx2")) {
+            float actual_avx2[DNA_IQ3_CXS2_WEIGHTS_PER_LINE];
+            for (size_t i = 0; i < DNA_IQ3_CXS2_WEIGHTS_PER_LINE; ++i) {
+                actual_avx2[i] = (float) ((int) i - 80) * 0.002f;
+            }
+            dna_iq3_cxs2_down_tile_accum_avx2(
+                actual_avx2, active, sizeof(active) / sizeof(active[0]), tile,
+                N_BLOCKS, blocks, scales_e5m3, n_subblocks);
+            for (size_t i = 0; i < DNA_IQ3_CXS2_WEIGHTS_PER_LINE; ++i) {
+                assert(fabsf(actual_avx2[i] - expected[i]) < 1e-6f);
+            }
+        }
+#endif
+    }
 }
 
 int main(void) {
@@ -111,6 +197,10 @@ int main(void) {
         assert(zero_scales[k] == 0);
     }
     printf("    Zero handling: PASSED\n");
+
+    printf("[5] Testing IQ3_CXS2 sparse down tile accumulation...\n");
+    test_down_tile_accum();
+    printf("    Sparse down tile accumulation: PASSED\n");
 
     free(zeros);
     free(weights);

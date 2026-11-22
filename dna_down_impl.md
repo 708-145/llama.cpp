@@ -3,7 +3,7 @@
 ## 1. Problem Statement & Motivation
 
 In current DNA execution:
-- At the end of the calibration bias phase, each layer stores `down_t`, an uncompressed transposed copy of `Wdown` in FP16 format ($n_{\text{ff}} \times n_{\text{embd}} \times 2$ bytes). For a model with $n_{\text{ff}} = 14336$ and $n_{\text{embd}} = 4096$, this consumes **~117 MiB per layer** of persistent memory.
+- At the end of the calibration bias phase, each layer stores `down_t`, an uncompressed transposed copy of `Wdown` in FP16 format ($n_{\text{ff}} \times n_{\text{embd}} \times 2$ bytes). For a model with $n_{\text{ff}} = 14336$ and $n_{\text{embd}} = 4096$, this consumes **117 MB (112 MiB) per layer** of persistent memory.
 - In `op_down`, every token evaluates a sparse loop of per-neuron AXPY operations (`llama_dna_axpy_f16`). Each active neuron traverses the thread's output slice, reading contiguous FP16 weights and accumulating.
 - AXPY streams weight memory across active neurons without output caching, requiring FP16-to-F32 conversions and repeated memory updates to `y`.
 
@@ -12,7 +12,7 @@ In current DNA execution:
 Instead of storing FP16 weights and running AXPY:
 1. **Quantize to IQ3_CXS2 at Calibration**:
    - Each neuron's down-weight row ($n_{\text{embd}}$ weights) is quantized into 64-byte `IQ3_CXS2` blocks (160 weights per block) and 8 bytes of unsigned E5M3 scale factors.
-   - Storage drops from **16 bpw to 3.2 bpw** (an exact **5× memory reduction**, bringing the example layer from 117 MiB down to **~23.5 MiB**).
+   - Persistent storage drops from 16 bpw to about **3.27 bpw**, including per-neuron scale bytes and the padded tail block. For the example dimensions this is **~22.9 MiB**, about a **4.9× reduction** from 112 MiB.
 2. **Output Tile Partitioning in `op_down`**:
    - Output dimension $n_{\text{embd}}$ is partitioned into tiles of size $T = 160$ weights (matching the 64-byte block size).
    - Each thread owns a disjoint subset of tiles (embarrassingly parallel, no atomic operations or cross-thread reductions).
@@ -55,6 +55,15 @@ struct llama_dna_layer {
     ...
 };
 ```
+
+The implementation builds a temporary FP16 transposed staging buffer while
+reading the model's output-major down rows. It quantizes each staged neuron row
+to IQ3_CXS2 and releases the staging buffer before prediction. This preserves
+the former sparse path's FP16 input precision without retaining the
+`n_ff * n_embd` FP16 copy. The one-time calibration peak therefore includes
+both that staging buffer and the new packed storage. The same per-layer storage
+and tile kernel are used for routed MoE experts; their down rows are read from
+the selected expert slice.
 
 ---
 
@@ -101,7 +110,9 @@ struct dna_active_neuron {
 There are two integration strategies:
 
 - **Strategy A (Inside `op_down` per-token preprocessing - Zero Graph Changes)**:
-  At the beginning of `op_down`, before looping over tiles, thread 0 (or a quick cooperative parallel scan) inspects `delta` and extracts non-zero entries into a small scratch buffer:
+  At the beginning of `op_down`, each worker scans `delta` once per token,
+  before looping over its owned tiles, and extracts non-zero entries into its
+  reusable thread-local scratch buffer:
   ```cpp
   // At typical 10% active neurons on n_ff=14336: ~1400 active entries
   // 1400 * 8 bytes ≈ 11 KiB (fits entirely into L1 cache!)
@@ -122,6 +133,11 @@ There are two integration strategies:
 ---
 
 ## 6. Core AVX2 Tiled Kernel with Dynamic Subblocks
+
+The scalar and AVX2 kernels are implemented in `src/dna-iq3-cxs2.c` as
+`dna_iq3_cxs2_down_tile_accum` and
+`dna_iq3_cxs2_down_tile_accum_avx2`. `op_down` runtime-dispatches to AVX2 when
+supported and otherwise uses the scalar implementation.
 
 ```c
 static inline __m256i dna_unpack_2bit_indices_256(uint32_t packed, int first_shift) {
@@ -279,6 +295,10 @@ void llama_dna::op_down(ggml_tensor * dst, int ith, int nth, void * userdata) {
     }
 }
 ```
+
+`op_expert_down` uses the same tiling and kernel. It folds each expert's router
+weight into that slot's active-neuron values and applies the same weight to
+`c0`, then sums the expert contributions into the output tile.
 
 ---
 

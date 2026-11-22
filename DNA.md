@@ -136,7 +136,7 @@ MoE support covers the standard top-k MoE path in `build_moe_ffn`:
   `llama_dna::get_moe_expert` from the `gate_up_exps` ([n_embd, 2·n_ff, n_expert]
   PAR split) or separate `gate_exps`/`up_exps` tensors plus `down_exps`.
   Each expert packs its own gate rows (4.25 bpw @ iq4_xs) and has its own
-  `med_est`/`band`/`mu`/`c0`/`down_t`.
+  `med_est`/`band`/`mu`/`c0`/IQ3_CXS2 down blocks and scales.
 - Calibration: the dense MoE path runs in STATS/BIAS phases and
   `op_expert_observe` (x, gate out, up out, selected_experts) records
   per-expert gate/up for the routed tokens.
@@ -162,8 +162,9 @@ MoE support covers the standard top-k MoE path in `build_moe_ffn`:
 | batch limit | `LLAMA_DNA_MAX_BATCH` | 32 | larger ubatches use dense FFN |
 | band basis | `LLAMA_DNA_ZMODE` | 0 | 0: per-layer mean, 1: per-neuron std |
 
-Bias handling: `med_est`/`band` are fixed after the stats phase; `mu`/`c0`/`down_t`
-are fixed after the bias phase. There is no re-calibration after PREDICT starts.
+Bias handling: `med_est`/`band` are fixed after the stats phase; `mu`/`c0` and
+the IQ3_CXS2 down blocks/scales are fixed after the bias phase. There is no
+re-calibration after PREDICT starts.
 
 ### Perplexity results (Qwen3-0.6B-Q6_K, wikitext-2 test, `-c 512 --chunks 4 -t 8 --fit off`,
 `LLAMA_DNA_MAX_BATCH=512`, `LLAMA_GRAPH_REUSE_DISABLE=1`, `n_calib=256`)
@@ -311,7 +312,8 @@ Takeaway: at `n_calib` that fits inside the corpus (256 ⇒ 512 calibration toke
 predicting on chunks 2–4), DNA **does lose** perplexity vs dense on Gemma
 (+30% at T=0.5, within noise at T=0.1). The loss is the bias-fill approximation
 (`energy(bias) ≈ 1–25%` of `h` at T=0.5), not DNA activation. The MoE bias
-computation (`mu`, `c0`, per-expert `down_t`, weighted `op_expert_down`) matches
+computation (`mu`, `c0`, per-expert IQ3_CXS2 down blocks, weighted
+`op_expert_down`) matches
 `DNA.md` principles 1–4: `c0 = W_down·mu + down_b`,
 `y = c0 + Σ_active (down_s·W_down[:,i])·(h[i] - mu[i])`, with GeGLU/SiLU/GELU_ERF/RELU
 activations honored via `act`.
@@ -393,7 +395,7 @@ DNA only takes effect on layers that pass all of these checks (enforced in `llm_
 - Dense FFN with a linear gate activation (`type_gate == LLM_FFN_PAR` and `type_op` ∈ {SILU, GELU, GELU_ERF, RELU}) — see "Non-SwiGLU and MoE" above. MoE experts use the same activations via `build_moe_ffn`.
 - Weights in plain host memory (buffer name `"CPU"` or `"CPU_Mapped"`; repacked extra buffers rejected)
 - Weight type F32 or convertible via `ggml_get_type_traits(type)->to_float`
-- Affine terms **supported** (Restrictions 3, 4 lifted): `up_b`/`gate_b`/`down_b` and `up_s`/`gate_s`/`down_s` are copied into the layer at `get_layer` time and reproduced in dense order — `(W·x + b)·s` for gate/up in `op_route`, `(W_down·h + down_b)·down_s` for the down projection (folded into `c0`/`down_t`). Each must be a readable host tensor with the right shape (`gate_b`/`up_b` `{n_ff}`, `down_b` `{n_embd}`, `*_s` `{1}`); otherwise the layer is rejected.
+- Affine terms **supported** (Restrictions 3, 4 lifted): `up_b`/`gate_b`/`down_b` and `up_s`/`gate_s`/`down_s` are copied into the layer at `get_layer` time and reproduced in dense order — `(W·x + b)·s` for gate/up in `op_route`, `(W_down·h + down_b)·down_s` for the down projection (folded into `c0` and the IQ3_CXS2 down blocks). Each must be a readable host tensor with the right shape (`gate_b`/`up_b` `{n_ff}`, `down_b` `{n_embd}`, `*_s` `{1}`); otherwise the layer is rejected.
 - No LoRA on gate/up/down
 - Activations: any type via graph-level cast (Restriction 7 lifted) — non-F32 `cur` is `ggml_cast` to F32 before the DNA ops (`dna_x_f32`); the kernels always see F32. 2D tensor required (`cur->ne[2] == 1 && cur->ne[3] == 1`).
 - Batch size ≤ `LLAMA_DNA_MAX_BATCH` (default 32); larger batches fall back to dense FFN
@@ -509,7 +511,7 @@ The following restrictions are currently enforced. Each has a corresponding TODO
 | 0 ✅ | **Silent DNA skip** — DNA previously skipped layers without any visible message when requirements weren't met (log level was WARN/INFO, suppressed by the CLI's default ERROR verbosity). | ✅ Fixed: skip reasons now logged at `LLAMA_LOG_ERROR` level in `llama-dna.cpp`, `llama-graph.cpp`, and `llama-context.cpp`, so they appear even at default CLI verbosity. |
 | 1 ✅ | **CPU backend only** — DNA ops (`op_route`, `op_down`) have no GPU/HIP/SYCL backend implementations. | This is fine and accepted |
 | 2 ✅ | ~~**Dense SwiGLU FFNs only** — MoE / shared-expert / other activation variants are skipped~~ | ✅ Fixed: dense FFNs accept SILU/GELU/GELU_ERF/RELU (tanh-approx GELU matches `ggml_vec_gelu_f32`); MoE experts get per-expert dna_layers via `get_moe_expert`/`get_moe_layer` (PAR gate_up split) with `op_expert_route`/`op_expert_down`/`op_expert_observe`. Shared-expert FFNs are covered by the dense hook. Still rejected: expert biases/scales, `weight_before_ffn`, MoE-cache, `post_exp_norm`, non-linear activations (SWIGLU_OAI_MOE/SITU/GEGLU/REGLU). |
-| 3 ✅ | ~~**No biases** — `up_b`, `gate_b`, `down_b` must all be null.~~ | ✅ Fixed: biases are copied at `get_layer` time (`llama_dna_read_dense`, shape-checked `n_ff`/`n_embd`) and applied in dense order in `op_route` (`(W·x + b)·s`) and in `llama_dna_finalize_bias` (`c0 = down_s·(W_down@mu + down_b)`, `down_t` pre-scaled by `down_s`). |
+| 3 ✅ | ~~**No biases** — `up_b`, `gate_b`, `down_b` must all be null.~~ | ✅ Fixed: biases are copied at `get_layer` time (`llama_dna_read_dense`, shape-checked `n_ff`/`n_embd`) and applied in dense order in `op_route` (`(W·x + b)·s`) and in `llama_dna_finalize_bias` (`c0 = down_s·(W_down@mu + down_b)`, down weights are pre-scaled by `down_s` before IQ3_CXS2 quantization). |
 | 4 ✅ | ~~**No per-tensor scales** — `up_s`, `gate_s`, `down_s` must all be null; scaled low-precision types (NVFP4/F8_E4M3) rejected.~~ | ✅ Fixed: scalar scales `{1}` are read by `llama_dna_read_scale` and applied in the same spots as the biases (see row 3). NVFP4/F8_E4M3 weights already have `to_float` + CPU `vec_dot`, so they pass once the post-matmul multiply is reproduced. |
 | 5 ✅ | **No LoRA** — `has_lora(up/gate/down)` must be false. | This is fine and accepted |
 | 6 ✅ | **Weights in plain host memory only** — default is mmap and no repack | currently also needs --fit off |

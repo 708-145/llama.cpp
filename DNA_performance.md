@@ -41,29 +41,39 @@ Thus, increasing sparsity avoids some gate/up reads and dot products, but does n
 
 Reference: [`op_route`](src/llama-dna.cpp).
 
-### 3. Down projection uses per-neuron AXPY updates
+### 3. Down projection uses tiled sparse IQ3_CXS2
 
-`op_down` initializes each output row from `c0`, scans the full neuron delta for each token, and applies an AXPY for every nonzero delta using the transposed F16 down weights.
+`op_down` now scans the delta once per token to build an active-neuron list, then
+assigns disjoint 160-output tiles to threads. Each active neuron contributes its
+64-byte IQ3_CXS2 block for the tile through an AVX2 kernel when supported, with
+a scalar fallback. The kernel initializes from `c0` and writes each completed
+tile once. Routed MoE down projection uses the same quantized blocks and tile
+kernel, applying router weights to both the bias and active contributions.
 
-This avoids computing silent neurons, but does not use a batched matrix-multiply kernel. With larger token counts, the same active weight rows are revisited for each token. Whether this is slower than dense execution depends on sparsity, model dimensions, cache behavior, and CPU.
+The persistent FP16 transpose has been removed. Calibration uses a temporary
+FP16 transpose as staging, then quantizes the scaled rows to IQ3_CXS2; the
+staging allocation is released before prediction. The retained storage is
+64 bytes per 160 weights plus eight E5M3 scales per neuron. Quantization thus
+preserves the former FP16 staging precision, and the final output tile
+accumulates in F32.
 
-- [ ] Need faster down projection in the sparse regime.
+- [x] Replace `down_t` with an efficient sparse down transformation.
 
-Reference: [`op_down`](src/llama-dna.cpp).
+References: [`op_down`](src/llama-dna.cpp), and the scalar/AVX2 tile kernels in
+[`dna-iq3-cxs2.c`](src/dna-iq3-cxs2.c).
 
 ### 4. Intermediate and persistent memory grow with model/batch size
 
 - The route output (`delta`) contains `n_ff * n_tokens` F32 values, or `4 * n_ff * n_tokens` bytes per layer before allocator reuse. For example, `n_ff = 11008` and `n_tokens = 512` is about 21.5 MiB for one such tensor.
-- After bias calibration, each layer retains `down_t`, an F16 copy with `n_ff * n_embd` elements, in addition to the model's original down weights.
+- After bias calibration, each layer retains IQ3_CXS2 down blocks and eight E5M3 scales per neuron, in addition to the model's original down weights.
 - Each enabled layer retains its packed predictor gate (`pred_q`) and per-neuron calibration/prediction data. MoE layers hold corresponding state per expert.
 
 The delta tensor is batch-dependent; the transposed weights and predictor are model/layer-dependent. Batching or removing the batch guard should therefore be measured for peak memory as well as speed.
 
 - [ ] Remove calibration data after prediction starts, decided per layer.
 - [ ] Schedule low-RAM calibration according to available memory: run as many layers in parallel as free RAM allows and start new layers when calibration ends.
-- [ ] Replace `down_t` with an efficient sparse down transformation.
 
-References: the `delta` allocation in [`build_ffn`](src/llama-graph.cpp), and `down_t`/`pred_q` storage in [`llama-dna.cpp`](src/llama-dna.cpp).
+References: the `delta` allocation in [`build_ffn`](src/llama-graph.cpp), and `down_blocks`/`down_scales`/`pred_q` storage in [`llama-dna.cpp`](src/llama-dna.cpp).
 
 ### 5. Setup and calibration delay the point at which skipping begins
 
@@ -112,21 +122,21 @@ The open items below consolidate the TODOs described throughout this document.
   - [x] clarify how to compute the 8 scales per row (neuron)
   - [x] implement the complete quantization code in pure C. If it profits from AVX2 then also add that codepath. No AVX512 path planned for quantization.
   - [x] implement and test in C codebase
-- [ ] Replace sparse down AXPY work with an efficient sparse down transformation or batched sparse kernel.
+- [x] Replace sparse down AXPY work with an efficient sparse down transformation.
   - [x] Implement reference C kernels for the 16-weight subblock down tile accumulation in md.
-  - [ ] Implement reference C kernels for the 16-weight subblock down tile accumulation in C codebase.
+  - [x] Implement scalar C kernels for the 16-weight subblock down tile accumulation in C codebase.
   - [x] Implement SIMD kernels (e.g. AVX2/AVX-512/NEON) for the 16-weight subblock down tile accumulation in md.
-  - [ ] Implement SIMD kernels (e.g. AVX2/AVX-512/NEON) for the 16-weight subblock down tile accumulation in C codebase.
+  - [x] Implement AVX2 down tile accumulation in C codebase, with runtime dispatch and scalar fallback.
   - [ ] Implement L1-blocked batching over active neurons (up to 32 neurons per batch) to keep partial sums and weight blocks cache-resident.
   - [ ] Benchmark sparse down tile traversal versus dense down projection across thread counts, batch sizes, and active fractions.
   - Decisions:
     - Block granularity: 64 bytes covering 160 weights (ten 16-weight subblocks), ensuring cache-line alignment.
     - Thread partitioning: by output tiles (each thread owns a disjoint set of output positions, eliminating cross-thread sum reductions).
-    - Accumulation precision: internal accumulation in F32, converting to BF16 once per completed tile.
+    - Accumulation precision: internal accumulation and output in F32.
+    - Tail dimensions: pad the last block and pass the number of valid 16-weight subblocks to skip padded work.
+    - Scale storage: eight E5M3 scale bytes per neuron; each block stores a 3-bit selector per subblock.
+    - Default tile size: one 64-byte block, covering 160 output weights; multi-line tiles remain unmeasured.
   - Open Questions:
-    - Tail dimension handling: standard hidden sizes ($d_{\text{model}} = 4096$, etc.) are not multiples of 160 ($4096 / 160 = 25.6$). Should tensors be padded to multiples of 160 or should a dedicated tail-block layout be specified? <-- parameter how many subblocks are to be computed, defaults to all. The last block saves no storage, still a full cache line, but is faster to compute.
-    - Superblock scale representation: are `superblock_scales` stored as FP32, FP16, or E5M3, and how are they laid out alongside the 64-byte block payloads? <-- store as FP32 to simplify compute on CPU and SIMD. BF16 or FP16 have enough precision, though.
-    - Optimal tile size per thread: is 1 cache line (160 BF16 values = 320 bytes) the optimal tile size, or does a multi-line tile (e.g. 2-4 lines) reduce thread scheduling overhead on wide-core CPUs? <-- to be measured once all is implemented. Use 1 line tiles as default.
 
 - [ ] Implement and benchmark sparse indirect-row multi-GEMV for gate/up.
   - [x] Implement C reference multi-row indirect kernel (`ggml_gemv_iq3_cxs2_mr4_indirect_q8_0`) with shared activation LUT in md.
@@ -243,26 +253,22 @@ active-row counts and row distributions before choosing a production default.
 
 ### sparse down projection
 
-"Replace sparse down AXPY work with an efficient sparse down transformation or batched sparse kernel."
-
-The current implementation is a sparse sequence of per-neuron AXPY operations:
-for each token, it scans every neuron, and for each active neuron it adds
-`delta[i] * Wdown[:, i]` to the output vector. Each neuron column is stored
-contiguously in `down_t`, so this layout is already suitable for sparse
-column-style updates.
+The down transformation is a sparse sequence of active-neuron contributions.
+For each token, the active list is applied to output tiles of 160 values. Each
+neuron stores a neuron-major sequence of 64-byte IQ3_CXS2 blocks, so a tile
+loads one block per active neuron and accumulates its decoded values into the
+F32 output tile.
 
 A GGML-style block model is more suitable than assuming every result block
 is storage-aligned:
 
 - Existing IQ4_XS and IQ3_XXS types use 256-value weight blocks, but they are legacy storage formats and do not satisfy the sparse-down cache layout: IQ4_XS stores 256 weights in a 136-byte block and IQ3_XXS in a 98-byte block.
-- The proposed sparse-down block type will instead fit exactly into `n * 64` bytes and contain a multiple of 16 weights.
- - example IQ3_CXS2:
-	* 8 per matrix scale factors (E5M3), not per block, not counted here
-	- 16w blocks a 3*16b + 3b scale factor select
-	- 2 * 5 * 16w = 160w, 510bit (512bit / 160w = 3.2 bpw)
+- The sparse-down type is IQ3_CXS2, implemented in `src/dna-iq3-cxs2.c`:
+  - Each 64-byte line encodes ten 16-weight subblocks: a 16-bit sign mask, 32-bit index field, and 3-bit scale selector per subblock.
+  - Eight E5M3 scales are stored once per neuron, outside the block payload.
+  - The line stores 510 meaningful bits for 160 weights, or 3.2 bpw before the per-neuron scale table.
 - A block may cover 16, 32, or more weights depending on its packed format, but its byte size will remain a multiple of a cache line.
 - The 16-weight granularity provides SIMD-compatible subblocks. Larger blocks may contain multiple 16-weight subblocks and span multiple cache lines.
-- The sparse transformation will use these blocks directly for cache-line and thread-sized work partitioning. The production bit layout and metadata semantics are not finalized; the scalar reference below states its assumed layout explicitly.
 
 
 For the sparse down projection, one useful model is:

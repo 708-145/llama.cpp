@@ -18,6 +18,11 @@ typedef struct dna_iq3_cxs2_block {
     alignas(64) uint8_t bytes[DNA_IQ3_CXS2_LINE_BYTES];
 } dna_iq3_cxs2_block;
 
+typedef struct dna_iq3_cxs2_active_neuron {
+    int32_t index;
+    float   activation;
+} dna_iq3_cxs2_active_neuron;
+
 // Convert 32-bit float to unsigned 8-bit E5M3 (5 exponent bits, 3 mantissa bits, bias 15)
 uint8_t dna_f32_to_e5m3(float val);
 
@@ -56,6 +61,28 @@ void dna_iq3_cxs2_dequantize_block(
     const dna_iq3_cxs2_block * block,
     const float                scales_f32[8],
     float                      out_weights[160]);
+
+// Add active-neuron contributions to one 160-weight output tile.
+// The AVX2 variant requires runtime CPU-feature dispatch by the caller.
+void dna_iq3_cxs2_down_tile_accum(
+    float                           tile_accum[DNA_IQ3_CXS2_WEIGHTS_PER_LINE],
+    const dna_iq3_cxs2_active_neuron * active_neurons,
+    size_t                           active_count,
+    size_t                           tile_idx,
+    size_t                           n_blocks_stride,
+    const dna_iq3_cxs2_block        * down_blocks,
+    const uint8_t                   * down_scales,
+    size_t                           n_subblocks);
+
+void dna_iq3_cxs2_down_tile_accum_avx2(
+    float                           tile_accum[DNA_IQ3_CXS2_WEIGHTS_PER_LINE],
+    const dna_iq3_cxs2_active_neuron * active_neurons,
+    size_t                           active_count,
+    size_t                           tile_idx,
+    size_t                           n_blocks_stride,
+    const dna_iq3_cxs2_block        * down_blocks,
+    const uint8_t                   * down_scales,
+    size_t                           n_subblocks);
 
 #ifdef __cplusplus
 }

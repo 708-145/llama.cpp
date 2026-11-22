@@ -6,7 +6,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-#if defined(__AVX2__)
+#if defined(__AVX2__) || \
+    (defined(__GNUC__) && (defined(__x86_64__) || defined(__i386__)))
 #include <immintrin.h>
 #endif
 
@@ -470,4 +471,132 @@ void dna_iq3_cxs2_dequantize_block(
             out_weights[sub * 16 + i] = sign ? -val : val;
         }
     }
+}
+
+void dna_iq3_cxs2_down_tile_accum(
+    float                            tile_accum[DNA_IQ3_CXS2_WEIGHTS_PER_LINE],
+    const dna_iq3_cxs2_active_neuron * active_neurons,
+    size_t                            active_count,
+    size_t                            tile_idx,
+    size_t                            n_blocks_stride,
+    const dna_iq3_cxs2_block         * down_blocks,
+    const uint8_t                    * down_scales,
+    size_t                            n_subblocks)
+{
+    assert(n_subblocks <= DNA_IQ3_CXS2_SUBBLOCKS_PER_LINE);
+
+    for (size_t a = 0; a < active_count; ++a) {
+        const int32_t neuron = active_neurons[a].index;
+        const float activation = active_neurons[a].activation;
+        const dna_iq3_cxs2_block * block =
+            down_blocks + (size_t) neuron * n_blocks_stride + tile_idx;
+        const uint8_t * scales_e5m3 = down_scales + (size_t) neuron * 8;
+        float scales[8];
+
+        for (size_t k = 0; k < 8; ++k) {
+            scales[k] = dna_e5m3_to_f32(scales_e5m3[k]);
+        }
+
+        const uint32_t selectors = dna_load_le32(block->bytes + 60);
+        for (size_t sub = 0; sub < n_subblocks; ++sub) {
+            const uint8_t * payload = block->bytes + sub * 6;
+            const uint16_t signs = dna_load_le16(payload);
+            const uint32_t indices = dna_load_le32(payload + 2);
+            const uint32_t scale_idx = (selectors >> (3 * sub)) & 7u;
+            const float scale = activation * scales[scale_idx];
+            const size_t sub_offset = sub * DNA_IQ3_CXS2_WEIGHTS_PER_SUBBLOCK;
+
+            for (size_t i = 0; i < DNA_IQ3_CXS2_WEIGHTS_PER_SUBBLOCK; ++i) {
+                const uint32_t index = (indices >> (2 * i)) & 3u;
+                const float contribution =
+                    scale * (float) dna_iq3_cxs2_magnitudes[index];
+                tile_accum[sub_offset + i] +=
+                    ((signs >> i) & 1u) ? -contribution : contribution;
+            }
+        }
+    }
+}
+
+#if defined(__GNUC__) && (defined(__x86_64__) || defined(__i386__))
+__attribute__((target("avx2")))
+#endif
+void dna_iq3_cxs2_down_tile_accum_avx2(
+    float                            tile_accum[DNA_IQ3_CXS2_WEIGHTS_PER_LINE],
+    const dna_iq3_cxs2_active_neuron * active_neurons,
+    size_t                            active_count,
+    size_t                            tile_idx,
+    size_t                            n_blocks_stride,
+    const dna_iq3_cxs2_block         * down_blocks,
+    const uint8_t                    * down_scales,
+    size_t                            n_subblocks)
+{
+#if defined(__GNUC__) && (defined(__x86_64__) || defined(__i386__))
+    assert(n_subblocks <= DNA_IQ3_CXS2_SUBBLOCKS_PER_LINE);
+
+    const __m256 base_lut =
+        _mm256_setr_ps(1.0f, 3.0f, 9.0f, 27.0f, 1.0f, 3.0f, 9.0f, 27.0f);
+    const __m256i index_shifts0 =
+        _mm256_setr_epi32(0, 2, 4, 6, 8, 10, 12, 14);
+    const __m256i index_shifts1 =
+        _mm256_setr_epi32(16, 18, 20, 22, 24, 26, 28, 30);
+    const __m256i sign_shifts0 =
+        _mm256_setr_epi32(0, 1, 2, 3, 4, 5, 6, 7);
+    const __m256i sign_shifts1 =
+        _mm256_setr_epi32(8, 9, 10, 11, 12, 13, 14, 15);
+    const __m256i mask3 = _mm256_set1_epi32(3);
+    const __m256i mask1 = _mm256_set1_epi32(1);
+
+    for (size_t a = 0; a < active_count; ++a) {
+        const int32_t neuron = active_neurons[a].index;
+        const float activation = active_neurons[a].activation;
+        const dna_iq3_cxs2_block * block =
+            down_blocks + (size_t) neuron * n_blocks_stride + tile_idx;
+        const uint8_t * scales_e5m3 = down_scales + (size_t) neuron * 8;
+        float scales[8];
+        for (size_t k = 0; k < 8; ++k) {
+            scales[k] = dna_e5m3_to_f32(scales_e5m3[k]);
+        }
+
+        const uint32_t selectors = dna_load_le32(block->bytes + 60);
+        for (size_t sub = 0; sub < n_subblocks; ++sub) {
+            const uint8_t * payload = block->bytes + sub * 6;
+            const uint16_t signs = dna_load_le16(payload);
+            const uint32_t indices = dna_load_le32(payload + 2);
+            const uint32_t scale_idx = (selectors >> (3 * sub)) & 7u;
+            const __m256 lut = _mm256_mul_ps(
+                base_lut, _mm256_set1_ps(activation * scales[scale_idx]));
+
+            const __m256i packed_indices =
+                _mm256_set1_epi32((int32_t) indices);
+            const __m256i packed_signs =
+                _mm256_set1_epi32((int32_t) signs);
+            const __m256i idx0 =
+                _mm256_and_si256(_mm256_srlv_epi32(packed_indices, index_shifts0), mask3);
+            const __m256i idx1 =
+                _mm256_and_si256(_mm256_srlv_epi32(packed_indices, index_shifts1), mask3);
+            const __m256i sign0 =
+                _mm256_and_si256(_mm256_srlv_epi32(packed_signs, sign_shifts0), mask1);
+            const __m256i sign1 =
+                _mm256_and_si256(_mm256_srlv_epi32(packed_signs, sign_shifts1), mask1);
+
+            __m256 values0 = _mm256_permutevar8x32_ps(lut, idx0);
+            __m256 values1 = _mm256_permutevar8x32_ps(lut, idx1);
+            values0 = _mm256_castsi256_ps(_mm256_xor_si256(
+                _mm256_castps_si256(values0), _mm256_slli_epi32(sign0, 31)));
+            values1 = _mm256_castsi256_ps(_mm256_xor_si256(
+                _mm256_castps_si256(values1), _mm256_slli_epi32(sign1, 31)));
+
+            const size_t offset =
+                sub * DNA_IQ3_CXS2_WEIGHTS_PER_SUBBLOCK;
+            _mm256_storeu_ps(tile_accum + offset,
+                _mm256_add_ps(_mm256_loadu_ps(tile_accum + offset), values0));
+            _mm256_storeu_ps(tile_accum + offset + 8,
+                _mm256_add_ps(_mm256_loadu_ps(tile_accum + offset + 8), values1));
+        }
+    }
+#else
+    dna_iq3_cxs2_down_tile_accum(
+        tile_accum, active_neurons, active_count, tile_idx, n_blocks_stride,
+        down_blocks, down_scales, n_subblocks);
+#endif
 }
