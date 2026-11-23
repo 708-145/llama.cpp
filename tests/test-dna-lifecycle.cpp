@@ -19,6 +19,7 @@
 static constexpr int64_t N_EMBD = 64;
 static constexpr int64_t N_FF = 4;
 static constexpr int N_LAYERS = 2;
+static constexpr uint32_t N_CALIB = 32;
 
 struct llama_model_deleter {
     void operator()(llama_model * model) const {
@@ -153,7 +154,7 @@ int main(void) {
     CHECK(buffer != nullptr);
 
     llama_dna_params params;
-    params.n_calib = 2;
+    params.n_calib = N_CALIB;
     params.thresh = 0.0f;
     params.min_active = 0.0f;
     params.pred_type = GGML_TYPE_Q8_0;
@@ -173,25 +174,32 @@ int main(void) {
     uint32_t epoch = dna.update();
     CHECK(dna.get_stats().n_phase_stats == N_LAYERS);
 
-    observe(dna, layers[0], epoch, false);
-    observe(dna, layers[1], epoch, false);
+    for (uint32_t i = 0; i < N_CALIB - 1; ++i) {
+        observe(dna, layers[0], epoch, false);
+        observe(dna, layers[1], epoch, false);
+    }
     CHECK(dna.get_stats().n_phase_stats == N_LAYERS);
 
     observe(dna, layers[1], epoch, true);
     CHECK(dna.get_stats().n_phase_stats == 1);
     CHECK(dna.get_stats().n_phase_bias == 1);
 
-    observe(dna, layers[1], epoch, false);
-    observe(dna, layers[0], epoch, true);
-    CHECK(dna.get_stats().n_phase_stats == 0);
-    CHECK(dna.get_stats().n_phase_bias == N_LAYERS);
-
-    observe(dna, layers[0], epoch, false);
+    for (uint32_t i = 0; i < N_CALIB - 1; ++i) {
+        observe(dna, layers[1], epoch, false);
+    }
     observe(dna, layers[1], epoch, true);
     CHECK(dna.get_stats().n_phase_predict == 1);
-    CHECK(dna.get_stats().n_phase_bias == 1);
+    CHECK(dna.get_stats().n_phase_stats == 1);
     check_predict(layers[1]);
 
+    observe(dna, layers[0], epoch, true);
+    CHECK(dna.get_stats().n_phase_stats == 0);
+    CHECK(dna.get_stats().n_phase_bias == 1);
+    CHECK(dna.get_stats().n_phase_predict == 1);
+
+    for (uint32_t i = 0; i < N_CALIB - 1; ++i) {
+        observe(dna, layers[0], epoch, false);
+    }
     observe(dna, layers[0], epoch, true);
     CHECK(dna.get_stats().n_phase_predict == N_LAYERS);
     for (int il = 0; il < N_LAYERS; ++il) {

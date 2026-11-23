@@ -138,7 +138,8 @@ The open items below consolidate the TODOs described throughout this document.
 
 - [x] Run matched dense-versus-DNA measurements for every predictor using the same model, corpus, chunking, calibration, threads, context, and batch settings.
 - [x] Report PPL over an isolated prediction-on subset using the same equal-sized chunk formula for every run.
-- [x] Add a DNA lifecycle regression test covering independent per-layer calibration transitions, epoch changes, and prediction through gate/up and sparse down operators. See [tests/test-dna-lifecycle.cpp](tests/test-dna-lifecycle.cpp).
+- [x] Add a DNA lifecycle regression test covering exact per-phase token thresholds, independent layer transitions, epoch changes, and prediction through gate/up and sparse down operators after calibration cleanup. See [tests/test-dna-lifecycle.cpp](tests/test-dna-lifecycle.cpp).
+- [x] Exercise STATS → BIAS → PREDICT through real `llama_context` decode and graph reuse with a synthetic Llama model. See CTest `test-dna-context-phase`.
 - [x] Compare scalar and AVX2 IQ3_CXS2 row quantization, sparse down accumulation, and MR=4 indirect gate/up GEMV against the single-row F32 `vec_dot` reference. See [tests/test-dna-iq3.c](tests/test-dna-iq3.c).
 - [x] Add a scalar and AVX2 IQ3_CXS2 MR=4 indirect gate/up kernel. It remains a standalone operator; `op_route` still uses the selected GGML predictor type and its CPU `vec_dot`.
 
@@ -1074,10 +1075,10 @@ void dna_iq3_cxs2_quantize_row(
 The implementation is located in [`src/dna-iq3-cxs2.h`](src/dna-iq3-cxs2.h) and [`src/dna-iq3-cxs2.c`](src/dna-iq3-cxs2.c).
 
 ###### Compile and Run Unit Tests
-From a configured build, run the lifecycle regression and the IQ3_CXS2 scalar/SIMD comparisons with:
+From a configured build, run the context-level phase-transition regression, lifecycle regression, and IQ3_CXS2 scalar/SIMD comparisons with:
 ```bash
-cmake --build build --target test-dna-lifecycle test-dna-iq3
-ctest --test-dir build -R '^(test-dna-lifecycle|test-dna-iq3)$' --output-on-failure
+cmake --build build --target test-llama-archs test-dna-lifecycle test-dna-iq3
+ctest --test-dir build -R '^(test-dna-context-phase|test-dna-lifecycle|test-dna-iq3)$' --output-on-failure
 ```
 
 The standalone round-trip test checks E5M3 conversions, SNR, AVX2 bit equivalence, sparse down accumulation, and silence handling:

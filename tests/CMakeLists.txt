@@ -429,6 +429,8 @@ target_link_libraries(${TEST_TARGET} PRIVATE llama)
 llama_build_and_test(test-dna-iq3.c ../src/dna-iq3-cxs2.c LABEL "behavior" LINK llama-common ggml-cpu)
 llama_build_and_test(test-dna-compare-quants.cpp ../src/dna-iq3-cxs2.c LABEL "behavior" LINK ggml-cpu ggml-base ggml)
 llama_build_and_test(test-dna-lifecycle.cpp LABEL "behavior" LINK llama)
+llama_test(test-llama-archs NAME test-dna-context-phase LABEL "behavior" ARGS --dna-phase-test)
+set_tests_properties(test-dna-context-phase PROPERTIES ENVIRONMENT "LLAMA_DNA_CALIB=2")
 
 if (NOT LLAMA_USE_SYSTEM_GGML)
     # Needs non-public ggml-impl.h

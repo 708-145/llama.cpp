@@ -7,6 +7,7 @@
 #include "llama.h"
 #include "llama-cpp.h"
 #include "../src/llama-ext.h"
+#include "../src/llama-dna.h"
 
 #include <algorithm>
 #include <cinttypes>
@@ -893,6 +894,79 @@ static std::vector<float> get_logits(
         }
     }
     return ret;
+}
+
+static int test_dna_context_phase_transition(const size_t seed, const float stdev) {
+    gguf_context_ptr gguf_ctx = get_gguf_ctx(LLM_ARCH_LLAMA, false);
+    llama_model_ptr model = get_model(gguf_ctx.get(), nullptr, seed, stdev, {});
+
+    llama_context_params cparams = llama_context_default_params();
+    cparams.n_ctx = 0;
+    cparams.n_threads = 2;
+    cparams.n_threads_batch = 2;
+    cparams.n_ubatch = 2;
+    cparams.dna = true;
+
+    llama_context_ptr ctx(llama_init_from_model(model.get(), cparams));
+    if (!ctx) {
+        throw std::runtime_error("failed to create DNA test context");
+    }
+
+    const auto * dna = static_cast<const llama_dna *>(llama_get_dna(ctx.get()));
+    if (!dna || dna->params.n_calib != 2) {
+        throw std::runtime_error("DNA phase test requires LLAMA_DNA_CALIB=2");
+    }
+
+    const uint32_t n_vocab = llama_vocab_n_tokens(llama_model_get_vocab(model.get()));
+    const std::vector<llama_token> tokens = get_tokens(32, n_vocab, seed);
+    uint32_t pos = 0;
+
+    const auto decode = [&](uint32_t n_tokens) {
+        common_batch batch(ctx.get());
+        for (uint32_t i = 0; i < n_tokens; ++i) {
+            batch.add(tokens[pos], pos, 0, i + 1 == n_tokens);
+            ++pos;
+        }
+        if (llama_process(ctx.get(), LLAMA_PROCESS_TYPE_DECODE, batch.get()) != 0) {
+            throw std::runtime_error("DNA phase test decode failed");
+        }
+    };
+
+    // Prime the context with a multi-token batch, then keep decoding single-token
+    // batches to exercise phase changes while reusing the same graph shape.
+    decode(2);
+    llama_dna_stats phases = dna->get_stats();
+    const int n_dna_layers = phases.n_layers_on;
+    GGML_ASSERT(n_dna_layers > 0);
+    GGML_ASSERT(phases.n_phase_stats == n_dna_layers);
+    GGML_ASSERT(phases.n_phase_bias == 0);
+    GGML_ASSERT(phases.n_phase_predict == 0);
+
+    bool saw_bias = false;
+    bool saw_staggered_phases = false;
+    for (uint32_t i = 0; i < 16 && phases.n_phase_predict < n_dna_layers; ++i) {
+        decode(1);
+        const llama_dna_stats next = dna->get_stats();
+        GGML_ASSERT(next.n_layers_on == n_dna_layers);
+        GGML_ASSERT(next.n_phase_stats + next.n_phase_bias + next.n_phase_predict == n_dna_layers);
+        GGML_ASSERT(next.n_phase_stats <= phases.n_phase_stats);
+        GGML_ASSERT(next.n_phase_predict >= phases.n_phase_predict);
+        saw_bias = saw_bias || next.n_phase_bias > 0;
+        saw_staggered_phases = saw_staggered_phases || (next.n_phase_stats > 0 && next.n_phase_bias > 0);
+        phases = next;
+    }
+
+    GGML_ASSERT(saw_bias);
+    GGML_ASSERT(saw_staggered_phases);
+    GGML_ASSERT(phases.n_phase_predict == n_dna_layers);
+
+    decode(1);
+    const llama_dna_stats predicted = dna->get_stats();
+    GGML_ASSERT(predicted.n_phase_predict == n_dna_layers);
+    GGML_ASSERT(predicted.pred_tokens > 0);
+
+    std::printf("DNA context phase-transition test passed\n");
+    return 0;
 }
 
 // entries [n/4, n/2) are embd rows, decoded either as token/embd/token chunks or as one mixed batch
@@ -1794,6 +1868,7 @@ int main(int argc, char ** argv) {
     std::string out;
     const char * target_backend = nullptr;
     bool kv_shift = false;
+    bool dna_phase_test = false;
 
     int verbosity = LOG_LEVEL_ERROR;
 
@@ -1863,6 +1938,8 @@ int main(int argc, char ** argv) {
             }
         } else if (strcmp(argv[i], "--kv-shift") == 0) {
             kv_shift = true;
+        } else if (strcmp(argv[i], "--dna-phase-test") == 0) {
+            dna_phase_test = true;
         } else {
             LOG_ERR("%s: unknown argument: %s\n", __func__, argv[i]);
             usage(argv);
@@ -1883,6 +1960,9 @@ int main(int argc, char ** argv) {
         }
         if (kv_shift) {
             return test_kv_shift(arch_filter, seed, stdev, verbosity);
+        }
+        if (dna_phase_test) {
+            return test_dna_context_phase_transition(seed, stdev);
         }
         return test_backends(arch_filter, seed, stdev, verbosity, target_backend);
     } catch (const std::exception & err) {
