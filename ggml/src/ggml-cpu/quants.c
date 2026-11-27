@@ -1,5 +1,6 @@
 #define GGML_COMMON_IMPL_C
 #include "ggml-common.h"
+#include "ggml-iq3-cxs2.h"
 
 #include "ggml-cpu-impl.h"
 #include "simd-mappings.h"
@@ -524,6 +525,47 @@ void ggml_vec_dot_q8_0_q8_0_generic(int n, float * GGML_RESTRICT s, size_t bs, c
     }
 
     *s = sumf;
+}
+
+void ggml_vec_dot_iq3_cxs2_q8_0_generic(
+        int n, float * GGML_RESTRICT s, size_t bs,
+        const void * GGML_RESTRICT vx, size_t bx,
+        const void * GGML_RESTRICT vy, size_t by, int nrc) {
+    assert(n > 0 && n % QK8_0 == 0);
+    assert(nrc == 1);
+    UNUSED(nrc);
+    UNUSED(bs);
+    UNUSED(bx);
+    UNUSED(by);
+
+    const block_q8_0 * y = vy;
+    const size_t n_lines =
+        (size_t) n / DNA_IQ3_CXS2_WEIGHTS_PER_LINE +
+        (n % DNA_IQ3_CXS2_WEIGHTS_PER_LINE != 0);
+    const dna_iq3_cxs2_block * blocks = vx;
+    const uint8_t * scales_e5m3 =
+        (const uint8_t *) vx + n_lines * sizeof(*blocks);
+    float scales[8];
+    for (size_t i = 0; i < 8; ++i) {
+        scales[i] = dna_e5m3_to_f32(scales_e5m3[i]);
+    }
+
+    float sum = 0.0f;
+    for (size_t line = 0; line < n_lines; ++line) {
+        float weights[DNA_IQ3_CXS2_WEIGHTS_PER_LINE];
+        dna_iq3_cxs2_dequantize_block(&blocks[line], scales, weights);
+        const size_t offset = line * DNA_IQ3_CXS2_WEIGHTS_PER_LINE;
+        const size_t n_line = (size_t) n - offset < DNA_IQ3_CXS2_WEIGHTS_PER_LINE
+            ? (size_t) n - offset
+            : DNA_IQ3_CXS2_WEIGHTS_PER_LINE;
+        for (size_t i = 0; i < n_line; ++i) {
+            const size_t input = offset + i;
+            const block_q8_0 * q8_block = &y[input / QK8_0];
+            const float activation_scale = GGML_CPU_FP16_TO_FP32(q8_block->d);
+            sum += weights[i] * activation_scale * q8_block->qs[input % QK8_0];
+        }
+    }
+    *s = sum;
 }
 
 void ggml_vec_dot_tq1_0_q8_K_generic(int n, float * GGML_RESTRICT s, size_t bs, const void * GGML_RESTRICT vx, size_t bx, const void * GGML_RESTRICT vy, size_t by, int nrc) {

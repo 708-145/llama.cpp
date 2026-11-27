@@ -141,7 +141,11 @@ The open items below consolidate the TODOs described throughout this document.
 - [x] Add a DNA lifecycle regression test covering exact per-phase token thresholds, independent layer transitions, epoch changes, and prediction through gate/up and sparse down operators after calibration cleanup. See [tests/test-dna-lifecycle.cpp](tests/test-dna-lifecycle.cpp).
 - [x] Exercise STATS → BIAS → PREDICT through real `llama_context` decode and graph reuse with a synthetic Llama model. See CTest `test-dna-context-phase`.
 - [x] Compare scalar and AVX2 IQ3_CXS2 row quantization, sparse down accumulation, and MR=4 indirect gate/up GEMV against the single-row F32 `vec_dot` reference. See [tests/test-dna-iq3.c](tests/test-dna-iq3.c).
-- [x] Add a scalar and AVX2 IQ3_CXS2 MR=4 indirect gate/up kernel. It remains a standalone operator; `op_route` still uses the selected GGML predictor type and its CPU `vec_dot`.
+- [x] Add scalar and AVX2 IQ3_CXS2 MR=4 indirect gate/up kernels and integrate into `op_route` (enabled via `LLAMA_DNA_MR4=1` or when gate/up are pre-encoded as `GGML_TYPE_IQ3_CXS2`, with automatic requantization from incompatible types at layer initialization).
+- [x] Compare IQ3_CXS2 reconstruction quality against baseline GGML quants (`tests/test-dna-compare-quants.cpp`):
+  - IQ3_XXS (3.06 bpw): RMSE 0.009471, SNR 12.95 dB
+  - IQ3_CXS2 (3.20 bpw): RMSE 0.009425, SNR 12.99 dB
+  - IQ4_XS (4.25 bpw): RMSE 0.003472, SNR 21.66 dB
 
 The matched quality sweep can be rerun from WSL with
 [`scripts/dna-ppl-sweep.sh`](scripts/dna-ppl-sweep.sh):
@@ -184,7 +188,15 @@ final PPL estimate.
   - [x] Implement scalar MR=4 indirect-row gate/up GEMV in C (`dna_iq3_cxs2_gemv_mr4_indirect_q8_0`).
   - [x] Implement AVX2 MR=4 indirect-row gate/up GEMV in C (`dna_iq3_cxs2_gemv_mr4_indirect_q8_0_avx2`).
   - [x] Add regression coverage against single-row F32 `vec_dot`, including non-adjacent rows and a short tail.
-  - [ ] Integrate the multi-row operator into `op_route` and benchmark it against the existing single-row path.
+  - [x] Integrate the multi-row operator into `op_route` and benchmark it against the existing single-row path.
+    - MR=4 path is integrated into `op_route` behind `LLAMA_DNA_MR4=1` or when gate/up are `GGML_TYPE_IQ3_CXS2`. Incompatible tensor types are automatically dequantized and re-quantized to IQ3_CXS2 rows via `llama_dna_pack_mr4_gate_up`.
+    - Tested in `test-dna-iq3` ([7] benchmark sweep) and `test-dna-lifecycle`.
+    - Microbenchmark results ($N_{\text{ff}}=4096, N_{\text{embd}}=4096$, per-token wall-clock time):
+      - 1% active (41 rows): F32-ref 17 us, scalar MR=4 233 us, AVX2 MR=4 297 us
+      - 5% active (205 rows): F32-ref 203 us, scalar MR=4 1.39 ms, AVX2 MR=4 1.78 ms
+      - 10% active (410 rows): F32-ref 717 us, scalar MR=4 2.35 ms, AVX2 MR=4 3.34 ms
+      - 20% active (819 rows): F32-ref 1.37 ms, scalar MR=4 5.29 ms, AVX2 MR=4 6.20 ms
+      - 50% active (2048 rows): F32-ref 2.53 ms, scalar MR=4 11.69 ms, AVX2 MR=4 14.78 ms
   - [ ] Compare MR=4 against MR=1, MR=2, and MR=8 to find optimal register-pressure vs. activation-reuse balance across CPU architectures.
   - [ ] Benchmark cache behavior under scattered/non-adjacent row index distributions versus contiguous row subsets.
   - Decisions:

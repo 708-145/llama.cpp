@@ -2,6 +2,7 @@ import struct
 import numpy as np
 import pytest
 
+from gguf.constants import GGMLQuantizationType
 from gguf.gguf_reader import GGUFReader
 
 
@@ -35,3 +36,20 @@ def test_dims_product_no_uint64_wraparound(tmp_path):
     _write_gguf(p, len(dims), dims)
     with pytest.raises(ValueError):
         GGUFReader(p)
+
+
+def test_iq3_cxs2_row_footer_layout(tmp_path):
+    p = tmp_path / 'iq3_cxs2.gguf'
+    buf = b'GGUF' + struct.pack('<IQQ', 3, 1, 0)
+    name = b'iq3_cxs2_tensor'
+    buf += struct.pack('<Q', len(name)) + name
+    buf += struct.pack('<I', 2)
+    buf += struct.pack('<QQ', 1536, 2)
+    buf += struct.pack('<I', GGMLQuantizationType.IQ3_CXS2)
+    buf += struct.pack('<Q', 0)
+    buf += b'\x00' * 4096
+    p.write_bytes(buf)
+
+    tensor = GGUFReader(p).tensors[0]
+    assert tensor.n_bytes == 2 * (10 * 64 + 8)
+    assert tensor.data.shape == (2, 10 * 64 + 8)

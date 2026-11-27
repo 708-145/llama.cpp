@@ -1,6 +1,6 @@
 #include "llama-dna.h"
 
-#include "dna-iq3-cxs2.h"
+#include "ggml-iq3-cxs2.h"
 #include "llama-impl.h"
 #include "llama-model.h"
 
@@ -62,6 +62,12 @@ struct llama_dna_layer {
     ggml_from_float_t from_float_up   = nullptr;
     enum ggml_type   vdt_gate = GGML_TYPE_F32;
     enum ggml_type   vdt_up   = GGML_TYPE_F32;
+
+    bool mr4_enabled = false;
+    ggml_from_float_t mr4_from_float = nullptr;
+    size_t mr4_blocks_per_neuron = 0;
+    std::vector<dna_iq3_cxs2_block> mr4_gate_blocks, mr4_up_blocks;
+    std::vector<uint8_t> mr4_gate_scales, mr4_up_scales;
 
     llama_dna_phase phase = LLAMA_DNA_PHASE_STATS;
 
@@ -308,6 +314,63 @@ static void llama_dna_pack_gate(llama_dna_layer & L) {
             tr->from_float_ref(wf.data(), dst, L.n_embd);
         }
     }
+}
+
+static void llama_dna_pack_mr4_rows(
+        const ggml_tensor * weights,
+        int64_t n_rows,
+        size_t blocks_per_row,
+        std::vector<dna_iq3_cxs2_block> & blocks,
+        std::vector<uint8_t> & scales) {
+    if (weights->type == GGML_TYPE_IQ3_CXS2) {
+        return;
+    }
+
+    const size_t padded_n = blocks_per_row * DNA_IQ3_CXS2_WEIGHTS_PER_LINE;
+    std::vector<float> row(padded_n, 0.0f);
+    std::vector<float> unpacked((size_t) weights->ne[0]);
+    blocks.resize((size_t) n_rows * blocks_per_row);
+    scales.resize((size_t) n_rows * 8);
+    for (int64_t i = 0; i < n_rows; ++i) {
+        llama_dna_row_to_float(weights, i, unpacked.data());
+        std::copy(unpacked.begin(), unpacked.end(), row.begin());
+        std::fill(row.begin() + weights->ne[0], row.end(), 0.0f);
+        dna_iq3_cxs2_quantize_row(
+            row.data(), padded_n,
+            blocks.data() + (size_t) i * blocks_per_row,
+            scales.data() + (size_t) i * 8);
+    }
+}
+
+static void llama_dna_pack_mr4_gate_up(llama_dna_layer & L) {
+    L.mr4_blocks_per_neuron =
+        ((size_t) L.n_embd + DNA_IQ3_CXS2_WEIGHTS_PER_LINE - 1) /
+        DNA_IQ3_CXS2_WEIGHTS_PER_LINE;
+    llama_dna_pack_mr4_rows(
+        L.gate, L.n_ff, L.mr4_blocks_per_neuron,
+        L.mr4_gate_blocks, L.mr4_gate_scales);
+    llama_dna_pack_mr4_rows(
+        L.up, L.n_ff, L.mr4_blocks_per_neuron,
+        L.mr4_up_blocks, L.mr4_up_scales);
+}
+
+static dna_iq3_cxs2_sparse_row llama_dna_mr4_row(
+        const llama_dna_layer & L, bool gate, int64_t row, size_t output_row) {
+    const ggml_tensor * weights = gate ? L.gate : L.up;
+    const auto & packed_blocks = gate ? L.mr4_gate_blocks : L.mr4_up_blocks;
+    const auto & packed_scales = gate ? L.mr4_gate_scales : L.mr4_up_scales;
+
+    dna_iq3_cxs2_sparse_row result;
+    result.output_row = output_row;
+    if (!packed_blocks.empty()) {
+        result.blocks = packed_blocks.data() + (size_t) row * L.mr4_blocks_per_neuron;
+        result.scales_e5m3 = packed_scales.data() + (size_t) row * 8;
+    } else {
+        const uint8_t * data = (const uint8_t *) weights->data + row * weights->nb[1];
+        result.blocks = (const dna_iq3_cxs2_block *) data;
+        result.scales_e5m3 = data + L.mr4_blocks_per_neuron * sizeof(dna_iq3_cxs2_block);
+    }
+    return result;
 }
 
 // predictor memory size in bytes for the pack log line
@@ -720,6 +783,16 @@ llama_dna_layer * llama_dna::get_layer(int il,
     L.from_float_gate = ff_gate;
     L.from_float_up   = ff_up;
 
+    const char * mr4_env = std::getenv("LLAMA_DNA_MR4");
+    const bool mr4_requested = mr4_env && std::strcmp(mr4_env, "0") != 0;
+    L.mr4_enabled =
+        (gate->type == GGML_TYPE_IQ3_CXS2 && up->type == GGML_TYPE_IQ3_CXS2) ||
+        mr4_requested;
+    if (L.mr4_enabled) {
+        L.mr4_from_float = get_traits(GGML_TYPE_Q8_0)->from_float;
+        GGML_ASSERT(L.mr4_from_float);
+    }
+
     llama_dna_init_layer_traits(this, L);
 
     const int64_t t0 = ggml_time_us();
@@ -732,6 +805,19 @@ llama_dna_layer * llama_dna::get_layer(int il,
             llama_dna_pred_bytes(L) / (1024.0*1024.0),
             8.0*llama_dna_pred_bytes(L) / ((double) n_embd*n_ff),
             (t1 - t0) / 1000.0);
+
+    if (L.mr4_enabled) {
+        const int64_t pack_start = ggml_time_us();
+        llama_dna_pack_mr4_gate_up(L);
+        const size_t mr4_bytes =
+            L.mr4_gate_blocks.size() * sizeof(dna_iq3_cxs2_block) +
+            L.mr4_up_blocks.size() * sizeof(dna_iq3_cxs2_block) +
+            L.mr4_gate_scales.size() + L.mr4_up_scales.size();
+        LLAMA_LOG_ERROR("%s: layer %3d: MR=4 IQ3_CXS2 gate/up ready (%s) in %.0f ms, %.1f MiB\n",
+                __func__, il, mr4_requested ? "runtime-packed where needed" : "model-preencoded",
+                (ggml_time_us() - pack_start) / 1000.0,
+                mr4_bytes / (1024.0*1024.0));
+    }
 
     return slot.get();
 }
@@ -1120,10 +1206,18 @@ void llama_dna::op_route(ggml_tensor * dst, int ith, int nth, void * userdata) {
 
     const size_t sz_gate = ggml_row_size(L.vdt_gate, L.n_embd);
     const size_t sz_up   = ggml_row_size(L.vdt_up,   L.n_embd);
+    const size_t mr4_padded_n =
+        L.mr4_blocks_per_neuron * DNA_IQ3_CXS2_WEIGHTS_PER_LINE;
 
-    thread_local std::vector<uint8_t> xq_gate, xq_up, xq_pred;
-    xq_gate.resize(sz_gate);
-    xq_up.resize(sz_up);
+    thread_local std::vector<uint8_t> xq_gate, xq_up, xq_pred, xq_mr4;
+    thread_local std::vector<float> x_mr4_padded, x_mr4_scales, g_mr4, u_mr4;
+    thread_local std::vector<int8_t> x_mr4_qs;
+    thread_local std::vector<int64_t> mr4_active_indices;
+    thread_local std::vector<dna_iq3_cxs2_sparse_row> mr4_gate_rows, mr4_up_rows;
+    if (!L.mr4_enabled) {
+        xq_gate.resize(sz_gate);
+        xq_up.resize(sz_up);
+    }
     xq_pred.resize(ggml_row_size(L.pred_vdt, L.n_embd));
 
     const bool same_vdt = L.vdt_gate == L.vdt_up;
@@ -1135,22 +1229,95 @@ void llama_dna::op_route(ggml_tensor * dst, int ith, int nth, void * userdata) {
         float       * out = (float *) ((char *) dst->data + t*dst->nb[1]);
 
         L.pred_from_float(xr, xq_pred.data(), L.n_embd);
-        L.from_float_gate(xr, xq_gate.data(), L.n_embd);
-        if (!same_vdt) {
-            L.from_float_up(xr, xq_up.data(), L.n_embd);
-        }
-        const void * xq_u = same_vdt ? xq_gate.data() : xq_up.data();
+        if (!L.mr4_enabled) {
+            L.from_float_gate(xr, xq_gate.data(), L.n_embd);
+            if (!same_vdt) {
+                L.from_float_up(xr, xq_up.data(), L.n_embd);
+            }
+            const void * xq_u = same_vdt ? xq_gate.data() : xq_up.data();
 
+            for (int64_t i = i0; i < i1; ++i) {
+                const float ge = llama_dna_estimate_quant(L, i, xq_pred.data());
+                if (fabsf(ge - L.med_est[i]) < L.band[i]) {
+                    out[i] = 0.0f;
+                    continue;
+                }
+                float g, u;
+                L.vec_dot_gate((int) L.n_embd, &g, 0, (const char *) L.gate->data + i*L.gate->nb[1], 0, xq_gate.data(), 0, 1);
+                L.vec_dot_up  ((int) L.n_embd, &u, 0, (const char *) L.up->data   + i*L.up->nb[1],   0, xq_u,           0, 1);
+                if (!L.gate_b.empty()) {
+                    g += L.gate_b[(size_t) i];
+                }
+                g *= L.gate_s;
+                if (!L.up_b.empty()) {
+                    u += L.up_b[(size_t) i];
+                }
+                u *= L.up_s;
+                out[i] = llama_dna_act(L.act, g) * u - L.mu[i];
+                n_act++;
+            }
+            continue;
+        }
+
+        mr4_active_indices.clear();
+        mr4_gate_rows.clear();
+        mr4_up_rows.clear();
         for (int64_t i = i0; i < i1; ++i) {
             const float ge = llama_dna_estimate_quant(L, i, xq_pred.data());
             if (fabsf(ge - L.med_est[i]) < L.band[i]) {
                 out[i] = 0.0f;
                 continue;
             }
-            float g, u;
-            L.vec_dot_gate((int) L.n_embd, &g, 0, (const char *) L.gate->data + i*L.gate->nb[1], 0, xq_gate.data(), 0, 1);
-            L.vec_dot_up  ((int) L.n_embd, &u, 0, (const char *) L.up->data   + i*L.up->nb[1],   0, xq_u,           0, 1);
-            // dense order: (W x + b) * s, then silu(g) * u
+            const size_t output_row = (size_t) (i - i0);
+            mr4_active_indices.push_back(i);
+            mr4_gate_rows.push_back(llama_dna_mr4_row(L, true, i, output_row));
+            mr4_up_rows.push_back(llama_dna_mr4_row(L, false, i, output_row));
+        }
+        if (mr4_active_indices.empty()) {
+            continue;
+        }
+
+        x_mr4_padded.assign(mr4_padded_n, 0.0f);
+        std::copy(xr, xr + L.n_embd, x_mr4_padded.begin());
+        xq_mr4.resize(ggml_row_size(GGML_TYPE_Q8_0, mr4_padded_n));
+        L.mr4_from_float(x_mr4_padded.data(), xq_mr4.data(), (int64_t) mr4_padded_n);
+
+        const size_t q8_block_size = ggml_type_size(GGML_TYPE_Q8_0);
+        const size_t n_q8_blocks = mr4_padded_n / 32;
+        x_mr4_qs.resize(mr4_padded_n);
+        x_mr4_scales.resize(n_q8_blocks);
+        for (size_t block = 0; block < n_q8_blocks; ++block) {
+            const uint8_t * q8_block = xq_mr4.data() + block * q8_block_size;
+            ggml_fp16_t d;
+            memcpy(&d, q8_block, sizeof(d));
+            x_mr4_scales[block] = ggml_fp16_to_fp32(d);
+            memcpy(x_mr4_qs.data() + block * 32, q8_block + sizeof(d), 32);
+        }
+
+        g_mr4.assign((size_t) (i1 - i0), 0.0f);
+        u_mr4.assign((size_t) (i1 - i0), 0.0f);
+#if defined(LLAMA_DNA_X86)
+        if (g_x86_fast) {
+            dna_iq3_cxs2_gemv_mr4_indirect_q8_0_avx2(
+                x_mr4_qs.data(), x_mr4_scales.data(), mr4_padded_n,
+                mr4_gate_rows.data(), mr4_gate_rows.size(), g_mr4.data());
+            dna_iq3_cxs2_gemv_mr4_indirect_q8_0_avx2(
+                x_mr4_qs.data(), x_mr4_scales.data(), mr4_padded_n,
+                mr4_up_rows.data(), mr4_up_rows.size(), u_mr4.data());
+        } else
+#endif
+        {
+            dna_iq3_cxs2_gemv_mr4_indirect_q8_0(
+                x_mr4_qs.data(), x_mr4_scales.data(), mr4_padded_n,
+                mr4_gate_rows.data(), mr4_gate_rows.size(), g_mr4.data());
+            dna_iq3_cxs2_gemv_mr4_indirect_q8_0(
+                x_mr4_qs.data(), x_mr4_scales.data(), mr4_padded_n,
+                mr4_up_rows.data(), mr4_up_rows.size(), u_mr4.data());
+        }
+
+        for (int64_t i : mr4_active_indices) {
+            float g = g_mr4[(size_t) (i - i0)];
+            float u = u_mr4[(size_t) (i - i0)];
             if (!L.gate_b.empty()) {
                 g += L.gate_b[(size_t) i];
             }

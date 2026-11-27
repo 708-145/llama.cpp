@@ -69,9 +69,14 @@ void dna_iq3_cxs2_dequantize_block(
     const float                scales_f32[8],
     float                      out_weights[160]);
 
+size_t ggml_iq3_cxs2_row_size(size_t n_weights);
+void ggml_quantize_row_iq3_cxs2(const float * weights, void * row, int64_t n_weights);
+void ggml_dequantize_row_iq3_cxs2(const void * row, float * weights, int64_t n_weights);
+
 // Sparse indirect gate/up GEMV. x_q8 contains signed Q8 values with one scale
 // per 32 inputs; rows may reference arbitrary non-adjacent IQ3_CXS2 rows.
-// n_inputs must be a multiple of 160. Only output_row entries are written.
+// n_inputs must be padded to a multiple of 160; the final line may contain zeros.
+// Only output_row entries are written.
 void dna_iq3_cxs2_gemv_mr4_indirect_q8_0(
     const int8_t                    * x_q8,
     const float                     * x_scales,

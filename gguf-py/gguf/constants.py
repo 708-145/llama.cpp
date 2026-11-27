@@ -6895,6 +6895,7 @@ class GGMLQuantizationType(IntEnum):
     Q1_0    = 41
     Q2_0    = 42
     F8_E4M3 = 43
+    IQ3_CXS2 = 44
 
 
 class ExpertGatingFuncType(IntEnum):
@@ -7130,6 +7131,9 @@ GGML_QUANT_SIZES: dict[GGMLQuantizationType, tuple[int, int]] = {
     GGMLQuantizationType.Q1_0:    (128, 2 + 16),
     GGMLQuantizationType.Q2_0:    (64, 2 + 16),
     GGMLQuantizationType.F8_E4M3: (1, 1),
+    # IQ3_CXS2 rows contain ceil(ne0 / 160) 64-byte lines and an 8-byte
+    # row-wide scale table; gguf_reader handles this row layout specially.
+    GGMLQuantizationType.IQ3_CXS2: (160, 64),
 }
 
 

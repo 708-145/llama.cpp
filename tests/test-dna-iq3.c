@@ -1,10 +1,17 @@
-#include "../src/dna-iq3-cxs2.h"
+#include "ggml-iq3-cxs2.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
 #include <string.h>
+#include <time.h>
 
 #include "ggml-cpu.h"
+
+static double bench_now_ns(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (double)ts.tv_sec * 1e9 + (double)ts.tv_nsec;
+}
 
 #define CHECK(condition) do { \
     if (!(condition)) { \
@@ -30,6 +37,63 @@ static float rand_normal(float mean, float std) {
     float v = (float) rand() / (float) RAND_MAX;
     if (u <= 1e-7f) u = 1e-7f;
     return mean + std * sqrtf(-2.0f * logf(u)) * cosf(2.0f * 3.1415926535f * v);
+}
+
+static void test_ggml_iq3_cxs2_row_layout(void) {
+    const int64_t n_weights = 1536;
+    const size_t row_size = 10 * DNA_IQ3_CXS2_LINE_BYTES + 8;
+    float weights[1536];
+    float decoded[1536];
+    uint8_t row[10 * DNA_IQ3_CXS2_LINE_BYTES + 8];
+    uint8_t q8_row[48 * 34];
+    float input[1536];
+    for (size_t i = 0; i < 1536; ++i) {
+        weights[i] = 0.1f * sinf((float) i * 0.031f);
+        input[i] = 0.2f * cosf((float) i * 0.017f);
+    }
+
+    CHECK(ggml_row_size(GGML_TYPE_IQ3_CXS2, n_weights) == row_size);
+    ggml_quantize_row_iq3_cxs2(weights, row, n_weights);
+    ggml_dequantize_row_iq3_cxs2(row, decoded, n_weights);
+    for (size_t i = 0; i < 1536; ++i) {
+        CHECK(isfinite(decoded[i]));
+    }
+
+    const struct ggml_type_traits_cpu * cxs2_traits =
+        ggml_get_type_traits_cpu(GGML_TYPE_IQ3_CXS2);
+    const struct ggml_type_traits_cpu * q8_traits =
+        ggml_get_type_traits_cpu(GGML_TYPE_Q8_0);
+    CHECK(cxs2_traits != NULL && cxs2_traits->vec_dot != NULL);
+    CHECK(q8_traits != NULL && q8_traits->from_float != NULL);
+    q8_traits->from_float(input, q8_row, n_weights);
+    float actual = 0.0f;
+    cxs2_traits->vec_dot(
+        (int) n_weights, &actual, 0, row, 0, q8_row, 0, 1);
+    float expected = 0.0f;
+    for (size_t block = 0; block < 48; ++block) {
+        ggml_fp16_t d;
+        memcpy(&d, q8_row + block * 34, sizeof(d));
+        const float scale = ggml_fp16_to_fp32(d);
+        const int8_t * qs = (const int8_t *) (q8_row + block * 34 + sizeof(d));
+        for (size_t i = 0; i < 32; ++i) {
+            expected += decoded[block * 32 + i] * scale * (float) qs[i];
+        }
+    }
+    CHECK(fabsf(actual - expected) < 1e-3f);
+
+    struct ggml_init_params params = {
+        .mem_size = 4096,
+        .mem_buffer = NULL,
+        .no_alloc = true,
+    };
+    struct ggml_context * ctx = ggml_init(params);
+    CHECK(ctx != NULL);
+    struct ggml_tensor * tensor = ggml_new_tensor_2d(ctx, GGML_TYPE_IQ3_CXS2, n_weights, 2);
+    CHECK(tensor->nb[1] == row_size);
+    CHECK(ggml_nbytes(tensor) == row_size * 2);
+    CHECK(ggml_is_contiguous(tensor));
+    CHECK(ggml_is_contiguously_allocated(tensor));
+    ggml_free(ctx);
 }
 
 static void test_down_tile_accum(void) {
@@ -220,8 +284,147 @@ static void test_sparse_gate_up_gemv(void) {
 #endif
 }
 
+static void test_gemv_benchmark(void) {
+    // n_ff=4096 neurons, n_embd=4096 input dims (padded to 4160 = 26 * 160)
+    enum {
+        N_FF        = 4096,
+        N_EMBD_RAW  = 4096,
+        N_LINES     = (N_EMBD_RAW + DNA_IQ3_CXS2_WEIGHTS_PER_LINE - 1)
+                        / DNA_IQ3_CXS2_WEIGHTS_PER_LINE,  // 26
+        N_EMBD      = N_LINES * DNA_IQ3_CXS2_WEIGHTS_PER_LINE,  // 4160
+        N_Q8_BLOCKS = N_EMBD / 32,
+        N_ITERS     = 200,
+    };
+
+    // allocate quantized gate/up weight matrix
+    dna_iq3_cxs2_block * blocks = (dna_iq3_cxs2_block *)
+        malloc((size_t)N_FF * N_LINES * sizeof(dna_iq3_cxs2_block));
+    uint8_t * scales = (uint8_t *) malloc((size_t)N_FF * 8);
+    float * weights_f32 = (float *) malloc((size_t)N_FF * N_EMBD * sizeof(float));
+    float * output = (float *) malloc((size_t)N_FF * sizeof(float));
+    int8_t * x_q8 = (int8_t *) malloc((size_t)N_EMBD);
+    float * x_scales = (float *) malloc((size_t)N_Q8_BLOCKS * sizeof(float));
+    float * x_f32 = (float *) malloc((size_t)N_EMBD * sizeof(float));
+    dna_iq3_cxs2_sparse_row * rows = (dna_iq3_cxs2_sparse_row *)
+        malloc((size_t)N_FF * sizeof(dna_iq3_cxs2_sparse_row));
+
+    if (!blocks || !scales || !weights_f32 || !output ||
+            !x_q8 || !x_scales || !x_f32 || !rows) {
+        printf("    benchmark: allocation failed, skipping\n");
+        goto bench_done;
+    }
+
+    // fill input Q8_0
+    for (int i = 0; i < N_EMBD; ++i) {
+        x_q8[i] = (int8_t) ((i * 7 + 3) % 127 - 63);
+        x_f32[i] = (float) x_q8[i] * 0.0625f;
+    }
+    for (int b = 0; b < N_Q8_BLOCKS; ++b) {
+        x_scales[b] = 0.0625f;
+    }
+
+    // quantize all N_FF rows
+    for (int r = 0; r < N_FF; ++r) {
+        for (int i = 0; i < N_EMBD; ++i) {
+            weights_f32[(size_t)r * N_EMBD + i] =
+                ((r * 13 + i * 7) % 2) ? -0.08f : 0.08f;
+        }
+        dna_iq3_cxs2_quantize_row(
+            weights_f32 + (size_t)r * N_EMBD,
+            N_EMBD,
+            blocks + (size_t)r * N_LINES,
+            scales + (size_t)r * 8);
+    }
+
+    // set up all rows array (identity mapping for benchmark)
+    for (int r = 0; r < N_FF; ++r) {
+        rows[r].output_row = (size_t)r;
+        rows[r].blocks = blocks + (size_t)r * N_LINES;
+        rows[r].scales_e5m3 = scales + (size_t)r * 8;
+    }
+
+    const struct ggml_type_traits_cpu * f32_traits =
+        ggml_get_type_traits_cpu(GGML_TYPE_F32);
+
+    // sparsity fractions to sweep
+    const float fractions[]  = { 0.01f, 0.05f, 0.10f, 0.20f, 0.50f };
+    const int   n_fractions  = (int)(sizeof(fractions) / sizeof(fractions[0]));
+
+    int has_avx2 = 0;
+#if defined(__AVX2__) || (defined(__GNUC__) && (defined(__x86_64__) || defined(__i386__)))
+    has_avx2 = test_cpu_has_avx2();
+#endif
+
+    printf("    %6s  %7s  %10s  %10s  %10s\n",
+           "active", "rows", "F32-ref ns", "scalar ns", has_avx2 ? "avx2 ns" : "(no avx2)");
+    printf("    %-6s  %-7s  %-10s  %-10s  %-10s\n",
+           "------", "-------", "----------", "---------", "---------");
+
+    for (int fi = 0; fi < n_fractions; ++fi) {
+        int active_count = (int)(fractions[fi] * N_FF + 0.5f);
+        if (active_count < 1) active_count = 1;
+        if (active_count > N_FF) active_count = N_FF;
+
+        // --- F32 single-row reference ---
+        double t0 = bench_now_ns();
+        for (int iter = 0; iter < N_ITERS; ++iter) {
+            for (int r = 0; r < active_count; ++r) {
+                float dot = 0.0f;
+                f32_traits->vec_dot(
+                    N_EMBD, &dot, 0,
+                    (const char *)(weights_f32 + (size_t)r * N_EMBD), 0,
+                    (const char *)x_f32, 0, 1);
+                output[r] = dot;
+            }
+        }
+        double t_f32 = (bench_now_ns() - t0) / N_ITERS;
+
+        // --- scalar MR=4 ---
+        for (int r = 0; r < active_count; ++r) output[r] = 0.0f;
+        double t1 = bench_now_ns();
+        for (int iter = 0; iter < N_ITERS; ++iter) {
+            for (int r = 0; r < active_count; ++r) output[r] = 0.0f;
+            dna_iq3_cxs2_gemv_mr4_indirect_q8_0(
+                x_q8, x_scales, N_EMBD, rows, (size_t)active_count, output);
+        }
+        double t_scalar = (bench_now_ns() - t1) / N_ITERS;
+
+        // --- AVX2 MR=4 ---
+        double t_avx2 = 0.0;
+#if defined(__AVX2__) || (defined(__GNUC__) && (defined(__x86_64__) || defined(__i386__)))
+        if (has_avx2) {
+            for (int r = 0; r < active_count; ++r) output[r] = 0.0f;
+            double t2 = bench_now_ns();
+            for (int iter = 0; iter < N_ITERS; ++iter) {
+                for (int r = 0; r < active_count; ++r) output[r] = 0.0f;
+                dna_iq3_cxs2_gemv_mr4_indirect_q8_0_avx2(
+                    x_q8, x_scales, N_EMBD, rows, (size_t)active_count, output);
+            }
+            t_avx2 = (bench_now_ns() - t2) / N_ITERS;
+        }
+#endif
+
+        printf("    %5.0f%%  %7d  %10.0f  %9.0f  %9.0f\n",
+               fractions[fi] * 100.0f, active_count,
+               t_f32, t_scalar, t_avx2);
+    }
+
+bench_done:
+    free(rows);
+    free(x_f32);
+    free(x_scales);
+    free(x_q8);
+    free(output);
+    free(weights_f32);
+    free(scales);
+    free(blocks);
+}
+
 int main(void) {
+    ggml_cpu_init();
+
     printf("=== Testing IQ3_CXS2 Quantization ===\n");
+    test_ggml_iq3_cxs2_row_layout();
 
     // 1. Test E5M3 conversion accuracy & round-trip
     printf("[1] Testing E5M3 conversion...\n");
@@ -338,6 +541,10 @@ int main(void) {
     free(weights);
     free(dequant_scalar);
     free(blocks_scalar);
+
+    printf("[7] Benchmarking MR=4 vs single-row F32 GEMV (n_ff=4096, n_embd=4096)...\n");
+    test_gemv_benchmark();
+    printf("    Benchmark: DONE\n\n");
 
     printf("=== All IQ3_CXS2 tests passed successfully! ===\n");
     return 0;

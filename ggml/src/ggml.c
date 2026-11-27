@@ -7,6 +7,7 @@
 #include "ggml-threading.h"
 #include "ggml-cpu.h"
 #include "ggml.h"
+#include "ggml-iq3-cxs2.h"
 
 // FIXME: required here for quantization functions
 #include "ggml-quants.h"
@@ -852,6 +853,14 @@ static const struct ggml_type_traits type_traits[GGML_TYPE_COUNT] = {
         .to_float                 = (ggml_to_float_t) dequantize_row_iq3_s,
         .from_float_ref           = (ggml_from_float_t)quantize_row_iq3_s_ref,
     },
+    [GGML_TYPE_IQ3_CXS2] = {
+        .type_name                = "iq3_cxs2",
+        .blck_size                = DNA_IQ3_CXS2_WEIGHTS_PER_LINE,
+        .type_size                = sizeof(dna_iq3_cxs2_block),
+        .is_quantized             = true,
+        .to_float                 = (ggml_to_float_t) ggml_dequantize_row_iq3_cxs2,
+        .from_float_ref           = (ggml_from_float_t) ggml_quantize_row_iq3_cxs2,
+    },
     [GGML_TYPE_IQ2_S] = {
         .type_name                = "iq2_s",
         .blck_size                = QK_K,
@@ -1321,7 +1330,12 @@ size_t ggml_nbytes(const struct ggml_tensor * tensor) {
 
     size_t nbytes;
     const size_t blck_size = ggml_blck_size(tensor->type);
-    if (blck_size == 1) {
+    if (tensor->type == GGML_TYPE_IQ3_CXS2) {
+        nbytes = ggml_row_size(tensor->type, tensor->ne[0]);
+        for (int i = 1; i < GGML_MAX_DIMS; ++i) {
+            nbytes += (tensor->ne[i] - 1)*tensor->nb[i];
+        }
+    } else if (blck_size == 1) {
         nbytes = ggml_type_size(tensor->type);
         for (int i = 0; i < GGML_MAX_DIMS; ++i) {
             nbytes += (tensor->ne[i] - 1)*tensor->nb[i];
@@ -1356,6 +1370,9 @@ size_t ggml_type_size(enum ggml_type type) {
 size_t ggml_row_size(enum ggml_type type, int64_t ne) {
     assert(type >= 0);
     assert(type < GGML_TYPE_COUNT);
+    if (type == GGML_TYPE_IQ3_CXS2) {
+        return ggml_iq3_cxs2_row_size((size_t) ne);
+    }
     assert(ne % ggml_blck_size(type) == 0);
     return ggml_type_size(type)*ne/ggml_blck_size(type);
 }
@@ -1494,7 +1511,7 @@ static bool ggml_is_contiguous_m_n(const struct ggml_tensor * tensor, int m, int
     if (tensor->ne[0] != ggml_blck_size(tensor->type) && tensor->nb[0] != next_nb) {
         return false;
     }
-    next_nb *= tensor->ne[0]/ggml_blck_size(tensor->type);
+    next_nb = ggml_row_size(tensor->type, tensor->ne[0]);
     for (int i = 1; i < n; i++) {
         if (i > m) {
             if (tensor->ne[i] != 1 && tensor->nb[i] != next_nb) {
@@ -1538,7 +1555,11 @@ bool ggml_is_contiguous_to_3(const struct ggml_tensor * tensor) {
 }
 
 bool ggml_is_contiguously_allocated(const struct ggml_tensor * tensor) {
-    return ggml_nbytes(tensor) == ggml_nelements(tensor) * ggml_type_size(tensor->type)/ggml_blck_size(tensor->type);
+    size_t size = ggml_row_size(tensor->type, tensor->ne[0]);
+    for (int i = 1; i < GGML_MAX_DIMS; ++i) {
+        size *= tensor->ne[i];
+    }
+    return ggml_nbytes(tensor) == size;
 }
 
 bool ggml_is_permuted(const struct ggml_tensor * tensor) {
@@ -1863,7 +1884,7 @@ static struct ggml_tensor * ggml_new_tensor_impl(
         }
     } else {
         result->nb[0] = ggml_type_size(type);
-        result->nb[1] = result->nb[0]*(result->ne[0]/ggml_blck_size(type));
+        result->nb[1] = ggml_row_size(type, result->ne[0]);
         for (int i = 2; i < GGML_MAX_DIMS; i++) {
             result->nb[i] = result->nb[i - 1]*result->ne[i - 1];
         }
@@ -8231,7 +8252,9 @@ size_t ggml_quantize_chunk(
         GGML_ASSERT(imatrix != NULL);
     }
 
-    GGML_ASSERT(start % type_traits[type].blck_size == 0);
+    if (type != GGML_TYPE_IQ3_CXS2) {
+        GGML_ASSERT(start % type_traits[type].blck_size == 0);
+    }
     GGML_ASSERT(start % n_per_row == 0);
 
     ggml_quantize_init(type); // this is noop if already initialized
@@ -8263,6 +8286,15 @@ size_t ggml_quantize_chunk(
         case GGML_TYPE_IQ2_XS:  result = quantize_iq2_xs (src + start, (char *) dst + start_row * row_size, nrows, n_per_row, imatrix); break;
         case GGML_TYPE_IQ3_XXS: result = quantize_iq3_xxs(src + start, (char *) dst + start_row * row_size, nrows, n_per_row, imatrix); break;
         case GGML_TYPE_IQ3_S:   result = quantize_iq3_s  (src + start, (char *) dst + start_row * row_size, nrows, n_per_row, imatrix); break;
+        case GGML_TYPE_IQ3_CXS2:
+            for (int64_t row = 0; row < nrows; ++row) {
+                ggml_quantize_row_iq3_cxs2(
+                    src + start + row * n_per_row,
+                    (char *) dst + (start_row + row) * row_size,
+                    n_per_row);
+            }
+            result = nrows * row_size;
+            break;
         case GGML_TYPE_IQ2_S:   result = quantize_iq2_s  (src + start, (char *) dst + start_row * row_size, nrows, n_per_row, imatrix); break;
         case GGML_TYPE_IQ1_S:   result = quantize_iq1_s  (src + start, (char *) dst + start_row * row_size, nrows, n_per_row, imatrix); break;
         case GGML_TYPE_IQ1_M:   result = quantize_iq1_m  (src + start, (char *) dst + start_row * row_size, nrows, n_per_row, imatrix); break;

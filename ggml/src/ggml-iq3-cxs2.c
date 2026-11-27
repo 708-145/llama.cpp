@@ -1,4 +1,4 @@
-#include "dna-iq3-cxs2.h"
+#include "ggml-iq3-cxs2.h"
 
 #include <assert.h>
 #include <float.h>
@@ -474,6 +474,47 @@ void dna_iq3_cxs2_dequantize_block(
             float val = scale * mag;
             out_weights[sub * 16 + i] = sign ? -val : val;
         }
+    }
+}
+
+size_t ggml_iq3_cxs2_row_size(size_t n_weights) {
+    const size_t n_blocks = n_weights / DNA_IQ3_CXS2_WEIGHTS_PER_LINE +
+        (n_weights % DNA_IQ3_CXS2_WEIGHTS_PER_LINE != 0);
+    return n_blocks * sizeof(dna_iq3_cxs2_block) + 8;
+}
+
+void ggml_quantize_row_iq3_cxs2(const float * weights, void * row, int64_t n_weights) {
+    const size_t n_blocks = (size_t) n_weights / DNA_IQ3_CXS2_WEIGHTS_PER_LINE +
+        (n_weights % DNA_IQ3_CXS2_WEIGHTS_PER_LINE != 0);
+    const size_t n_padded = n_blocks * DNA_IQ3_CXS2_WEIGHTS_PER_LINE;
+    float * padded = calloc(n_padded, sizeof(float));
+    if (padded == NULL) {
+        abort();
+    }
+    memcpy(padded, weights, (size_t) n_weights * sizeof(float));
+    dna_iq3_cxs2_block * blocks = row;
+    uint8_t * scales = (uint8_t *) row + n_blocks * sizeof(*blocks);
+    dna_iq3_cxs2_quantize_row(padded, n_padded, blocks, scales);
+    free(padded);
+}
+
+void ggml_dequantize_row_iq3_cxs2(const void * row, float * weights, int64_t n_weights) {
+    const size_t n_blocks = (size_t) n_weights / DNA_IQ3_CXS2_WEIGHTS_PER_LINE +
+        (n_weights % DNA_IQ3_CXS2_WEIGHTS_PER_LINE != 0);
+    const dna_iq3_cxs2_block * blocks = row;
+    const uint8_t * scales_e5m3 = (const uint8_t *) row + n_blocks * sizeof(*blocks);
+    float scales[8];
+    for (size_t i = 0; i < 8; ++i) {
+        scales[i] = dna_e5m3_to_f32(scales_e5m3[i]);
+    }
+    for (size_t i = 0; i < n_blocks; ++i) {
+        float block_weights[DNA_IQ3_CXS2_WEIGHTS_PER_LINE];
+        dna_iq3_cxs2_dequantize_block(&blocks[i], scales, block_weights);
+        const size_t offset = i * DNA_IQ3_CXS2_WEIGHTS_PER_LINE;
+        const size_t n_copy = (size_t) n_weights - offset < DNA_IQ3_CXS2_WEIGHTS_PER_LINE
+            ? (size_t) n_weights - offset
+            : DNA_IQ3_CXS2_WEIGHTS_PER_LINE;
+        memcpy(weights + offset, block_weights, n_copy * sizeof(float));
     }
 }
 

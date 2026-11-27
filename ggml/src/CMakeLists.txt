@@ -185,12 +185,14 @@ endif()
 
 add_library(ggml-base
             ../include/ggml.h
+            ../include/ggml-iq3-cxs2.h
             ../include/ggml-alloc.h
             ../include/ggml-backend.h
             ../include/ggml-cpp.h
             ../include/ggml-opt.h
             ../include/gguf.h
             ggml.c
+            ggml-iq3-cxs2.c
             ggml.cpp
             ggml-alloc.c
             ggml-backend.cpp

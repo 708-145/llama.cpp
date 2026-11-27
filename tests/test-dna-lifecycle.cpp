@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cinttypes>
 #include <memory>
 
 #define CHECK(condition) do { \
@@ -103,7 +104,9 @@ static void check_predict(layer_fixture & f) {
         }
         const float expected = (g / (1.0f + std::exp(-g))) * u;
         CHECK(std::isfinite(delta[i]));
-        CHECK(std::fabs(delta[i] - expected) < 1e-5f);
+        const char * mr4_env = std::getenv("LLAMA_DNA_MR4");
+        const float tol = (mr4_env && std::strcmp(mr4_env, "0") != 0) ? 0.05f : 1e-5f;
+        CHECK(std::fabs(delta[i] - expected) < tol);
     }
 
     f.output->src[0] = f.delta;

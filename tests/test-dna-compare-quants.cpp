@@ -1,6 +1,6 @@
-#include "src/dna-iq3-cxs2.h"
-#include "ggml/include/ggml.h"
-#include "ggml/src/ggml-quants.h"
+#include "ggml-iq3-cxs2.h"
+#include "ggml.h"
+#include "ggml-quants.h"
 
 #include <stdio.h>
 #include <stdlib.h>
